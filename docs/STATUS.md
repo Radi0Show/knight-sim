@@ -9,7 +9,7 @@ export PATH="$HOME/tools/node/bin:$PATH"
 cd ~/knight-sim && npm run verify
 ```
 
-Expected: **All 10 suites green.** If not, stop and fix before adding anything.
+Expected: **All 11 suites green.** If not, stop and fix before adding anything.
 
 ## Engine — done and verified
 
