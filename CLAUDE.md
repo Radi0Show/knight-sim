@@ -125,6 +125,32 @@ object* later in the same frame. Collapse that into one phase and the soul sits
 at a different position for one frame — on the first attack you are likely to
 port.
 
+## RNG — SOLVED
+
+The generator is discovered and validated; the "log outputs and replay"
+fallback below is superseded for translated attacks. `sim/rng.js` `gmlRng`:
+
+- **WELL512** (Lomont), 16x32-bit state, poly 0xDA442D24
+- seeding: 16 rounds of `s = ((s*214013 + 2531011) & 0xFFFFFFFF) >>> 16`
+- `random(x)` / `random_range` / `choose`: 1 draw (u32/2^32; args[u32 % argc])
+- `irandom` / `irandom_range`: 2 draws, composed 63-bit
+  (`lo | (hi & 0x7fffffff) << 32`), then modulo
+
+Validated by `node tools/verify-rng.mjs` against 131 outputs logged inside
+the real game (`traces/rng-probe.csv`; probe patch in
+`knight-research/tools/patches/oracle_rng_probe.csx`). Same seed + same call
+order = the real stream, bit-exact.
+
+The cost of that power: **call order includes Draw events.** The teeth
+bullets burn random_range twice per bullet per frame in Draw; debris
+afterimages consume in their setup. A translated attack that wants stream
+fidelity must consume for those calls too (as bare draws, no visual needed).
+The alternative for verification runs remains fixing outcomes via a
+seed-reset in the oracle patch. Dead code note: `obj_knight_split_growtangle`
+Other_12/13 (the fountain walls) are never invoked — no knight code calls
+event_user(2)/(3); fountains in the current fight come from the _vertical /
+_backup variants used elsewhere.
+
 ## Trig caveat
 
 JS `Math.sin`/`Math.cos` may differ from GML's in the last bits. If an attack
