@@ -19,6 +19,7 @@ import {
 } from './scenes/soul-wall.js';
 import { buildOracleT3Scene, ORACLE_T3_INPUT } from './scenes/oracle-t3.js';
 import { buildOracleT4Scene, ORACLE_T4_INPUT } from './scenes/oracle-t4.js';
+import { buildOracleT5Scene, ORACLE_T5_INPUT } from './scenes/oracle-t5.js';
 
 function parseArgs(argv) {
   const args = { seed: 12345, frames: 600, out: null, scene: 'stub' };
@@ -52,6 +53,7 @@ const SCENES = {
   'soul-corner': { build: buildSoulWallScene, input: DIAGONAL_INTO_CORNER, bulletSlots: 0 },
   'oracle-t3': { build: buildOracleT3Scene, input: ORACLE_T3_INPUT, bulletSlots: 0 },
   'oracle-t4': { build: buildOracleT4Scene, input: ORACLE_T4_INPUT, bulletSlots: 0 },
+  'oracle-t5': { build: buildOracleT5Scene, input: ORACLE_T5_INPUT, bulletSlots: 2 },
 };
 
 export function runTrace({ seed, frames, scene = 'stub' }) {

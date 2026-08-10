@@ -287,6 +287,33 @@ in `sim/battlebox.js`; pin the alignment with a dedicated trace when it is.
 
 Remaining collision caveat: none known. New attacks at untested angle/scale
 combinations get an oracle spot-check as part of their translation.
+- **Attack 2 — fountain bullets. DONE.** `node tools/verify-fountain.mjs`:
+  rows 4..193 of `traces/t5-fountain.csv`, all columns row-exact — frozen
+  soul, two ramping fountain bullets, one wall-destroyed offscreen, one
+  contacting the heart (inv reset + destroyonhit). New engine capabilities
+  this verified: built-in speed/direction motion in the documented phase
+  slot (Step → motion → Collision), the inherited bullet base
+  (`sim/bullets/regularbullet.js` = obj_regularbullet + the default
+  collidebullet Other_15), and moving precise-mask contact.
+
+  **FLOAT32 POSITIONS — project-level fact.** The runner stores built-in
+  x/y in single precision. The fountain speed-ramp digits
+  (261.3999938965 = f64 arithmetic narrowed to f32 on store) select the
+  model uniquely, 7/7 frames. GML *variables* stay f64; only position
+  built-ins narrow. `runMotion` frounds; translated code assigning
+  non-integer x/y directly must do the same. T3/T4 never noticed because
+  every position they produce is integer-valued.
+
+  Also caught here: the engine's collision phase looked up `collides` on
+  the entity instead of the type, so it had never actually run. T4 passed
+  regardless because its slash never connects — a reminder that a suite
+  full of negative results can hide a dead code path; the positive-contact
+  scenario existed precisely to catch this.
+
+  Faithful oddity preserved: fountain Create sets `destroy_on_hit = false`
+  (underscores) but the damage gate reads `destroyonhit` (= 1 from
+  scr_bullet_init) — different variables, so fountain bullets DO destroy
+  on hit. Oracle-confirmed at the contact frame.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
 ## Assets

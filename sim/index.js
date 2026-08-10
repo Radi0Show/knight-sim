@@ -27,7 +27,34 @@ export { FPS, MS_PER_FRAME, drain } from './clock.js';
  * And a bullet hit registers in the heart's Collision event (which just does
  * `with (other) event_user(5)`) — after the move, before the clamp.
  */
-export const PHASES = ['beginStep', 'alarm', 'step', 'collision', 'endStep'];
+export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'endStep'];
+
+/**
+ * GameMaker's built-in motion, applied between the Step event and Collision
+ * events (the manual's documented order: "normal step — instances are
+ * moved"). Entities opt in with `builtinMotion: true` and plain `speed` /
+ * `direction` fields (degrees, CCW on screen).
+ *
+ * Envelope: translated code only ever assigns speed and direction — no
+ * direct hspeed/vspeed writes, no friction, no gravity. Extend when an
+ * attack needs them, against an oracle trace.
+ *
+ * FLOAT32 POSITIONS: the runner stores built-in x/y in single precision.
+ * Discovered in the t5-fountain trace — the speed-ramp digits
+ * (261.3999938965...) are exactly f64 arithmetic narrowed to f32 on store,
+ * reproduced 7/7 frames by this Math.fround. GML *variables* stay f64;
+ * only the position built-ins narrow. Translated code that assigns a
+ * non-integer x/y directly must fround the same way.
+ */
+function runMotion(state) {
+  state.eventPhase = 'motion';
+  for (const e of state.entities) {
+    if (!e.alive || !e.builtinMotion || !e.speed) continue;
+    const r = (e.direction * Math.PI) / 180;
+    e.x = Math.fround(e.x + e.speed * Math.cos(r));
+    e.y = Math.fround(e.y - e.speed * Math.sin(r));
+  }
+}
 
 /**
  * The heart's Collision_obj_collidebullet event, generalised: for each live
@@ -42,7 +69,8 @@ function runCollisions(state) {
   for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
     if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
-    if (b.collides && b.collides(b, heart, state)) {
+    const collides = b.type.collides;
+    if (collides && collides(b, heart, state)) {
       b.type.other15(b, state);
     }
   }
@@ -60,6 +88,7 @@ export function stepFrame(state, input) {
   runPhase(state, 'beginStep');
   runAlarms(state);
   runPhase(state, 'step');
+  runMotion(state);
   runCollisions(state);
   runPhase(state, 'endStep');
 
