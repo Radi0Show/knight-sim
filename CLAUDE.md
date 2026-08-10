@@ -58,9 +58,24 @@ Silicon, so re-sign after every oracle rebuild:
 
 ## Known constraints from recon
 
-- The 14 attack objects are bespoke state machines with no shared bullet manager
-  (58 code entries). There is no manager to port once and reuse. Expect to
-  reverse each attack individually.
+- ~~The 14 attack objects are bespoke state machines with no shared bullet
+  manager. Expect to reverse each attack individually.~~ **WRONG — corrected.**
+  There IS a shared manager. Every knight attack launches the same way:
+
+  ```gml
+  dc = scr_bulletspawner(x, y, obj_dbulletcontroller);
+  dc.type = <N>;
+  dc.difficulty = <D>;
+  ```
+
+  `obj_dbulletcontroller` switches on `type`, and all 15 types the knight uses
+  live inside it. The `obj_roaringknight_*` / `obj_knight_*` objects are the
+  *bullets and effects the controller spawns*, not independent attack machines.
+  This changes the remaining work from "reverse 12 bespoke objects" to "reverse
+  one controller's type switch".
+
+  The error came from counting attack-shaped objects in the dump instead of
+  reading how the knight dispatches. See "How to identify a real attack".
 - **Dump accounting is confirmed (T1 done). No code is missing.** See below.
 
 ### T1 result: the 9,262 / 7,603 gap
@@ -86,6 +101,63 @@ many functions, and its filename matches none of them. `screenx`, `screeny`,
 
 - To find a function, grep **contents** for `function <name>(`.
 - Never conclude something is absent from a filename listing.
+
+## THE REAL FIGHT — ground truth
+
+Read from `obj_knight_enemy`'s **Other_10**, which is the attack SELECTOR. This
+is the authority on what the fight does. Nothing else is.
+
+| phase | turn order (myattackchoice) |
+|---|---|
+| 1 | 1 Stars, 11 tracking, 2 Flurry, 13 swordtunnel, 5 rotatingslash, 12 diagonal, 16 tracking16, 17 tracking17, 7 combination |
+| 2 | 1 Stars, 2 Flurry, 13 swordtunnel, 15 vortex+tracking, 5 rotatingslash |
+| 3 | 1 Stars, 2 Flurry, 14 tracking14, 13 swordtunnel, 5 rotatingslash |
+| 4 | 5 rotatingslash, 9 roaring |
+
+Dispatch parameters, from the knight's Step:
+
+| ac | name | dc.type | invc | box |
+|---:|------|---------|------|-----|
+| 1 | Stars | 98 | 1 | xscale 2.25, yscale 1.75 |
+| 2 | Flurry | 99 | 0.4 | default |
+| 5 | rotatingslash | 104 | 1 | default |
+| 7 | combinationattack | 105 | 0.4 | default |
+| 9 | roaring | 107 | 1 | default |
+| 11 | tracking swords | 151 | 0.4 | at (320,190) |
+| 12 | diagonal bullets | 152 | 0.4 | default |
+| 13 | sword tunnel new | 153 | 0.14 | at (300,190), xscale 3 |
+| 14 | tracking swords | 151 | 0.4 | default |
+| 15 | sword vortex + tracking | 154 then 151 | 0.4 | default |
+| 16 | rotatingslash + tracking | 104 then 151 | 0.4 | default |
+| 17 | tracking swords | 151 | 0.4 | default |
+
+### How to identify a real attack
+
+**The selector, not the dispatch table.** `obj_knight_enemy`'s Step has
+`myattackchoice` branches the selector can never choose. These exist in the
+code and are UNUSED CONTENT:
+
+> 0 Swordslash · 3 swordtunnel · 4 xattacks · **6 underboxattack** ·
+> 10 swords falling · 20 knightlines
+
+Reading the dispatch table instead of the selector is how two verified attacks
+turned out to be content the fight never uses. Before translating anything,
+confirm the selector can assign it.
+
+### Attacks verified but NOT in the fight
+
+Both passed row-exact oracle diffs. The engine work they proved is sound and
+still in use; only their status as *attacks* is retracted.
+
+- **Fountain bullets** (`obj_roaringknight_fountain_bullet`) — unreachable.
+  Only spawned by `obj_knight_split_growtangle`'s Other_12/13, which nothing
+  ever fires (no `event_user(2)`/`(3)` targets it), and by the `_vertical` /
+  `_backup` variants, which have **zero creators anywhere in the dump**.
+  Proved: the regularbullet base, built-in motion, f32 positions, the damage
+  path.
+- **Box splitter** (`obj_roaringknight_boxsplitter_attack`, ac=6
+  "underboxattack") — the selector never picks it. Proved: friction, the
+  collision phase, seed-locked RNG, `scr_heartclamp`, precise-mask contact.
 
 ## Architecture
 
@@ -173,6 +245,38 @@ control, and is sabotage-tested.
 **Oracle patches for new attacks must trace `image_angle` and the scales** for
 any entity whose mask rotates or scales. A field nothing looks at is a field
 that can diverge silently — that is how the f32 issue survived T3 and T4.
+
+## Working method — learned the hard way
+
+Two failure modes cost most of a session each. Both are cheap to avoid.
+
+**1. Read the dump before launching the game.** Every oracle run is ~90
+seconds plus a patch/sign cycle; a targeted grep is seconds. During the fight
+harness work I formed hypotheses and tested them by launching, repeatedly.
+The two steps that actually broke the problem open — extracting the dispatch
+table, and reading the selector — were both static analysis and took under a
+minute each. Launch the game to MEASURE something you cannot read, not to find
+out whether a guess was right.
+
+**2. Enumerate the whole object before patching any of it.** Replacing
+`obj_bullettester_new` piecemeal produced four consecutive crashes (Create,
+Step, Draw, then an undefined instance var) because each event referenced
+state the previous fix had not defined. `ls` its events and grep the variables
+they read FIRST, then patch all of them in one pass.
+
+Corollaries that keep biting:
+
+- GML embedded in a C# verbatim string needs `""` for every quote — including
+  quotes inside comments. Three separate compile failures.
+- Replacing a decompiled code entry drops anything else declared in it. The
+  `enum e__VW` at the bottom of many entries is the usual casualty.
+- A patched-out event is not free: other events read the variables it set.
+- `file_text_*` writes are BUFFERED. A crash or Game Over loses everything
+  not yet closed. Flush periodically in every recorder.
+- Let the game's own systems run where possible. Forcing `mnfight = 1.5`
+  skipped the phase that initialises the knight; running `scr_bulletspawner`
+  inside `with (obj_knight_enemy)` fixed a crash that hand-reconstructing its
+  fields had caused.
 
 ## Positive execution assertions
 
@@ -375,7 +479,7 @@ in `sim/battlebox.js`; pin the alignment with a dedicated trace when it is.
 
 Remaining collision caveat: none known. New attacks at untested angle/scale
 combinations get an oracle spot-check as part of their translation.
-- **Attack 2 — fountain bullets. DONE.** `node tools/verify-fountain.mjs`:
+- **Attack 2 — fountain bullets. Engine work DONE; NOT AN ATTACK IN THE FIGHT** (unreachable content — see "Attacks verified but NOT in the fight"). `node tools/verify-fountain.mjs`:
   rows 4..193 of `traces/t5-fountain.csv`, all columns row-exact — frozen
   soul, two ramping fountain bullets, one wall-destroyed offscreen, one
   contacting the heart (inv reset + destroyonhit). New engine capabilities
@@ -402,7 +506,7 @@ combinations get an oracle spot-check as part of their translation.
   (underscores) but the damage gate reads `destroyonhit` (= 1 from
   scr_bullet_init) — different variables, so fountain bullets DO destroy
   on hit. Oracle-confirmed at the contact frame.
-- **Attack 3 — the box splitter. DONE.** `node tools/verify-splitter.mjs`:
+- **Attack 3 — the box splitter. Engine work DONE; NOT IN THE FIGHT** (ac=6 underboxattack, never selected — see above). `node tools/verify-splitter.mjs`:
   rows 4..193 of `traces/t6-splitter.csv`, all columns row-exact — soul, the
   `con` state machine, timer, distance, the first four teeth (x, y AND
   image_angle), and the running contact count.
@@ -459,9 +563,22 @@ combinations get an oracle spot-check as part of their translation.
   not drawn while the box is parked offscreen during a split, and the slash
   renders as a line rather than the original's tapering wedge.
 
-  Remaining before publishing: the attack schedule in `practice.js` is
-  hand-authored rather than the fight's real sequencing (turn machinery is out
-  of scope), and 7 attacks are still untranslated.
+  **FABRICATED CONTENT — must be removed before publishing.**
+  `sim/scenes/practice.js` contains `fountainWave()`: 12 bullets in a row with
+  a gap. **I invented it.** Nothing like it exists in the fight, and the
+  fountain bullet is unreachable content besides. It was written to have
+  something dodgeable on screen and sits next to genuinely verified work,
+  which makes it look equally trustworthy. It is not.
+
+  The splitter in that scene is real code but is `underboxattack`, which the
+  selector never picks. So the playable build currently shows the player two
+  things the fight does not do.
+
+  Nothing invented may ship. If a placeholder is unavoidable, label it in the
+  UI as a placeholder.
+
+  Remaining before publishing: replace the schedule with the real phase order
+  (see "THE REAL FIGHT"), and translate attacks that are actually selected.
 
 ## Assets
 
