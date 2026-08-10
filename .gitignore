@@ -1,0 +1,23 @@
+# Never commit original game data or anything extracted from it.
+# See CLAUDE.md, "Clean-room boundary". The pre-commit hook enforces this too.
+
+*.win
+game.ios
+*.unx
+*.audiogroup
+gml_dump/
+oracle/
+
+# Extracted assets
+*.png
+*.wav
+*.ogg
+*.mp3
+
+# GameMaker build output
+*.yyz
+/build/
+/output/
+
+# macOS
+.DS_Store

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+#
+# Clean-room guard for knight-sim.
+#
+# Decompiled GML from the original must never reach src/. This hook greps the
+# staged contents of src/ for original identifiers and hard-fails on a hit.
+#
+# If it fires: rewrite the code. Do not weaken the hook. Do not --no-verify.
+#
+# Install:  ln -sf ../../tools/pre-commit .git/hooks/pre-commit
+
+set -uo pipefail
+
+fail=0
+
+# ---------------------------------------------------------------------------
+# Original identifiers. Populate this as they are discovered from gml_dump/ —
+# object names, script names, global variable names lifted from the original.
+#
+# Matching is literal and whole-word, so entries should be bare identifiers:
+#   obj_heart
+#   scr_damage
+#   global.chapter
+# ---------------------------------------------------------------------------
+IDENTIFIERS=(
+)
+
+staged_src=$(git diff --cached --name-only --diff-filter=ACM -- src/)
+
+if [ -n "$staged_src" ] && [ ${#IDENTIFIERS[@]} -gt 0 ]; then
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    for id in "${IDENTIFIERS[@]}"; do
+      # Read the staged blob, not the working tree — they can differ.
+      if hits=$(git show ":$file" | grep -n -w -F -- "$id"); then
+        if [ "$fail" -eq 0 ]; then
+          echo "CLEAN-ROOM VIOLATION — original identifiers found in src/" >&2
+          echo >&2
+        fi
+        fail=1
+        while IFS= read -r hit; do
+          echo "  $file:${hit%%:*}  $id" >&2
+        done <<< "$hits"
+      fi
+    done
+  done <<< "$staged_src"
+fi
+
+# ---------------------------------------------------------------------------
+# Original game data must never be committed anywhere in this repo, regardless
+# of .gitignore (a `git add -f` bypasses that; this catches it).
+# ---------------------------------------------------------------------------
+forbidden=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E '(^|/)(data\.win|game\.ios|game\.unx)$|\.(win|unx|audiogroup)$|(^|/)(gml_dump|oracle)/' \
+  || true)
+
+if [ -n "$forbidden" ]; then
+  echo "FORBIDDEN FILES staged — original game data or decompiled source:" >&2
+  echo >&2
+  sed 's/^/  /' <<< "$forbidden" >&2
+  fail=1
+fi
+
+# Catch-all for extracted assets sneaking in by size.
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  size=$(git cat-file -s "$(git rev-parse ":$file")" 2>/dev/null || echo 0)
+  if [ "$size" -gt 5242880 ]; then
+    echo "OVERSIZED FILE staged: $file ($((size / 1048576)) MB)" >&2
+    echo "  Nothing in this repo should be that large. Extracted asset?" >&2
+    fail=1
+  fi
+done <<< "$(git diff --cached --name-only --diff-filter=ACM)"
+
+if [ "$fail" -ne 0 ]; then
+  echo >&2
+  echo "Commit refused. See CLAUDE.md, \"Clean-room boundary\"." >&2
+  exit 1
+fi
+
+if [ -n "$staged_src" ] && [ ${#IDENTIFIERS[@]} -eq 0 ]; then
+  echo "note: pre-commit identifier list is still empty — populate IDENTIFIERS"
+  echo "      in tools/pre-commit once the original object names are known."
+fi
+
+exit 0
