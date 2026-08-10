@@ -13,12 +13,25 @@
 //     interior spans world x 250..391 for the soul.
 //
 // Sampling model: a world pixel (wx,wy) tests a scaled mask by inverse
-// mapping, floor((w - left) / scale). For the steady battle box this is
-// exact: integer positions, integer scale. For fractional scales mid-grow
-// the real runtime's rasterization has rounding behaviour this model does
-// NOT reproduce (verified divergent at trace frames 0-3) — see CLAUDE.md,
-// "growth window". Do not trust this path below scale 2 without an oracle
-// diff.
+// mapping, floor((w - left) / scale).
+//
+// VALIDATED ENVELOPE — integer positions, integer scale, NO rotation.
+// That covers the steady battle box and everything T3/T4 verify. Outside it,
+// measured against the oracle (traces/t4-contact-hits.csv):
+//
+//   - Sub-pixel scale, axis-aligned: the real runtime registers NOTHING
+//     below scale 1.0. Measured on a 1px mask row at angle 0: yscale 0.1-0.9
+//     all miss, 1.0 and above all hit. This model instead predicts hits at
+//     certain sub-pixel offsets (2 of 20 in a y-sweep that produced 0 real
+//     hits), so it is OVER-PERMISSIVE here.
+//   - Rotation is not implemented at all, and it is decisive: the same 0.1-
+//     scaled mask HITS at 30/45/60/135 degrees and misses at 0 and 90. A
+//     diagonal thin line crosses integer sample rows; an axis-aligned one
+//     sits in a sub-pixel band and never does.
+//
+// Consequence: any attack that rotates its mask (most of them — the real
+// slash spawners all set image_angle = direction) needs a rotation-capable
+// test built and oracle-validated before it can be trusted.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

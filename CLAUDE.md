@@ -237,10 +237,44 @@ Definition of done for a piece: no divergence across 50 replays.
   NOT snap back).
 
   Unexercised, flagged: the damage path (Other_15 → scr_damage_all-lite).
-  At the tested spawn params the slash's 0.1-yscaled 1px line mask overlaps
-  no integer heart row (floor-sampling predicts it; oracle confirms no inv
-  reset). A contact scenario needs its own oracle run before the damage
-  translation counts as verified. Party hp[] bookkeeping is out of scope.
+  Party hp[] bookkeeping is out of scope. See the contact study below for
+  why it never fires in the verified scenario — and when it does.
+
+### Contact study: when does a slash actually connect?
+
+Measured directly by replacing `obj_roaringknight_slash`'s Other_15 with a
+recorder (no damage, so no Game Over) and sweeping spawn parameters. Raw
+results in `knight-research/traces/t4-contact-hits.csv`.
+
+| config | result |
+|---|---|
+| yscale 0.1-0.9, angle 0 | **miss** (9 of 9) |
+| yscale 1.0-5.0, angle 0 | **hit** (6 of 6) |
+| yscale 0.1, angle 30 / 45 / 60 / 135 | **hit** |
+| yscale 0.1, angle 0 / 90 | **miss** |
+| yscale 0.1, angle 0, y swept 0.00-0.95 in 0.05 steps | **miss** (20 of 20) |
+
+Two rules, both empirical:
+
+1. **An axis-aligned mask thinner than one pixel never registers.** The
+   threshold is exactly 1.0 — GameMaker does not inflate a degenerate scaled
+   mask to a whole pixel.
+2. **Rotation is decisive.** The same sub-pixel-thin mask connects at any
+   diagonal angle, because a tilted 500px line crosses integer sample rows,
+   while an axis-aligned one stays inside a sub-pixel band.
+
+So the slash is not broken and T4's "no hit" is not a bug: it was spawned
+axis-aligned. **Every real spawner sets `image_angle = direction`** with
+diagonal values (`obj_knight_roaring2` uses 117; `obj_knight_rotating_slash`
+distributes `360/(n*2)*a + offset + aim_direction`), and aims at
+`(obj_heart.x + 10, obj_heart.y + 10)` — dead centre on the soul. In the real
+fight these connect.
+
+**Blocking prerequisite for most remaining attacks:** `sim/masks.js` has no
+rotation support and is over-permissive at sub-pixel scale. A rotation-capable
+precise-mask test, oracle-validated against the table above, is needed before
+any rotated attack can be translated. That is the next piece of engine work,
+ahead of attacks 2..10.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
 ## Assets
