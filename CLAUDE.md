@@ -298,6 +298,35 @@ control, and is sabotage-tested.
 any entity whose mask rotates or scales. A field nothing looks at is a field
 that can diverge silently — that is how the f32 issue survived T3 and T4.
 
+## The soul-outside-the-box bug (root cause)
+
+Every oracle scenario that includes `obj_knight_enemy` must set
+`myattackchoice` to the attack being tested. One line in the knight's **End
+Step** is why:
+
+```gml
+if (scr_isphase("bullets") && myattackchoice == 0)
+    if (obj_heart.x > camerax() + 165) obj_heart.x = camerax() + 165;
+```
+
+A freshly created knight defaults to `myattackchoice = 0` (Swordslash, whose
+box sits at x 168), and any harness that forces `mnfight = 2` satisfies the
+phase test — so the knight drags the soul to x 165 EVERY FRAME. The knight was
+behaving correctly; nothing had told it which attack it was performing.
+
+Symptoms it produced, all of which look like different bugs:
+
+- the soul sitting outside the arena in every t7/t8 recording
+- a hand-placed soul "snapping back" the instant a pin was released
+- attacks locking onto a target outside the box
+- a 149px single-frame teleport with the SAME instance id
+
+T3-T6 never saw it because encounter 777 has no knight.
+
+**Cost of finding it: many game runs across several turns.** One
+`grep -rn 'obj_heart\.x *='` over the dump found it in seconds. The rule below
+exists because of this.
+
 ## Working method — learned the hard way
 
 Two failure modes cost most of a session each. Both are cheap to avoid.

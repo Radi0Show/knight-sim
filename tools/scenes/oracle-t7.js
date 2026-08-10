@@ -1,9 +1,14 @@
 // Attack 4 oracle-comparison scene: obj_knight_rotating_slash, against
 // knight-research/traces/t7-rotating.csv.
 //
-// Mirrors the oracle: soul frozen at (165,160), box at (320,170), and the
-// attack created at trace frame 61 (the controller spawns it at 60, and it
-// appears the frame after).
+// Mirrors the oracle: soul at (314,162) — the CENTRE of the box, where the
+// tester places it — box at (320,170), attack created at trace frame 61.
+//
+// The earlier version of this scene used soul (165,160), outside the arena.
+// That was not a modelling choice: obj_knight_enemy's End Step drags the soul
+// to x=165 whenever myattackchoice == 0 (Swordslash, whose box sits at x 168),
+// and a freshly created knight defaults to 0. The oracle patch now tells the
+// knight which attack it is performing, so the soul stays where it belongs.
 //
 // TWO recorded inputs, both documented deviations rather than translation:
 //
@@ -35,12 +40,16 @@ import { real, int } from '../../sim/trace.js';
 // direction and easing of `rotation`, lock-on, fan angle generation, and slash
 // spawn cadence. Extending it needs an oracle run where the soul is pinned for
 // the whole attack.
-export const T7_WINDOW = { from: 62, to: 118 };
+// 62..281 covers SIX complete intro/aim/slash/cooldown cycles, including the
+// per-cycle shortening of the aim phase. At 282 the oracle enters its "return"
+// state — the attack's wind-down, which involves delayed scripts, alarms and
+// the aim_type 2 finale, and is not translated.
+export const T7_WINDOW = { from: 62, to: 281 };
 const SPAWN_FRAME = 61;
 
 // Recorded from the oracle. `spin` is re-rolled by choose() on every entry
 // into the aim state, so the whole sequence is replayed, not just the first.
-const SPIN_SEQUENCE = [-1, -1, -1, 1, -1, -1, 1];
+const SPIN_SEQUENCE = [-1, -1, -1, 1, -1, -1, -1];
 const RANDOM_OFFSET = 5;
 const ANGLE_LISTS = [
   [-160],
@@ -48,7 +57,7 @@ const ANGLE_LISTS = [
   [-72, -162],
   [-249, -309, -189],
   [-456, -396, -336],
-  [-174, -264, -309, -219],
+  [-603, -558, -468, -513],
 ];
 
 const spawner = {
@@ -83,7 +92,7 @@ export function buildOracleT7Scene(state) {
   state.angleIndex = 0;
 
   spawn(state, battlebox, { x: 320, y: 170 });
-  state.soul = spawn(state, soul, { x: 165, y: 160 });
+  state.soul = spawn(state, soul, { x: 314, y: 162 });
   state.soul.canmove = 0; // frozen, as in the oracle run
   spawn(state, spawner);
 

@@ -95,6 +95,7 @@ export const rotatingSlash = {
     e.movebox_y = 60;
     e.do_final = true;
     e.turn_limit_4 = 270;
+    e.slashes_done = false;
     e.done = false;
   },
 
@@ -201,6 +202,18 @@ export const rotatingSlash = {
         e.slash_counter += 1;
         if (e.slash_counter < e.slash_array.length) {
           e.slash_number = e.slash_array[e.slash_counter];
+          // The aim phase SHORTENS each cycle: slash_offset collapses to 0 in
+          // one step and slash_base creeps toward 15. Aim exits at
+          // slash_base + 6 + slash_offset, so cycle 1 lasts 30 frames
+          // (18+6+6) and cycle 2 only 23 (17+6+0). Missing these two lines is
+          // why the second cycle diverged.
+          e.slash_offset = scrApproach(e.slash_offset, 0, 6);
+          e.slash_base = scrApproach(e.slash_base, 15, 1);
+        }
+
+        if (e.local_turntimer < 200 && !e.slashes_done) {
+          e.slashes_done = true;
+          e.local_turntimer = 99999;
         }
 
         if (e.aim_type < 2) {
