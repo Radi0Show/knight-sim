@@ -40,6 +40,12 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     sp: 4, // global.sp — base soul speed
     heartx: 0, // global.heartx
     hearty: 0, // global.hearty
+    invc: 1, // global.invc — invincibility multiplier (inv resets to invc*30)
+
+    // Recorded choose() outcomes for RNG replay (CLAUDE.md RNG policy).
+    // Scenes provide the table; translated code consumes it in call order.
+    chooseTable: null,
+    chooseIndex: 0,
 
     // Battle phase — which part of the fight is running. This is the `phase`
     // column in the trace. Scenes own it; the skeleton never writes it.

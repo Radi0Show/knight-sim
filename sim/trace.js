@@ -27,6 +27,9 @@ export function traceHeader(state) {
   for (let i = 0; i < state.traceBulletSlots; i++) {
     cols.push(`b${i}_x`, `b${i}_y`);
   }
+  // Scene-defined extra columns (state.traceExtraHeader / state.traceExtra),
+  // for mirroring oracle traces that carry attack state.
+  if (state.traceExtraHeader) cols.push(...state.traceExtraHeader);
   return cols.join(',');
 }
 
@@ -55,6 +58,8 @@ export function traceRow(state) {
     const b = bullets[i];
     cells.push(b ? real(b.x) : '', b ? real(b.y) : '');
   }
+
+  if (state.traceExtra) cells.push(...state.traceExtra(state));
 
   return cells.join(',');
 }

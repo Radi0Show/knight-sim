@@ -24,6 +24,10 @@ export const battlebox = {
     e.mask = BATTLEBG_MASK;
     e.keep = 0;
     e.megakeep = 0;
+    // GML built-ins: creation position. The slash's box jitter re-bases off
+    // these every frame (x = xstart + choose(...)), it does not accumulate.
+    e.xstart = e.x;
+    e.ystart = e.y;
   },
 
   // obj_growtangle End Step: while the box is MOVING (path_speed or speed

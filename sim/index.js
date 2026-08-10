@@ -17,15 +17,36 @@ export { FPS, MS_PER_FRAME, drain } from './clock.js';
 /**
  * Phase order for one frame. Rule 5 — this is the whole point of the module.
  *
- * GameMaker's order is Begin Step, then Alarms, then Step, then End Step.
- * Collapsing any two of these, or turning an alarm into a countdown checked
- * inside Step, moves behaviour by exactly one frame.
+ * GameMaker's order is Begin Step, then Alarms, then Step, then Collision
+ * events, then End Step. Collapsing any two of these, or turning an alarm
+ * into a countdown checked inside Step, moves behaviour by exactly one frame.
  *
  * Concretely: `scr_heartclamp` is called from obj_roaringknight_slash's End
  * Step, after obj_heart's Step has already moved and collision-resolved the
  * soul. Run the clamp in Step and the soul sits somewhere else for a frame.
+ * And a bullet hit registers in the heart's Collision event (which just does
+ * `with (other) event_user(5)`) — after the move, before the clamp.
  */
-export const PHASES = ['beginStep', 'alarm', 'step', 'endStep'];
+export const PHASES = ['beginStep', 'alarm', 'step', 'collision', 'endStep'];
+
+/**
+ * The heart's Collision_obj_collidebullet event, generalised: for each live
+ * bullet whose mask is still on, an overlap with the soul's mask fires the
+ * bullet's User Event 5 (`other15`). Bullets opt in via isBullet + a mask.
+ */
+function runCollisions(state) {
+  state.eventPhase = 'collision';
+  const heart = state.soul;
+  if (!heart || !heart.alive) return;
+
+  for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
+    if (!b.alive || !b.isBullet || !b.type.other15) continue;
+    if (b.maskOff) continue; // mask_index = spr_nomask
+    if (b.collides && b.collides(b, heart, state)) {
+      b.type.other15(b, state);
+    }
+  }
+}
 
 /**
  * Advance exactly one frame.
@@ -39,6 +60,7 @@ export function stepFrame(state, input) {
   runPhase(state, 'beginStep');
   runAlarms(state);
   runPhase(state, 'step');
+  runCollisions(state);
   runPhase(state, 'endStep');
 
   // Destroyed entities disappear before the row is written, matching GML
