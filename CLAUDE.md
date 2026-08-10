@@ -178,9 +178,31 @@ Definition of done for a piece: no divergence across 50 replays.
   destroy churn. A stub that only moved at a constant rate would pass while
   proving nothing, so the acceptance run also asserts that a *different* seed
   produces a *different* trace — otherwise the test would be vacuous.
-- **T3 — Soul movement.** Translate from `obj_heart`'s Step event. Constants are
-  already measured (see Open questions). Acceptance: hold-right-into-wall trace
-  matches the oracle exactly.
+- **T3 — Soul movement. TRANSLATED, ACCEPTANCE BLOCKED.** `sim/soul.js` is a
+  line-for-line translation of `obj_heart` Create + Step lines 1-242, in source
+  order. Scenes `soul-wall`, `soul-focus`, `soul-corner` in `tools/scenes/`.
+
+  It behaves as the source predicts — 4 px/frame, stops at x=620 (`640 -
+  sprite_width`), corner clamps both axes independently, focus drops it to
+  2 px/frame on exactly the frame focus is pressed. All three scenes are
+  byte-identical across 10 runs and across processes.
+
+  **This is not T3 done.** The acceptance criterion is "matches the oracle
+  exactly", and there is no oracle. Self-consistency proves the skeleton is
+  deterministic, not that the translation is right. Everything above could be
+  confidently wrong in the same way ten times.
+
+  Geometry, measured from the data file rather than assumed:
+
+  | thing | value |
+  |---|---|
+  | `obj_heart` sprite | `spr_dodgeheart` 20x20, origin (0,0) |
+  | mask | `spr_dodgeheartmask` 20x20, AxisAlignedRect |
+  | `obj_growtangle` sprite | `spr_battlebg_0` 75x75, origin (37,37) — centred |
+  | `obj_battlesolid` sprite | **none on the object** — masks are assigned per instance at runtime |
+
+  Since the box origin is centred, `scr_get_box` returning `x ± sprite_width *
+  0.5` is edge geometry scaled by `image_xscale`, not a fixed rectangle.
 - **T4 — One attack, end to end.** Establishes the per-attack pipeline.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
@@ -199,7 +221,10 @@ Do not commit the data file, the GML dump, or the oracle.
 - [x] GEN8 game speed: **30.0**, read from the GMS2 tail of the GEN8 chunk.
 - [x] Soul object name: **`obj_heart`**
 - [x] Base soul speed constant: **4**, as `global.sp`, copied into the instance
-      variable `wspeed` at Create.
+      variable `wspeed` at Create. **The yellow soul is 5** — `wspeed = 5` is
+      assigned when `color == 1`, at the *end* of Step, so it takes effect from
+      the following frame. The frame that turns the soul yellow still moves at
+      4. Any "soul speed is 4" statement is incomplete without this.
 - [x] Diagonals normalized? **No.** Measured, not assumed: the two axes are set
       independently to +/- `wspeed`, with no `sqrt`, `lengthdir`, or 0.707 factor
       anywhere in the Step event. A diagonal moves 4 on both axes, so diagonal
@@ -239,3 +264,24 @@ Attack objects by size, for planning:
 ```
 
 Bullets need a spawner, so the small ones are not standalone candidates.
+
+## Known-unverified, in priority order
+
+Things the code currently assumes that only the oracle can settle. Each is a
+plausible source of a first divergence.
+
+1. **Collision bbox semantics** (`sim/collision.js`). GameMaker bounding boxes
+   are inclusive integer ranges and instance positions are floored before the
+   test; we use a half-open float AABB. These agree while the soul sits on
+   integer positions — which is every frame at speed 4 — and disagree the
+   instant a sub-pixel position reaches `place_meeting`. Any attack that pushes
+   or pulls the soul will hit this.
+2. **Mid-phase spawns** (`sim/entity.js`). We freeze the entity list at the
+   start of each phase, so an entity spawned during Step does not run its own
+   Step that frame. Real GameMaker depends on processing order. Unobservable
+   until an attack spawns bullets mid-Step.
+3. **Negative zero in the trace** (`sim/trace.js`). JS `(-0).toFixed(10)` is
+   `"0.0000000000"`. If GML's `string_format` emits `"-0.0000000000"`, that is a
+   one-cell false divergence with an obvious fix.
+4. **`obj_battlesolid` masks.** The object has no sprite; instances are given
+   one at runtime. Until we know what, solid geometry in `sim/` is a stand-in.

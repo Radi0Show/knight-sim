@@ -14,45 +14,53 @@ import { runTrace } from './run-trace.mjs';
 const RUNS = 10;
 const SEED = 12345;
 const FRAMES = 600;
+const SCENES = ['stub', 'soul-wall', 'soul-focus', 'soul-corner'];
 
 const hash = (s) => createHash('sha256').update(s).digest('hex');
 
 function main() {
   let failed = false;
 
-  const baseline = runTrace({ seed: SEED, frames: FRAMES });
-  const baselineHash = hash(baseline);
-  const rows = baseline.trimEnd().split('\n').length - 1;
+  for (const scene of SCENES) {
+    const baseline = runTrace({ seed: SEED, frames: FRAMES, scene });
+    const baselineHash = hash(baseline);
+    const rows = baseline.trimEnd().split('\n').length - 1;
 
-  console.log(`stub scene: seed=${SEED} frames=${FRAMES} rows=${rows}`);
-  console.log(`baseline sha256 ${baselineHash}`);
-  console.log('');
+    let sceneOk = true;
+    for (let i = 2; i <= RUNS; i++) {
+      if (hash(runTrace({ seed: SEED, frames: FRAMES, scene })) !== baselineHash) {
+        sceneOk = false;
+      }
+    }
+    if (!sceneOk) failed = true;
 
-  for (let i = 2; i <= RUNS; i++) {
-    const h = hash(runTrace({ seed: SEED, frames: FRAMES }));
-    const ok = h === baselineHash;
-    if (!ok) failed = true;
-    console.log(`  run ${String(i).padStart(2)}/${RUNS}  ${ok ? 'identical' : 'DIFFERS  ' + h}`);
+    console.log(
+      `${sceneOk ? 'PASS' : 'FAIL'}  ${scene.padEnd(12)} ` +
+        `${RUNS}/${RUNS} runs  ${rows} frames  ${baselineHash.slice(0, 16)}`,
+    );
   }
 
   console.log('');
 
-  // Negative control: the PRNG must actually be reaching the output.
-  const other = hash(runTrace({ seed: SEED + 1, frames: FRAMES }));
-  if (other === baselineHash) {
+  // Negative control, stub scene only — it is the one that consumes the PRNG.
+  // Without this, "deterministic" could just mean the PRNG is never reached,
+  // which would pass while proving nothing.
+  const a = hash(runTrace({ seed: SEED, frames: FRAMES, scene: 'stub' }));
+  const b = hash(runTrace({ seed: SEED + 1, frames: FRAMES, scene: 'stub' }));
+  if (a === b) {
     failed = true;
-    console.log('  FAIL  a different seed produced an identical trace —');
-    console.log('        the PRNG is not influencing the output, so this test is vacuous');
+    console.log('FAIL  a different seed produced an identical trace —');
+    console.log('      the PRNG is not influencing the output, so this test is vacuous');
   } else {
-    console.log('  seed sensitivity: a different seed changes the trace   OK');
+    console.log('PASS  seed sensitivity: a different seed changes the trace');
   }
 
   console.log('');
   if (failed) {
-    console.log(`FAIL  ${RUNS} runs were not byte-identical`);
+    console.log('FAILED');
     process.exit(1);
   }
-  console.log(`PASS  ${RUNS}/${RUNS} runs byte-identical`);
+  console.log(`All scenes byte-identical across ${RUNS} runs.`);
 }
 
 main();

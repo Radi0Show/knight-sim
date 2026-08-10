@@ -33,6 +33,14 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     hp: 0,
     invTimer: 0,
 
+    // GML globals the translated code reads. Named for what they are, with the
+    // original in a comment so a grep of the dump still finds the connection.
+    view: { x: 0, y: 0 }, // __view_get(e__VW.XView/YView, 0)
+    flag22: 0, // global.flag[22] — when set, focus-slow is disabled entirely
+    sp: 4, // global.sp — base soul speed
+    heartx: 0, // global.heartx
+    hearty: 0, // global.hearty
+
     // Battle phase — which part of the fight is running. This is the `phase`
     // column in the trace. Scenes own it; the skeleton never writes it.
     phase: 'none',

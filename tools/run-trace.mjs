@@ -11,6 +11,12 @@ import { dirname } from 'node:path';
 import { createState, stepFrame, traceHeader } from '../sim/index.js';
 import { makeInputTable } from '../input/state.js';
 import { buildStubScene } from './scenes/stub.js';
+import {
+  buildSoulWallScene,
+  HOLD_RIGHT,
+  HOLD_RIGHT_THEN_FOCUS,
+  DIAGONAL_INTO_CORNER,
+} from './scenes/soul-wall.js';
 
 function parseArgs(argv) {
   const args = { seed: 12345, frames: 600, out: null, scene: 'stub' };
@@ -37,13 +43,23 @@ const INPUT_PROGRAM = [
   { from: 240, right: true },
 ];
 
+const SCENES = {
+  stub: { build: buildStubScene, input: INPUT_PROGRAM, bulletSlots: 4 },
+  'soul-wall': { build: buildSoulWallScene, input: HOLD_RIGHT, bulletSlots: 0 },
+  'soul-focus': { build: buildSoulWallScene, input: HOLD_RIGHT_THEN_FOCUS, bulletSlots: 0 },
+  'soul-corner': { build: buildSoulWallScene, input: DIAGONAL_INTO_CORNER, bulletSlots: 0 },
+};
+
 export function runTrace({ seed, frames, scene = 'stub' }) {
-  if (scene !== 'stub') throw new Error(`unknown scene: ${scene}`);
+  const chosen = SCENES[scene];
+  if (!chosen) {
+    throw new Error(`unknown scene: ${scene} (have: ${Object.keys(SCENES).join(', ')})`);
+  }
 
-  const state = createState({ seed, traceBulletSlots: 4 });
-  buildStubScene(state);
+  const state = createState({ seed, traceBulletSlots: chosen.bulletSlots });
+  chosen.build(state);
 
-  const inputAt = makeInputTable(INPUT_PROGRAM);
+  const inputAt = makeInputTable(chosen.input);
   const header = traceHeader(state);
 
   for (let i = 0; i < frames; i++) {
