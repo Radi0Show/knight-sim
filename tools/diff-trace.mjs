@@ -10,7 +10,8 @@
 import { readFileSync } from 'node:fs';
 
 function load(path) {
-  const lines = readFileSync(path, 'utf8').replace(/\n$/, '').split('\n');
+  // Oracle CSVs come from GML file_text_writeln, which emits CRLF.
+  const lines = readFileSync(path, 'utf8').replace(/\r/g, '').replace(/\n$/, '').split('\n');
   return { header: lines[0].split(','), rows: lines.slice(1) };
 }
 

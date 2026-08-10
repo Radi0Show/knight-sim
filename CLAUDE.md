@@ -178,31 +178,41 @@ Definition of done for a piece: no divergence across 50 replays.
   destroy churn. A stub that only moved at a constant rate would pass while
   proving nothing, so the acceptance run also asserts that a *different* seed
   produces a *different* trace — otherwise the test would be vacuous.
-- **T3 — Soul movement. TRANSLATED, ACCEPTANCE BLOCKED.** `sim/soul.js` is a
-  line-for-line translation of `obj_heart` Create + Step lines 1-242, in source
-  order. Scenes `soul-wall`, `soul-focus`, `soul-corner` in `tools/scenes/`.
+- **T3 — Soul movement. DONE — verified against the real game.**
+  `node tools/verify-t3.mjs` compares the `oracle-t3` scene against the
+  collected trace `knight-research/traces/t3-hold-right.csv`:
 
-  It behaves as the source predicts — 4 px/frame, stops at x=620 (`640 -
-  sprite_width`), corner clamps both axes independently, focus drops it to
-  2 px/frame on exactly the frame focus is pressed. All three scenes are
-  byte-identical across 10 runs and across processes.
+  ```
+  → full rows (pre-bullet): rows 4..49 match     OK
+  → soul position (full window): rows 4..193 match   OK
+  ```
 
-  **This is not T3 done.** The acceptance criterion is "matches the oracle
-  exactly", and there is no oracle. Self-consistency proves the skeleton is
-  deterministic, not that the translation is right. Everything above could be
-  confidently wrong in the same way ten times.
+  `sim/soul.js` is a line-for-line translation of `obj_heart` Create + Step;
+  `sim/masks.js` + `sim/collision.js` implement precise-mask `place_meeting`;
+  `sim/battlebox.js` is the steady-state box. Window rationale is documented
+  in `tools/scenes/oracle-t3.js`: rows 0-3 are the box grow-in (excluded, see
+  below), row 50+ has bullet hits from the tester's dummy enemy (inv column
+  only — position verified bullet-independent through row 193), row 194 is
+  the turn reset.
 
-  Geometry, measured from the data file rather than assumed:
+  Geometry and collision truth, all measured, all oracle-verified:
 
   | thing | value |
   |---|---|
-  | `obj_heart` sprite | `spr_dodgeheart` 20x20, origin (0,0) |
-  | mask | `spr_dodgeheartmask` 20x20, AxisAlignedRect |
-  | `obj_growtangle` sprite | `spr_battlebg_0` 75x75, origin (37,37) — centred |
-  | `obj_battlesolid` sprite | **none on the object** — masks are assigned per instance at runtime |
+  | `obj_heart` sprite | `spr_dodgeheart` 20x20, origin (0,0) — boundary clamps use this |
+  | `obj_heart` collision mask | `spr_dodgeheartmask`, **Precise, heart-shaped**, bbox [2,2]..[17,17] — NOT a rect |
+  | `obj_growtangle` parent | **`obj_battlesolid`** — the box IS the wall |
+  | box collision | `spr_battlebg_0` 75x75 hollow-ring precise mask, origin (37,37), drawn at image scale |
+  | wall rest position | x=374 at box (320,170) scale 2: soul's rightmost pixel x+17=391, ring border starts 392 |
 
-  Since the box origin is centred, `scr_get_box` returning `x ± sprite_width *
-  0.5` is edge geometry scaled by `image_xscale`, not a fixed rectangle.
+  **Growth-window exclusion (important):** during the box's 15-frame grow-in,
+  collision runs against a fractional-scale, *rotating* precise mask
+  (image_angle spins 180°→360°). Floor-sampling does not reproduce the real
+  rasterization (contradicts trace frame 0). `sim/masks.js` documents this;
+  nothing may rely on mid-grow collision without a dedicated oracle study.
+
+  The tester (`room_bullettest_new`, `obj_bullettester_new`) auto-creates the
+  battle: box at (320,170), heart at (314,162), dummy monster, turn timer 200.
 - **T4 — One attack, end to end.** Establishes the per-attack pipeline.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 

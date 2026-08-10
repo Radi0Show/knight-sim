@@ -17,6 +17,7 @@ import {
   HOLD_RIGHT_THEN_FOCUS,
   DIAGONAL_INTO_CORNER,
 } from './scenes/soul-wall.js';
+import { buildOracleT3Scene, ORACLE_T3_INPUT } from './scenes/oracle-t3.js';
 
 function parseArgs(argv) {
   const args = { seed: 12345, frames: 600, out: null, scene: 'stub' };
@@ -48,6 +49,7 @@ const SCENES = {
   'soul-wall': { build: buildSoulWallScene, input: HOLD_RIGHT, bulletSlots: 0 },
   'soul-focus': { build: buildSoulWallScene, input: HOLD_RIGHT_THEN_FOCUS, bulletSlots: 0 },
   'soul-corner': { build: buildSoulWallScene, input: DIAGONAL_INTO_CORNER, bulletSlots: 0 },
+  'oracle-t3': { build: buildOracleT3Scene, input: ORACLE_T3_INPUT, bulletSlots: 0 },
 };
 
 export function runTrace({ seed, frames, scene = 'stub' }) {

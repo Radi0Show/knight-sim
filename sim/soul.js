@@ -13,12 +13,14 @@
 // color == 1 — IS translated, including its position at the END of Step. That
 // placement matters: the new speed does not take effect until the next frame.
 
-import { placeMeetingSolid, SOUL_W, SOUL_H } from './collision.js';
+import { placeMeetingSolid } from './collision.js';
 
-// obj_heart's sprite is spr_dodgeheart, 20x20, origin (0,0). sprite_width and
-// sprite_height in the boundary clamps are therefore both 20.
-const SPRITE_WIDTH = SOUL_W;
-const SPRITE_HEIGHT = SOUL_H;
+// obj_heart's VISIBLE sprite is spr_dodgeheart, 20x20, origin (0,0) — so
+// sprite_width/sprite_height in the boundary clamps are both 20. Distinct
+// from the collision mask (spr_dodgeheartmask), which is heart-shaped and
+// inset; the boundary clamp uses the sprite, collision uses the mask.
+const SPRITE_WIDTH = 20;
+const SPRITE_HEIGHT = 20;
 
 export const soul = {
   name: 'obj_heart',

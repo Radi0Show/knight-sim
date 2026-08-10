@@ -1,25 +1,23 @@
-// GameMaker `place_meeting` against obj_battlesolid.
+// GameMaker `place_meeting` against obj_battlesolid, precise-mask edition.
 //
-// The soul's mask is spr_dodgeheartmask, 20x20, origin (0,0), SepMasks =
-// AxisAlignedRect — so the soul occupies a plain 20x20 box anchored at its
-// top-left. obj_battlesolid has *no* sprite on the object itself, so each
-// instance is given a mask at runtime; solids here carry explicit w/h.
+// What "solid" means here, learned from the oracle (see CLAUDE.md):
+// obj_growtangle's parent object IS obj_battlesolid, so the battle box itself
+// is the wall — place_meeting collides the soul's heart-shaped mask against
+// the box sprite's hollow-ring mask. There is no separate wall object in the
+// bullettest scenario, and none in the room.
 //
-// UNVERIFIED, and the most likely source of the first T3 divergence: GameMaker
-// bounding boxes are inclusive integer ranges (bbox L0 R19 means columns 0..19,
-// i.e. 20 px), and it floors instance positions before testing. This
-// implementation uses a half-open float AABB instead. They agree on integer
-// positions, which is all the soul ever occupies while walking at speed 4 — but
-// they will disagree the moment a sub-pixel position reaches the test. Settle
-// it against the oracle before trusting any attack that pushes the soul.
+// An entity participates as a solid by carrying:
+//   isSolid: true, mask: <mask from masks.js>, xscale, yscale
+// with x/y as its origin position (box origin is centred, 37,37).
 
-export const SOUL_W = 20;
-export const SOUL_H = 20;
+import { HEART_MASK, masksOverlap } from './masks.js';
 
-export function placeMeetingSolid(state, x, y, w = SOUL_W, h = SOUL_H) {
+export { HEART_MASK };
+
+export function placeMeetingSolid(state, x, y) {
   for (const o of state.entities) {
-    if (!o.alive || !o.isSolid) continue;
-    if (x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y) {
+    if (!o.alive || !o.isSolid || !o.mask) continue;
+    if (masksOverlap(HEART_MASK, x, y, o.mask, o.x, o.y, o.xscale, o.yscale)) {
       return true;
     }
   }
