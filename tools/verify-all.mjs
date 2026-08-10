@@ -23,6 +23,7 @@ const SUITES = [
   ['verify-splitter.mjs', 'box splitter organism'],
   ['verify-rotating.mjs', 'rotatingslash — ac 5, every phase'],
   ['verify-stars.mjs', 'Stars cone — ac 1, opens every phase'],
+  ['verify-star-population.mjs', 'Stars spawn cadence + star lifecycle'],
   ['verify-determinism.mjs', 'byte-identical across 10 runs'],
 ];
 

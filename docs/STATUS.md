@@ -28,7 +28,7 @@ Expected: **All 10 suites green.** If not, stop and fix before adding anything.
 | ac | name | status |
 |---:|---|---|
 | 5 | **rotatingslash** | VERIFIED, 220 frames / 6 cycles. Ends before the `return` wind-down (untranslated). |
-| 1 | **Stars** | Cone VERIFIED, 210 frames incl. soul squeeze. Star bullets NOT translated. |
+| 1 | **Stars** | Cone VERIFIED (210 frames incl. soul squeeze). Star bullets translated; spawn cadence + lifecycle VERIFIED (rows 95-169). Fire-phase knockback NOT verified. |
 | — | `obj_roaringknight_slash` | VERIFIED row-exact — used BY rotatingslash. |
 | — | split_growtangle organism | VERIFIED row-exact — reached from rotatingslash + combinationattack. |
 | — | fountain bullets | Verified but **unreachable in the fight**; engine value only. |
@@ -36,32 +36,32 @@ Expected: **All 10 suites green.** If not, stop and fix before adding anything.
 
 ## Immediate next step
 
-**Translate `obj_knight_pointing_star`** to finish Stars.
+**Finish Stars' fire phase.** The star bullet is translated
+(`sim/attacks/pointing-star.js`) and its accumulation phase is verified exactly
+(star count matches rows 95-169, peak 16 alive). Two things remain, both with a
+known first-divergence frame:
 
-Everything needed is already recorded — `knight-research/traces/t9-star.csv`
-holds the full lifecycle now that the turntimer pin is gone:
+**1. Per-star launch parameters (diverges f170).** Each real star gets an
+RNG-derived `direction`/`speed` from `random_range`/`sin(random(1))`, so they
+exit the view at staggered times; `oracle-t9.js` launches them uniformly, so
+the population curve drifts once early leavers would have gone. Fix: extend the
+oracle patch to log every star's spawn `direction`/`speed`, then replay them
+(same pattern as the rotatingslash fan angles).
 
-```
-f73   cone appears            f197  stars FIRE (turntimer hit endtimer 120)
-f123  5 stars accumulating    f253  first star bursts
-f178  18 stars — peak         f298  box 320→231, soul squeezed 314→225
-```
+**2. Fire-phase knockback (diverges f197).** At the fire moment the cone sets
+`knockback = 10` and then, for ~20 frames,
+`gt_x -= scr_ease_in(knockback/10, 5) * 10` with `knockback` walking to 0 by
+0.5. Oracle box reads 260 at f197 where the sim reads 269. The translation is
+in `pointing-cone.js`; it needs checking against the trace frame by frame.
 
-The star's shape (`gml_Object_obj_knight_pointing_star_Step_0.gml`, 126 lines):
+Both are bounded and have ground truth already recorded in
+`knight-research/traces/t9-star.csv`.
 
-- `con 0` — grows, `image_xscale += growspeed (0.02)`
-- `con 1` — `friction = 0.5`, immediately `con++`
-- `con 2` — mask on; if `speed == 0` then `gravity = 0.1`,
-  `gravity_direction = direction - 180`, `friction = 0`; after 40 frames `con++`
-- `con 3` — scales up; at `timer == 3` spawns 6 `obj_knight_pointing_starchild`
-  in a fan; at `timer >= 4` destroys itself
+**After that:** `obj_knight_pointing_starchild` — a 148-line tracking bullet
+homing on `obj_heart_follower`, spawned 6 per star at burst. Separate unit.
 
-The cone flips every live star `con 0 → 1` at once, in its
-`turntimer <= endtimer` branch — that is the "fire" moment.
-
-**Scope note:** `obj_knight_pointing_starchild` is a 148-line tracking bullet
-that homes on `obj_heart_follower`. Treat it as a separate unit; the star
-itself is the primary threat and is worth landing on its own.
+**Then:** the rest of the roster. `Flurry` (ac 2, type 99) is third in every
+phase and is the natural next attack.
 
 ## Known gaps, stated honestly
 

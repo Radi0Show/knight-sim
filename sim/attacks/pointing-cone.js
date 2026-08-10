@@ -78,6 +78,23 @@ export const pointingCone = {
     if (e.con < 2) return;
 
     if (state.turntimer <= e.endtimer) {
+      // FIRE. On the first frame of the closing branch angle_lerp is still 1,
+      // so every live star is flipped con 0 -> 1 at once. This is the moment
+      // the attack turns from "accumulating" to "incoming".
+      if (e.angle_lerp === 1) {
+        let count = 0;
+        for (const s of state.entities) {
+          if (s.alive && s.type.name === 'obj_knight_pointing_star') {
+            s.con = 1;
+            // The original staggers each star by `timer = -i` so they fire in
+            // a ripple rather than simultaneously.
+            s.timer = -count;
+            count += 1;
+          }
+        }
+        e.knockback = 10;
+      }
+
       // Closing: the angle eases back down.
       if (e.angle_lerp === 0 && e.con < 3) {
         e.timer = 10;
