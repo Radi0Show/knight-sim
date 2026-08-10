@@ -44,6 +44,12 @@ let fps = 0;
 
 const hud = document.getElementById('hud');
 
+// Shown to the player, not decoration: this scene contains a faithfully
+// translated attack that the real fight never selects, so it must not be
+// mistaken for practice against the real thing. See CLAUDE.md, "THE REAL
+// FIGHT". Nothing invented ships; anything unrepresentative is labelled here.
+const SANDBOX_NOTE = 'SANDBOX — engine demo, not the real fight sequence';
+
 function reset() {
   state = createState({ seed: (Math.floor(performance.now()) % 100000) + 1, traceBulletSlots: 0 });
   buildPracticeScene(state, { seed: state.seed });
@@ -75,10 +81,14 @@ function frame(now) {
     simFrames = 0;
     lastFpsSample = now;
   }
-  hud.textContent =
-    `frame ${state.frame}   sim ${fps}/30 Hz   hits ${state.counters.collisionHits}` +
-    `   sprites ${renderer.spriteCount}` +
-    `   ${running ? '' : '[PAUSED] '}arrows/WASD move · shift focus · R reset · P pause`;
+  // The sandbox label is not decoration: this scene shows a faithfully
+  // translated attack that the real fight never selects. Nothing invented
+  // ships, and anything unrepresentative is labelled where the player sees it.
+  hud.innerHTML =
+    `<b style="color:#e0a">${SANDBOX_NOTE}</b><br>` +
+    `frame ${state.frame} · sim ${fps}/30 Hz · hits ${state.counters.collisionHits}` +
+    ` · sprites ${renderer.spriteCount}` +
+    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · shift focus · R reset · P pause`;
 
   requestAnimationFrame(frame);
 }

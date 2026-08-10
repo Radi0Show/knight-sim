@@ -563,22 +563,21 @@ combinations get an oracle spot-check as part of their translation.
   not drawn while the box is parked offscreen during a split, and the slash
   renders as a line rather than the original's tapering wedge.
 
-  **FABRICATED CONTENT — must be removed before publishing.**
-  `sim/scenes/practice.js` contains `fountainWave()`: 12 bullets in a row with
-  a gap. **I invented it.** Nothing like it exists in the fight, and the
-  fountain bullet is unreachable content besides. It was written to have
-  something dodgeable on screen and sits next to genuinely verified work,
-  which makes it look equally trustworthy. It is not.
+  **Fabricated content: REMOVED.** `practice.js` used to contain
+  `fountainWave()` — 12 bullets in a row with a gap, which I invented and
+  which exists nowhere in the fight. Deleted, along with its dead fountain
+  import.
 
-  The splitter in that scene is real code but is `underboxattack`, which the
-  selector never picks. So the playable build currently shows the player two
-  things the fight does not do.
+  What remains is the box splitter: faithfully translated and row-exact, but
+  `underboxattack` (ac=6), which the selector never picks. So the scene is an
+  **engine sandbox**, and the HUD says so in the player's view
+  (`SANDBOX_NOTE`). Rule: nothing invented ships, and anything
+  unrepresentative is labelled where the player will see it.
 
-  Nothing invented may ship. If a placeholder is unavoidable, label it in the
-  UI as a placeholder.
-
-  Remaining before publishing: replace the schedule with the real phase order
-  (see "THE REAL FIGHT"), and translate attacks that are actually selected.
+  Remaining before this is a practice tool for the real fight: translate
+  attacks the selector actually chooses, then rebuild the schedule on the real
+  phase order (see "THE REAL FIGHT"). Every one dispatches through
+  `obj_dbulletcontroller` by `type`, so the controller is the next target.
 
 ## Assets
 

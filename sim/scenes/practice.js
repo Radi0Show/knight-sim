@@ -12,8 +12,7 @@ import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox } from '../battlebox.js';
 import { splitGrowtangle } from '../attacks/split-growtangle.js';
-import { fountainBullet } from '../attacks/fountain-bullet.js';
-import { gmlCreate, gmlIrandomRange } from '../rng.js';
+import { gmlCreate } from '../rng.js';
 
 const BOX = { x: 320, y: 170 };
 const SOUL_START = { x: 314, y: 162 };
@@ -41,24 +40,28 @@ function makeSplitter(state, opts) {
   return sg;
 }
 
-/** A wall of fountain bullets rising from below, with a gap to dodge into. */
-function fountainWave(state, gapIndex) {
-  const left = BOX.x - 66;
-  for (let i = 0; i < 12; i++) {
-    if (i === gapIndex || i === gapIndex + 1) continue;
-    const b = spawn(state, fountainBullet, { x: left + i * 12, y: BOX.y + 120 });
-    b.speed = 0;
-    b.top_speed = 3;
-    b.direction = 90;
-  }
-}
+// SANDBOX SCHEDULE — NOT the real fight.
+//
+// The fabricated "fountain wave" that used to live here has been deleted: I
+// invented it, and nothing like it exists in the Knight fight. See CLAUDE.md,
+// "THE REAL FIGHT".
+//
+// What remains is the box splitter, which IS faithfully translated and passes
+// a row-exact oracle diff — but is `underboxattack` (ac=6), which the fight's
+// selector never chooses. So this scene is an ENGINE SANDBOX, and it says so
+// in the HUD. It is not a practice tool for the real fight yet.
+//
+// The real phase-1 order, for when these are translated:
+//   1 Stars · 11 tracking · 2 Flurry · 13 swordtunnel · 5 rotatingslash
+//   12 diagonal · 16 tracking16 · 17 tracking17 · 7 combination
+// All dispatch through obj_dbulletcontroller by `type`; parameters are
+// tabulated in CLAUDE.md.
+export const IS_SANDBOX = true;
+export const SANDBOX_NOTE = 'SANDBOX — engine demo, not the real fight sequence';
 
-// Attack schedule, in frames. Kept sparse enough to be dodgeable.
 const SCHEDULE = [
   { at: 60, kind: 'split', vertical: false },
-  { at: 170, kind: 'fountain' },
-  { at: 250, kind: 'split', vertical: true },
-  { at: 360, kind: 'fountain' },
+  { at: 260, kind: 'split', vertical: true },
 ];
 const LOOP_LENGTH = 460;
 
@@ -80,8 +83,6 @@ const director = {
           (x) => x.alive && x.type.name === 'obj_knight_split_growtangle',
         );
         if (!alreadySplitting) makeSplitter(state, { vertical: ev.vertical });
-      } else {
-        fountainWave(state, gmlIrandomRange(state.gmlRng, 0, 9));
       }
     }
 
