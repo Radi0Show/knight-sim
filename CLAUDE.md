@@ -155,9 +155,28 @@ still in use; only their status as *attacks* is retracted.
   `_backup` variants, which have **zero creators anywhere in the dump**.
   Proved: the regularbullet base, built-in motion, f32 positions, the damage
   path.
-- **Box splitter** (`obj_roaringknight_boxsplitter_attack`, ac=6
-  "underboxattack") — the selector never picks it. Proved: friction, the
-  collision phase, seed-locked RNG, `scr_heartclamp`, precise-mask contact.
+- ~~**Box splitter** — the selector never picks it.~~ **WRONG — retracted.**
+  The cut-box organism IS in the fight. I checked one creator and stopped.
+  `obj_knight_split_growtangle` has two paths in, and only the first is dead:
+
+  ```
+  obj_knight_split_growtangle
+    <- obj_roaringknight_splitslash      <- boxsplitter_attack (ac 6, UNUSED)
+    <- obj_roaringknight_quickslash_big  <- obj_roaringknight_quickslash_attack
+                                            <- obj_knight_combinations   (ac 7, USED)
+                                            <- obj_knight_rotating_slash (ac 5, USED)
+  ```
+
+  `rotatingslash` (ac 5) runs in EVERY phase and `combinationattack` (ac 7)
+  closes phase 1, so `sim/attacks/split-growtangle.js` is verified work that
+  the real fight actually uses.
+
+  Only `obj_roaringknight_boxsplitter_attack` itself (the ac 6 wrapper) is
+  unreachable — it is created solely by `dc.type = 106`.
+
+  **The recurring mistake:** tracing one creator, or reading the dispatch
+  table instead of the selector, and concluding "unused". Trace EVERY creator
+  to a selector-reachable root before calling anything dead.
 
 ## Architecture
 
@@ -222,6 +241,39 @@ seed-reset in the oracle patch. Dead code note: `obj_knight_split_growtangle`
 Other_12/13 (the fountain walls) are never invoked — no knight code calls
 event_user(2)/(3); fountains in the current fight come from the _vertical /
 _backup variants used elsewhere.
+
+## ds_list_shuffle — measured, not solved
+
+`obj_knight_rotating_slash` picks its slash angles with `ds_list_shuffle`, and
+`obj_knight_combinations` shuffles its attack order the same way. Probed the
+same way as the RNG (`oracle_shuffle_probe.csx`, `traces/shuffle-probe.csv`:
+3 list sizes x 6 seeds).
+
+**What is established:** the shuffle consumes **exactly 16 u32 draws per list
+element**, constant across seeds — 64 for n=4, 96 for n=6, 208 for n=13. 16 is
+the WELL512 state size, so it advances one full state pass per element. The
+draw-count model is confirmed against a zero-draw control (6/6).
+
+**What is NOT established:** the algorithm. A search over which draw in each
+16-block is used x forward/backward x six index formulas peaked at 3/18 — chance
+level. Do not assume Fisher-Yates.
+
+**Practical consequence — and why this is not blocking.** The shuffle is random
+per playthrough in the real game, so matching one particular seed's order is
+not required for the tool to be authentic; it is only required for *verifying*
+a translation. So:
+
+- Translate the shuffle with our own `gmlRng` Fisher-Yates. Statistically
+  equivalent, not bit-identical.
+- For the oracle diff, patch the ORACLE to use a fixed order (skip the
+  shuffle) so both sides are deterministic. That pins the mechanics — angles,
+  timing, spawn geometry, slash behaviour — which is what actually matters.
+- Label any attack verified this way as "mechanics verified, shuffle order
+  not bit-exact" so the distinction is never lost.
+
+If bit-exactness is ever needed, the next step is disassembling the runner's
+shuffle rather than more black-box probing; 18 samples were not enough and
+more of the same will not help.
 
 ## Float32 built-ins
 
