@@ -68,6 +68,11 @@ export function regularbulletStep(e, state) {
 
 /** obj_collidebullet Other_15 — the default damage handler. */
 export function collidebulletOther15(e, state) {
+  // Oracle parity: when the patched game replaces this handler with a
+  // recorder, contact is counted but nothing else happens. See
+  // state.damageEnabled.
+  if (!state.damageEnabled) return;
+
   if (e.active === 1 || e.active === true) {
     // target != 3 -> scr_damage(); target == 3 -> scr_damage_all().
     // Identical observable at this altitude: inv gate and reset.

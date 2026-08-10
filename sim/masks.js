@@ -62,6 +62,7 @@ function build(m) {
 export const HEART_MASK = build(raw.heart);
 export const BATTLEBG_MASK = build(raw.battlebg);
 export const FOUNTAIN_MASK = build(raw.fountain);
+export const TOOTH_MASK = build(raw.tooth);
 
 /**
  * Precise-vs-precise overlap: unscaled, unrotated mask A at integer (ax, ay)

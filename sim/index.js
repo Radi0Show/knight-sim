@@ -35,9 +35,14 @@ export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'end
  * moved"). Entities opt in with `builtinMotion: true` and plain `speed` /
  * `direction` fields (degrees, CCW on screen).
  *
- * Envelope: translated code only ever assigns speed and direction — no
- * direct hspeed/vspeed writes, no friction, no gravity. Extend when an
- * attack needs them, against an oracle trace.
+ * FRICTION is applied here, before the position update, matching the
+ * runner's move step. GML semantics: friction reduces speed MAGNITUDE and
+ * clamps at zero on crossing — so a NEGATIVE friction accelerates, which is
+ * exactly how the splitter's teeth speed up (friction -0.2 / -0.05).
+ * Verified against traces/t6-splitter.csv.
+ *
+ * Envelope: speed, direction and friction. No gravity yet, and no direct
+ * hspeed/vspeed writes — extend against an oracle trace when needed.
  *
  * FLOAT32: every built-in field narrows on store (entity.js F32_BUILTINS,
  * measured by oracle_f32_probe). Arithmetic here is f64; the narrowing
@@ -46,7 +51,19 @@ export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'end
 function runMotion(state) {
   state.eventPhase = 'motion';
   for (const e of state.entities) {
-    if (!e.alive || !e.builtinMotion || !e.speed) continue;
+    if (!e.alive || !e.builtinMotion) continue;
+
+    if (e.friction) {
+      if (e.speed > 0) {
+        e.speed = e.speed - e.friction;
+        if (e.speed < 0) e.speed = 0;
+      } else if (e.speed < 0) {
+        e.speed = e.speed + e.friction;
+        if (e.speed > 0) e.speed = 0;
+      }
+    }
+
+    if (!e.speed) continue;
     const r = (e.direction * Math.PI) / 180;
     state.counters.motionSteps += 1;
     // No explicit fround: x/y are f32-narrowing accessors (see entity.js

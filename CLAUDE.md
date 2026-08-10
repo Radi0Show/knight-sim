@@ -234,7 +234,11 @@ frame, soul_x, soul_y, hp, inv_timer, phase, [bullet fields...]
 - GML side: `string_format(value, 0, 10)`. Never `string(value)` — it rounds
   reals to two decimals and hides exactly the sub-pixel divergences we are
   hunting.
-- JS side: `value.toFixed(10)` to match.
+- JS side: `real()` in `sim/trace.js`, NOT bare `toFixed(10)`. **GML rounds
+  exact ties to even; toFixed rounds them away from zero.** Caught at
+  t6-splitter frame 133, where the f32 value 405.15869140625 is an exact tie:
+  GML prints `405.1586914062`, toFixed gives `...63`. Identical bits,
+  different text, and the differ compares text.
 - Bullets sorted by spawn order, never by instance id (ids shift when objects are
   added).
 - Comparison is exact string equality. No float tolerance.
@@ -398,6 +402,33 @@ combinations get an oracle spot-check as part of their translation.
   (underscores) but the damage gate reads `destroyonhit` (= 1 from
   scr_bullet_init) — different variables, so fountain bullets DO destroy
   on hit. Oracle-confirmed at the contact frame.
+- **Attack 3 — the box splitter. DONE.** `node tools/verify-splitter.mjs`:
+  rows 4..193 of `traces/t6-splitter.csv`, all columns row-exact — soul, the
+  `con` state machine, timer, distance, the first four teeth (x, y AND
+  image_angle), and the running contact count.
+
+  `sim/attacks/split-growtangle.js` + `split-bullet.js`. **This is the first
+  attack verified with seed-locked RNG**: the oracle calls
+  `random_set_seed(12345)` before the split and the sim seeds `gmlRng`
+  identically, so all 13 teeth get their `choose` weights and `random_range`
+  top-speeds from the real stream. No recorded outcome table.
+
+  New engine capability: **friction** in the motion phase. GML reduces speed
+  magnitude and clamps at zero on crossing, so the teeth's NEGATIVE friction
+  (-0.2 / -0.05) accelerates them. Verified.
+
+  Two oracle-parity deviations, both mirrored in the scene and documented in
+  the patch: the teeth's Draw-event RNG jitter is stripped (visual only, would
+  otherwise consume 2 draws per tooth per frame and swamp the stream), and
+  `obj_collidebullet`'s Other_15 is a recorder (`state.damageEnabled = false`)
+  because the teeth otherwise kill the party and the Game Over destroys
+  obj_heart before the trace flushes.
+
+  Also learned: the splitter is **itself a bullet**. `splitslash` creates it
+  and calls `scr_bullet_inherit(_splitter)`, and the splitter's own
+  `scr_bullet_inherit(_b)` for each tooth reads those inherited fields — a
+  two-level runtime inheritance chain. Creating it directly without seeding
+  them crashes with "Variable ... damage not set before reading it".
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
 ## Assets

@@ -10,7 +10,7 @@
 // The consequence to respect: never hold a reference to state across frames
 // expecting a snapshot. If you need one, serialise it.
 
-import { createRng } from './rng.js';
+import { createRng, gmlCreate } from './rng.js';
 
 export function createState({ seed, traceBulletSlots = 0 } = {}) {
   if (!Number.isInteger(seed)) {
@@ -42,10 +42,21 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     hearty: 0, // global.hearty
     invc: 1, // global.invc — invincibility multiplier (inv resets to invc*30)
 
-    // Recorded choose() outcomes for RNG replay (CLAUDE.md RNG policy).
-    // Scenes provide the table; translated code consumes it in call order.
+    // Oracle parity switch. Some oracle patches replace obj_collidebullet's
+    // Other_15 with a pure recorder, because letting the party die ends the
+    // run and loses the trace. Scenes mirroring such a run set this false:
+    // contact is still detected and counted, but no inv reset and no
+    // destroy-on-hit — exactly what the patched game does.
+    damageEnabled: true,
+
+    // Recorded choose() outcomes for RNG replay. Superseded by gmlRng for
+    // new work, kept for the T4 slash scene.
     chooseTable: null,
     chooseIndex: 0,
+
+    // GameMaker's real RNG stream (sim/rng.js gmlRng). Scenes seed it to
+    // match a random_set_seed() in the oracle patch.
+    gmlRng: gmlCreate(0),
 
     // Battle phase — which part of the fight is running. This is the `phase`
     // column in the trace. Scenes own it; the skeleton never writes it.

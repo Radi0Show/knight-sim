@@ -14,7 +14,40 @@ export const BASE_FIELDS = ['frame', 'soul_x', 'soul_y', 'hp', 'inv_timer', 'pha
  * and this is where to fix it. Unverified until the first oracle trace lands.
  */
 export function real(v) {
-  return v.toFixed(10);
+  // GML rounds exact ties to EVEN; JS toFixed rounds ties away from zero.
+  // Caught by traces/t6-splitter.csv frame 133: the f32 value 405.15869140625
+  // is an exact tie at the 10th decimal — GML prints ...4062, toFixed gives
+  // ...4063. Same bits, different text, and the differ compares text.
+  //
+  // toFixed(20) is exact for these values: every float is a dyadic rational,
+  // and f32-derived positions in this range have at most ~15 fractional
+  // decimals, so no information is lost before the tie is resolved here.
+  const s = v.toFixed(20);
+  const dot = s.indexOf('.');
+  const keep = s.slice(0, dot + 11); // sign, integer part, 10 decimals
+  const rest = s.slice(dot + 11);
+
+  if (rest === '' || rest[0] < '5') return keep;
+
+  const isTie = rest[0] === '5' && /^0*$/.test(rest.slice(1));
+  const lastDigit = keep.charCodeAt(keep.length - 1) - 48;
+  if (isTie && lastDigit % 2 === 0) return keep; // round half to even
+
+  // Round the decimal string up by one unit in the last place.
+  const neg = keep[0] === '-';
+  const digits = (neg ? keep.slice(1) : keep).replace('.', '').split('');
+  let i = digits.length - 1;
+  for (; i >= 0; i--) {
+    if (digits[i] === '9') {
+      digits[i] = '0';
+    } else {
+      digits[i] = String(Number(digits[i]) + 1);
+      break;
+    }
+  }
+  if (i < 0) digits.unshift('1');
+  const intLen = digits.length - 10;
+  return (neg ? '-' : '') + digits.slice(0, intLen).join('') + '.' + digits.slice(intLen).join('');
 }
 
 /** Integers print bare — no decimal point, matching GML string() on an int. */
