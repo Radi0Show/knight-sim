@@ -213,7 +213,34 @@ Definition of done for a piece: no divergence across 50 replays.
 
   The tester (`room_bullettest_new`, `obj_bullettester_new`) auto-creates the
   battle: box at (320,170), heart at (314,162), dummy monster, turn timer 200.
-- **T4 — One attack, end to end.** Establishes the per-attack pipeline.
+- **T4 — One attack, end to end. DONE — `obj_roaringknight_slash`.**
+  `node tools/verify-t4.mjs`: rows 4..193 of `traces/t4-slash.csv`, ALL
+  columns row-exact — soul, box position, slash width. The per-attack
+  pipeline this establishes:
+
+  1. read the attack's events from the dump (mind `event_inherited` — check
+     the parent chain; slash's parents are codeless)
+  2. patch the oracle: sterilize the tester's dummy bullets, spawn the attack
+     at a fixed trace frame from obj_time's Draw, trace its state columns
+  3. translate, spawn via an endStep spawner at the same frame (matches the
+     Draw-spawn timing: nothing runs until the next frame)
+  4. recover choose()/random() outcomes from the trace into the scene's
+     replay table (`state.chooseTable`) — RNG is replayed, never re-rolled
+  5. full-row diff
+
+  What the slash verified beyond T3: the engine's Collision phase position
+  (Step → Collision → End Step), GML alarm truthiness (`!alarm[0]` is TRUE
+  for idle -1 — translate as `!(alarm[0] > 0.5)`), f64 shrink chains match
+  JS bit-for-bit (`width *= 0.66` through 10 iterations), `xstart`-rebased
+  box jitter, and `scr_heartclamp` live (soul dragged to gt.x+50 each jitter
+  frame; box left permanently displaced afterwards — the fight's box does
+  NOT snap back).
+
+  Unexercised, flagged: the damage path (Other_15 → scr_damage_all-lite).
+  At the tested spawn params the slash's 0.1-yscaled 1px line mask overlaps
+  no integer heart row (floor-sampling predicts it; oracle confirms no inv
+  reset). A contact scenario needs its own oracle run before the damage
+  translation counts as verified. Party hp[] bookkeeping is out of scope.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
 ## Assets
