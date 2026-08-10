@@ -151,6 +151,64 @@ Other_12/13 (the fountain walls) are never invoked — no knight code calls
 event_user(2)/(3); fountains in the current fight come from the _vertical /
 _backup variants used elsewhere.
 
+## Float32 built-ins
+
+**Every built-in instance field narrows to f32 on store.** Measured on a real
+instance (`oracle_f32_probe.csx`, `traces/f32-probe.csv`): assigning 1/3 reads
+back 0.3333333433 for `x y xstart ystart speed direction image_angle
+image_xscale image_yscale image_index image_speed image_alpha friction gravity
+gravity_direction depth`, while plain instance variables read back
+0.3333333333. `hspeed`/`vspeed` are derived from speed/direction, not stored.
+
+This is enforced **structurally**: `spawn()` installs f32-narrowing accessors
+for `F32_BUILTINS` (sim/entity.js), so no translation can forget. GML
+*variables* stay f64 — only built-ins narrow.
+
+It matters beyond position: `image_angle` and the scales feed the rotated-mask
+collision test, so an f64 angle reaching `masksOverlap` would be a latent
+divergence inside the calibrated mechanism, invisible on integer test data.
+`node tools/verify-f32.mjs` asserts all 15 fields plus a plain-variable
+control, and is sabotage-tested.
+
+**Oracle patches for new attacks must trace `image_angle` and the scales** for
+any entity whose mask rotates or scales. A field nothing looks at is a field
+that can diverge silently — that is how the f32 issue survived T3 and T4.
+
+## Positive execution assertions
+
+A suite of negative results can hide a dead code path: the collision phase
+once looked up `collides` on the entity instead of the type, never ran, and
+everything stayed green because no scenario in the suite collided.
+
+`state.counters` tracks `collisionChecks / collisionHits / motionSteps /
+alarmFires`. Verifiers assert on them, so "the check ran and resolved
+negative" is distinguishable from "the check never ran" — `verify-t4` requires
+>= 2 collision checks with 0 hits; `verify-fountain` requires >= 100 motion
+steps and exactly 1 hit. Both are sabotage-tested: reintroducing the original
+bug makes them fail loudly.
+
+**Rule for new mechanisms: every one needs at least one positive assertion.**
+
+## Original bugs in the source
+
+Typo'd variable names that silently do nothing are a pattern in hand-written
+GML, not a one-off, and each is a place where the obvious reading of the code
+is wrong. A scan for variables assigned in the knight objects but never read
+anywhere in the dump (`knight-research/notes-write-only-vars.txt`) found 15,
+including:
+
+| object | variable | note |
+|---|---|---|
+| `obj_roaringknight_fountain_bullet` | `destroy_on_hit` | gate reads `destroyonhit` — bullets DO destroy on hit |
+| `obj_roaringknight_split_bullet` | `turn_timer`, `turn_dir`, `turn_start` | the teeth have dead turning logic; they never turn |
+| `obj_roaringknight_boxsplitter_attack` | `splitbox` | assigned -4, never read |
+| `obj_roaringknight_splitslash` | `slice_delay` | assigned, never consulted |
+| several | `trailthickness` | assigned in 6 places, read nowhere |
+
+When translating, mark these at the site with an `ORIGINAL BUG:` comment
+naming the intended-vs-actual variable, so a later cleanup pass cannot
+"correct" them into a divergence.
+
 ## Trig caveat
 
 JS `Math.sin`/`Math.cos` may differ from GML's in the last bits. If an attack

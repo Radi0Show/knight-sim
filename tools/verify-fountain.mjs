@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { runTrace } from './run-trace.mjs';
+import { runTraceFull } from './run-trace.mjs';
 import { T5_WINDOW } from './scenes/oracle-t5.js';
 
 const oraclePath =
@@ -29,7 +29,8 @@ const oracleLines = readFileSync(oraclePath, 'utf8')
 const header = oracleLines[0].split(',');
 const oracleRows = oracleLines.slice(1 + from, 1 + to + 1);
 
-const simCsv = runTrace({ seed: 1, frames, scene: 'oracle-t5' }).replace(/\n$/, '').split('\n');
+const { csv, counters } = runTraceFull({ seed: 1, frames, scene: 'oracle-t5' });
+const simCsv = csv.replace(/\n$/, '').split('\n');
 const simRows = simCsv.slice(1);
 
 console.log(`oracle: ${oraclePath}`);
@@ -55,5 +56,13 @@ for (let i = 0; i < frames; i++) {
   }
 }
 
+// Positive execution assertions: two bullets moving for ~130 frames, one
+// contact. If any counter is off, a mechanism silently stopped executing.
+if (counters.motionSteps < 100 || counters.collisionChecks < 20 || counters.collisionHits !== 1) {
+  console.log(`EXECUTION ASSERTION FAILED: ${JSON.stringify(counters)}`);
+  console.log('  expected motionSteps >= 100, collisionChecks >= 20, collisionHits == 1');
+  process.exit(1);
+}
+console.log(`→ executed: ${counters.motionSteps} motion steps, ${counters.collisionChecks} collision checks, ${counters.collisionHits} hit`);
 console.log(`→ traces match through frames ${from}..${to}   OK`);
 console.log(`\nPASS  ${frames} frames row-exact against the real game, bullets included`);

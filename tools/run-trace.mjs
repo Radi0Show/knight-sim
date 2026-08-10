@@ -56,7 +56,7 @@ const SCENES = {
   'oracle-t5': { build: buildOracleT5Scene, input: ORACLE_T5_INPUT, bulletSlots: 2 },
 };
 
-export function runTrace({ seed, frames, scene = 'stub' }) {
+export function runTraceFull({ seed, frames, scene = 'stub' }) {
   const chosen = SCENES[scene];
   if (!chosen) {
     throw new Error(`unknown scene: ${scene} (have: ${Object.keys(SCENES).join(', ')})`);
@@ -72,7 +72,11 @@ export function runTrace({ seed, frames, scene = 'stub' }) {
     stepFrame(state, inputAt(state.frame));
   }
 
-  return `${header}\n${state.trace.join('\n')}\n`;
+  return { csv: `${header}\n${state.trace.join('\n')}\n`, counters: state.counters };
+}
+
+export function runTrace(opts) {
+  return runTraceFull(opts).csv;
 }
 
 function main() {

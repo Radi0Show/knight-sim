@@ -10,6 +10,52 @@
 export const ALARM_COUNT = 12;
 
 /**
+ * Built-in instance fields that the runner stores in FLOAT32.
+ *
+ * Measured directly (knight-research/tools/patches/oracle_f32_probe.csx):
+ * assigning 1/3 to each and reading it back gives 0.3333333433 — the f32
+ * value — for every field below, while plain instance variables give
+ * 0.3333333333. hspeed/vspeed are excluded because they are derived from
+ * speed/direction rather than stored independently.
+ *
+ * This matters beyond position: `image_angle`, `image_xscale` and
+ * `image_yscale` feed the rotated-mask collision test, so an f64 angle
+ * reaching masksOverlap is a latent divergence sitting inside the calibrated
+ * mechanism. Narrowing is enforced structurally here rather than at each
+ * assignment site, so a future translation cannot forget.
+ */
+export const F32_BUILTINS = [
+  'x', 'y', 'xstart', 'ystart',
+  'speed', 'direction',
+  'image_angle', 'image_xscale', 'image_yscale',
+  'image_index', 'image_speed', 'image_alpha',
+  'friction', 'gravity', 'gravity_direction',
+  'depth',
+];
+
+/**
+ * Replace the listed fields with accessors that fround on write. Values
+ * already present are narrowed in place.
+ */
+function installF32Builtins(e) {
+  const store = Object.create(null);
+  for (const k of F32_BUILTINS) {
+    store[k] = typeof e[k] === 'number' ? Math.fround(e[k]) : e[k];
+    delete e[k];
+    Object.defineProperty(e, k, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return store[k];
+      },
+      set(v) {
+        store[k] = typeof v === 'number' ? Math.fround(v) : v;
+      },
+    });
+  }
+}
+
+/**
  * Create an entity. `seq` is a monotonic spawn counter and is the only
  * ordering key used anywhere: the trace sorts bullets by it, and phases
  * iterate by it. Never order by array index or by object identity — both
@@ -25,6 +71,8 @@ export function spawn(state, type, vars = {}) {
     y: 0,
     ...vars,
   };
+
+  installF32Builtins(e);
 
   state.entities.push(e);
   if (type.create) type.create(e, state);
@@ -77,7 +125,10 @@ export function runAlarms(state) {
       if (e.alarm[i] === 0) {
         e.alarm[i] = -1;
         const fn = e.type.alarm && e.type.alarm[i];
-        if (fn) fn(e, state);
+        if (fn) {
+          state.counters.alarmFires += 1;
+          fn(e, state);
+        }
       }
     }
   }

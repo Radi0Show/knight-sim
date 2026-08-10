@@ -39,20 +39,20 @@ export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'end
  * direct hspeed/vspeed writes, no friction, no gravity. Extend when an
  * attack needs them, against an oracle trace.
  *
- * FLOAT32 POSITIONS: the runner stores built-in x/y in single precision.
- * Discovered in the t5-fountain trace — the speed-ramp digits
- * (261.3999938965...) are exactly f64 arithmetic narrowed to f32 on store,
- * reproduced 7/7 frames by this Math.fround. GML *variables* stay f64;
- * only the position built-ins narrow. Translated code that assigns a
- * non-integer x/y directly must fround the same way.
+ * FLOAT32: every built-in field narrows on store (entity.js F32_BUILTINS,
+ * measured by oracle_f32_probe). Arithmetic here is f64; the narrowing
+ * happens in the field setter.
  */
 function runMotion(state) {
   state.eventPhase = 'motion';
   for (const e of state.entities) {
     if (!e.alive || !e.builtinMotion || !e.speed) continue;
     const r = (e.direction * Math.PI) / 180;
-    e.x = Math.fround(e.x + e.speed * Math.cos(r));
-    e.y = Math.fround(e.y - e.speed * Math.sin(r));
+    state.counters.motionSteps += 1;
+    // No explicit fround: x/y are f32-narrowing accessors (see entity.js
+    // F32_BUILTINS). Narrowing is structural so no call site can forget.
+    e.x = e.x + e.speed * Math.cos(r);
+    e.y = e.y - e.speed * Math.sin(r);
   }
 }
 
@@ -70,8 +70,12 @@ function runCollisions(state) {
     if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
     const collides = b.type.collides;
-    if (collides && collides(b, heart, state)) {
-      b.type.other15(b, state);
+    if (collides) {
+      state.counters.collisionChecks += 1;
+      if (collides(b, heart, state)) {
+        state.counters.collisionHits += 1;
+        b.type.other15(b, state);
+      }
     }
   }
 }

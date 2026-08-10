@@ -62,5 +62,17 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
 
     traceBulletSlots,
     trace: [],
+
+    // Execution counters. A suite of negative results can hide a dead code
+    // path (the collision phase once never ran, and everything stayed green
+    // because its scenarios happened not to collide). Verifiers assert on
+    // these so "the check ran and resolved negative" is distinguishable from
+    // "the check never ran".
+    counters: {
+      collisionChecks: 0, // bullet-vs-heart tests actually evaluated
+      collisionHits: 0, // other15 dispatches
+      motionSteps: 0, // built-in motion applications
+      alarmFires: 0, // alarm handlers invoked
+    },
   };
 }

@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { runTrace } from './run-trace.mjs';
+import { runTraceFull } from './run-trace.mjs';
 import { T4_WINDOW } from './scenes/oracle-t4.js';
 
 const oraclePath =
@@ -30,7 +30,8 @@ const oracleLines = readFileSync(oraclePath, 'utf8')
 const header = oracleLines[0].split(',');
 const oracleRows = oracleLines.slice(1 + from, 1 + to + 1);
 
-const simCsv = runTrace({ seed: 1, frames, scene: 'oracle-t4' }).replace(/\n$/, '').split('\n');
+const { csv, counters } = runTraceFull({ seed: 1, frames, scene: 'oracle-t4' });
+const simCsv = csv.replace(/\n$/, '').split('\n');
 const simRows = simCsv.slice(1);
 
 console.log(`oracle: ${oraclePath}`);
@@ -56,5 +57,14 @@ for (let i = 0; i < frames; i++) {
   }
 }
 
+// Positive execution assertions: the slash's no-hit must come from checks
+// that RAN and resolved negative, not from a dead dispatch. The slash's mask
+// is live for 2 frames before alarm[1] disables it.
+if (counters.collisionChecks < 2 || counters.collisionHits !== 0 || counters.alarmFires < 2) {
+  console.log(`EXECUTION ASSERTION FAILED: ${JSON.stringify(counters)}`);
+  console.log('  expected collisionChecks >= 2, collisionHits == 0, alarmFires >= 2');
+  process.exit(1);
+}
+console.log(`→ executed: ${counters.collisionChecks} collision checks (0 hits), ${counters.alarmFires} alarm fires`);
 console.log(`→ traces match through frames ${from}..${to}   OK`);
 console.log(`\nPASS  ${frames} frames row-exact against the real game, slash included`);

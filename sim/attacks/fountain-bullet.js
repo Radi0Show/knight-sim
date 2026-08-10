@@ -32,7 +32,12 @@ export const fountainBullet = {
     e.image_xscale = 1;
     e.image_yscale = 1;
     e.active = false;
-    e.destroy_on_hit = false; // NOT destroyonhit — see header
+    // ORIGINAL BUG: Create sets `destroy_on_hit`, the damage gate reads
+    // `destroyonhit` (= 1 from scr_bullet_init). Different variables, so this
+    // line does nothing and fountain bullets DO destroy on hit.
+    // Divergent by design. Do not "fix". Oracle-confirmed at the contact
+    // frame in traces/t5-fountain.csv.
+    e.destroy_on_hit = false;
     e.grazepoints = 5;
   },
 
