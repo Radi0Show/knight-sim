@@ -1,7 +1,45 @@
-# CLAUDE.md — Knight Fight Simulator (browser)
+# CLAUDE.md — Knight Fight Simulator
 
-This supersedes the previous CLAUDE.md. The GameMaker standalone plan is
-cancelled. Read "What changed" before acting on anything from the old doc.
+## START HERE
+
+A frame-accurate browser practice tool for DELTARUNE Chapter 3's Roaring Knight
+fight. Reference build: **v1.03 post-nerf**. Scope: **dodge-only**.
+
+**Method.** Translate the original GML to JS, then prove it: patch the player's
+own copy of the game into an "oracle", record what it really does frame by
+frame, and diff the sim against that CSV. A claim is only true if a suite
+checks it.
+
+**First things to do in a new session:**
+
+```bash
+export PATH="$HOME/tools/node/bin:$PATH"   # Node is NOT on PATH
+cd ~/knight-sim && npm run verify          # expect: All 10 suites green
+```
+
+- `docs/STATUS.md` — what is done, what is next, known gaps
+- `docs/ORACLE-RECIPE.md` — how to verify a new attack, end to end
+- `~/knight-research/` — PRIVATE repo: the oracle, the GML dump, the traces.
+  Never publish it. `knight-sim` is the public side.
+
+**The five rules that cost the most to learn:**
+
+1. **Read the dump before launching the game.** A grep is seconds; a game run
+   is ~90. Most wasted time on this project was testing a guess by running.
+2. **Never pin a value the game sequences itself with.** `mnfight`,
+   `myattackchoice`, `turntimer` each cost hours. Grep for readers first.
+3. **The SELECTOR decides what is real**, not the dispatch table. Six attack
+   branches exist that the fight can never choose.
+4. **Trace every creator to a selector-reachable root** before calling anything
+   dead. Checking one and stopping produced a wrong retraction.
+5. **Nothing invented ships.** If a placeholder is unavoidable, label it in the
+   UI where the player sees it.
+
+**Ground truth lives in two places:** the fight's real attack order (below,
+"THE REAL FIGHT") and the recorded traces in `knight-research/traces/`.
+Everything else is derived and may be wrong.
+
+---
 
 ## What this is
 

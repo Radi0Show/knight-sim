@@ -8,8 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
+    "verify": "node tools/verify-all.mjs",
     "trace": "node tools/run-trace.mjs",
     "diff": "node tools/diff-trace.mjs",
-    "verify": "node tools/verify-determinism.mjs"
+    "serve": "python3 -m http.server 8177",
+    "gen-masks": "node tools/gen-masks.mjs"
   }
 }
