@@ -298,6 +298,27 @@ control, and is sabotage-tested.
 any entity whose mask rotates or scales. A field nothing looks at is a field
 that can diverge silently — that is how the f32 issue survived T3 and T4.
 
+## Never pin a value the game uses to sequence itself
+
+Three separate multi-hour bugs, one root pattern: the harness froze a value to
+keep a scenario alive, and that value was an INPUT the game used to drive
+itself.
+
+| pinned | consequence |
+|---|---|
+| `global.mnfight = 2` | skipped the enemy-talk phase, so `obj_knight_enemy` never initialised `rtimer` and could never attack |
+| `myattackchoice` left at its 0 default | the knight dragged the soul to x 165 every frame (correct for Swordslash) — looked like four unrelated bugs |
+| `global.turntimer = 999` | `obj_knight_pointing_cone` never released the stars (`con 0 -> 1` needs `turntimer <= endtimer`), so Stars' whole second half never ran |
+
+Before pinning ANY global or instance variable in an oracle patch, grep for
+its readers. If anything branches on it, do not pin it — give it a starting
+value and let the game drive it down.
+
+Concretely for the knight: `turntimer` starts at 300 and the battle controller
+decrements it (`mnfight == 2 && timeron == 1`, and `timeron` is already 1 from
+its Create). Stars' full arc then plays: cone opens, 18 stars accumulate, they
+fire at turntimer<=120, then burst.
+
 ## The soul-outside-the-box bug (root cause)
 
 Every oracle scenario that includes `obj_knight_enemy` must set
