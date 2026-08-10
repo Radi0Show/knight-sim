@@ -1,163 +1,220 @@
-# CLAUDE.md — Knight Fight Simulator
+# CLAUDE.md — Knight Fight Simulator (browser)
 
-## What this project is
+This supersedes the previous CLAUDE.md. The GameMaker standalone plan is
+cancelled. Read "What changed" before acting on anything from the old doc.
 
-A frame-accurate practice tool for the Roaring Knight fight (DELTARUNE Chapter 3).
-Target build: **v1.03 post-nerf**. Distribution: **standalone**, assets loaded at
-runtime from the user's own DELTARUNE install.
+## What this is
 
-The deliverable is not "a game that feels like the fight." It is a reimplementation
-whose per-frame state is provably identical to the original's.
+A free, non-commercial browser practice tool for the Roaring Knight fight
+(DELTARUNE Chapter 3). Spiritual successor to Bad Time Simulator: drop the player
+into the bullet patterns, instant restart, no story.
 
-## Non-negotiable rules
+Reference build for all behavior: v1.03 post-nerf.
 
-1. **30 FPS fixed timestep.** `delta_time` appears nowhere in this repo. Ever.
-2. **Never convert an Alarm into a Step counter.** GameMaker runs Alarm events
-   between Begin Step and Step. This refactor costs exactly one frame.
-3. **Never move code between Begin Step / Step / End Step.**
-4. **Never simplify arithmetic.** `x += spd * 2` stays exactly as written. Do not
-   split, reorder, or factor it. Float op order is part of the spec.
-5. **Preserve integer math.** If the original uses `floor`, `div`, or integer
-   division, reproduce it exactly. Do not "clean up" to real division.
-6. **Never change instance creation order**, sprite origins, or collision masks.
-7. **No change to `src/` lands without an accompanying passing trace diff.**
+## What changed and why
 
-## Clean-room boundary (important)
+- Target is now the browser, in plain JS on a canvas. No GameMaker. GameMaker's
+  HTML5 export is a different runtime from the Windows one, so it buys zero
+  fidelity while adding a toolchain. GML reals and JS numbers are both f64
+  doubles, so GML → JS translation preserves arithmetic exactly, provided
+  operation order is preserved.
+- Scope is dodge-only. No ACT menu, no TP, no turn system, no party management.
+  Party HP and the Shadow Mantle damage reduction are hardcoded constants.
+  Deliberate — matches the reference tool and removes the largest chunk of work.
+- The clean-room membrane is dropped. We are translating GML to JS; there is no
+  membrane to maintain and the previous provenance ritual protected nothing real.
+  `notes/` survives as debugging documentation, not as legal posture.
+- The pre-commit identifier hook is narrowed: it now rejects whole `.gml` files
+  and original game data only. Comments citing original object names are
+  encouraged for traceability.
+- Ship incrementally. Soul movement + one attack is a publishable tool. Do not
+  wait for all 14.
 
-Decompiled GML from the original data file must **never** enter `src/`. The flow is:
-
-```
-gml_dump/  →  notes/  →  src/
-(original)    (specs)    (our code)
-```
-
-`notes/` is the membrane. Original code goes in one side; human-written behavioral
-specs come out the other. Nothing crosses directly.
-
-The pre-commit hook greps `src/` for original identifiers and hard-fails. If it
-fires, do not weaken the hook — rewrite the code.
-
-## Repo layout
-
-```
-knight-research/        PRIVATE, never published
-  oracle/               instrumented game.ios        [gitignored]
-  gml_dump/             full UTMT text export        [gitignored]
-  traces/               oracle CSVs
-  notes/                per-attack specs
-knight-sim/             the standalone build
-  src/                  clean GML
-  tools/                trace differ, build scripts
-  CLAUDE.md             this file
-```
-
-Never commit: `game.ios` / `data.win`, extracted sprites/audio, or decompiled GML.
-
-## The target build (macOS)
+## Platform note (macOS)
 
 This install is macOS, where the GameMaker data file is named **`game.ios`**, not
 `data.win` — same FORM/GEN8 container, different extension. Every guide online
-says `data.win`; on this machine that path does not exist.
-
-Chapter 3 data, working copy:
+says `data.win`; on this machine that path does not exist. References to
+`data.win` elsewhere in this doc mean `game.ios` here.
 
 ```
 knight-research/oracle/DELTARUNE.app/Contents/Resources/chapter3_mac/game.ios
 ```
 
-Chapters 1–5 each have their own `chapterN_mac/game.ios`; the 2.8 MB one at the
-`Resources/` root is just the launcher.
+Tooling is `UndertaleModCli` (`~/tools/utmt-cli`). There is **no macOS GUI build**
+of UndertaleModTool — release 0.9.1.2 ships GUI for Windows only. The CLI binary
+is Intel x86_64 and runs under Rosetta 2. Instrumenting the oracle breaks the
+bundle's code signature; unsigned modified bundles will not launch on Apple
+Silicon, so re-sign after every oracle rebuild:
+`codesign --force --deep --sign - <app>`.
 
-Instrumenting the oracle breaks the bundle's code signature, and unsigned modified
-bundles will not launch on Apple Silicon. Re-sign ad hoc after every oracle
-rebuild: `codesign --force --deep --sign - <app>`.
+## Known constraints from recon
+
+- The 14 attack objects are bespoke state machines with no shared bullet manager
+  (58 code entries). There is no manager to port once and reuse. Expect to
+  reverse each attack individually.
+- **Dump accounting is confirmed (T1 done). No code is missing.** See below.
+
+### T1 result: the 9,262 / 7,603 gap
+
+All 9,262 code entries are accounted for. The hypothesis in the previous draft
+— that the gap was anonymous nested functions — was wrong about the dominant
+cause. Actual breakdown, measured via `ParentEntry` on every entry:
+
+| count | what | where the body lives |
+|------:|------|----------------------|
+| 7,603 | root entries | exactly 1:1 with dumped `.gml` files, verified by set diff |
+| 1,316 | GMS 2.3 script functions | `gml_GlobalScript_<file>.gml`, as `function <name>(` |
+| 319 | nested methods | parent file, declared plainly; entry name is `<fn>_<parentEntry>` |
+| 24 | anonymous struct constructors | parent file, as struct literals (`___struct___N_<parent>`) |
+
+Every one of the 1,093 distinct parent entries was dumped. **A negative grep on
+file contents is now trustworthy evidence.**
+
+The one real trap: **filename ≠ function name.** One GlobalScript file can define
+many functions, and its filename matches none of them. `screenx`, `screeny`,
+`screenvec2`, and `draw_self_screenspace` all live in
+`gml_GlobalScript_scr_screenspace.gml`. So:
+
+- To find a function, grep **contents** for `function <name>(`.
+- Never conclude something is absent from a filename listing.
+
+## Architecture
+
+```
+sim/      pure logic. no DOM, no canvas, no input polling, no rendering.
+          steps exactly one frame given an input state; returns new state.
+render/   reads sim state and draws. never writes to sim.
+input/    maps keys to an input state object.
+tools/    headless trace runner, CSV differ.
+notes/    per-attack behavioral specs written from the dump.
+```
+
+`sim/` must run headless under Node. That is the whole point: verification is a
+plain script, not a browser session with a human watching.
+
+## Non-negotiable rules
+
+1. Fixed timestep. Accumulate real time, step logic in whole 1/30 s units. Never
+   pass a delta into logic. No `requestAnimationFrame` delta reaches `sim/`.
+2. No `Math.random`. Seeded PRNG only (mulberry32 or xorshift32). The seed is
+   part of every replay file.
+3. Preserve operation order. `x += spd * 2` translates as one expression. Do not
+   split, reorder, or factor it.
+4. Preserve integer math. GML `floor`, `div`, and integer division translate to
+   explicit equivalents. Never silently promote to real division.
+5. Preserve step order. GML Begin Step / Step / End Step / Alarm ordering maps to
+   an explicit phase order in `sim/`. Alarms fire between Begin Step and Step. Do
+   not collapse an alarm into a counter — that costs exactly one frame.
+6. No change to `sim/` lands without a passing trace diff.
+
+### Rule 5 is not theoretical
+
+`scr_heartclamp` has exactly one caller in the entire game:
+`obj_roaringknight_slash`, in its **End Step**. During that attack the soul is
+moved and collision-resolved in `obj_heart`'s Step, then clamped by a *different
+object* later in the same frame. Collapse that into one phase and the soul sits
+at a different position for one frame — on the first attack you are likely to
+port.
+
+## Trig caveat
+
+JS `Math.sin`/`Math.cos` may differ from GML's in the last bits. If an attack
+using trig for positioning diverges by a fraction of a pixel, that is the cause.
+Fix: dump a precomputed lookup table from the oracle rather than computing live.
+
+## The oracle
+
+The instrumented v1.03 data file is internal tooling, never shipped. It is the
+measuring instrument that supplies real constants and catches divergences.
+
+Workflow per piece: patch the oracle to run a hardcoded frame-indexed input
+table, trace to CSV, reproduce in `sim/`, diff.
 
 ## Trace format
 
-One row per frame, written from End Step. Fields:
+One row per frame, written at end of frame:
 
 ```
 frame, soul_x, soul_y, hp, inv_timer, phase, [bullet fields...]
 ```
 
-**Use `string_format(value, 0, 10)`, never `string(value)`.** Plain `string()`
-rounds reals to two decimals and will silently hide the sub-pixel divergences this
-whole project exists to catch.
+- GML side: `string_format(value, 0, 10)`. Never `string(value)` — it rounds
+  reals to two decimals and hides exactly the sub-pixel divergences we are
+  hunting.
+- JS side: `value.toFixed(10)` to match.
+- Bullets sorted by spawn order, never by instance id (ids shift when objects are
+  added).
+- Comparison is exact string equality. No float tolerance.
 
-Bullets are sorted deterministically by spawn order, **not** by instance id —
-ids shift when objects are added.
+Definition of done for a piece: no divergence across 50 replays.
 
-## Verification loop
+## Task order
 
-```
-make verify ATTACK=<name> REPLAY=<id>
-→ traces match through frame N            ✅
-→ DIVERGENCE at frame N: field  oracle=X  engine=Y
-```
+- **T1 — Confirm the dump accounting. DONE.** See the table above. Answer: yes,
+  the dump is complete; the gap is fully explained; content greps are reliable.
+- **T2 — `sim/` skeleton.** Fixed-timestep loop, seeded PRNG, explicit phase
+  order, state object, trace writer, headless runner in `tools/`. Acceptance: a
+  stub entity moving at a constant rate produces a byte-identical CSV across 10
+  runs.
+- **T3 — Soul movement.** Translate from `obj_heart`'s Step event. Constants are
+  already measured (see Open questions). Acceptance: hold-right-into-wall trace
+  matches the oracle exactly.
+- **T4 — One attack, end to end.** Establishes the per-attack pipeline.
+- **T5 — Ship it.** GitHub Pages or itch.io.
 
-Comparison is exact string equality on the CSV. No float tolerance. No pandas.
-Stdlib `csv` only.
+## Assets
 
-Definition of done for a piece: no divergence observed across 50 recorded replays.
+Browser means bundling sprites. Accepted risk; free and non-commercial posture.
 
-## Input handling
+Ship without music, or with a load-your-own-file option. The soundtrack is
+separately sold and is more sensitive than sprites. Cheap concession.
 
-The input recorder lives **inside the game loop**. Never use OS-level input
-automation (AutoHotkey, pyautogui) — OS keystroke scheduling is not frame
-deterministic and introduces exactly the nondeterminism this project eliminates.
+Do not commit the data file, the GML dump, or the oracle.
 
-For early spikes, use a hardcoded frame-indexed input table rather than a recorder.
+## Open questions
 
-## RNG
-
-If the GameMaker runtime cannot be pinned to the version v1.03 shipped with,
-`random()` streams will differ and no amount of careful porting fixes it. In that
-case: log the original's RNG outputs frame-by-frame from the oracle, then reproduce
-the sequence with a hand-rolled PRNG validated against the log.
-
-Do not guess which generator GameMaker uses internally. Discover it empirically
-from the logs.
-
-Seed-locked practice mode is a feature, not a compromise.
-
-## Open questions (fill in as discovered)
-
-- [x] GEN8 game speed: **30.0** — read directly from the GMS2 tail of GEN8.
-      Confirms rule 1. The fixed timestep is not an assumption.
-- [x] GEN8 bytecode version: **17**
-- [ ] GameMaker runtime version: **not recoverable from the shipped files.** GEN8
-      reports IDE version 2.0.0.0, which modern GameMaker writes as a placeholder;
-      there is no `runtime-YYYY.x.x.x` string in the data file or the Mac runner,
-      and `Info.plist` says 1.0.0. Bytecode 17 is the only real signal. Get the
-      actual number from UTMT's data display, or infer it from the FEAT chunk.
-- [ ] Can the IDE install that runtime? (blocking — determines if the port is viable)
+- [x] Dump accounting confirmed? **Yes — T1 complete, see table above.**
+- [x] GEN8 game speed: **30.0**, read from the GMS2 tail of the GEN8 chunk.
 - [x] Soul object name: **`obj_heart`**
 - [x] Base soul speed constant: **4**, as `global.sp`, copied into the instance
-      variable `wspeed` at Create. Slow-walk halves it with **`ceil`**, not
-      `floor` and not plain multiplication — see rule 5.
-- [x] Are diagonals normalized? **No.** Horizontal and vertical are set
+      variable `wspeed` at Create.
+- [x] Diagonals normalized? **No.** Measured, not assumed: the two axes are set
       independently to +/- `wspeed`, with no `sqrt`, `lengthdir`, or 0.707 factor
-      anywhere in the Step event. A diagonal moves 4 on both axes.
-- [x] Box clamping: **both mechanisms exist and they are not interchangeable.**
-      `obj_battlesolid` is reject-on-collision, resolved per axis by decrementing
-      step-back loops before the move. `scr_heartclamp` is clamp-after-move, and
-      it is called from exactly one place in the whole game — see below. Position
-      is committed at a single site after all resolution.
-- [ ] Battle controller object name:
-- [x] Attack objects: **bespoke state machines.** Each attack is its own object
-      with its own events; there is no shared bullet manager. 14 objects and 58
-      code entries carry the fight.
-- [ ] Globals the battle reads (party stats, equips, flags):
+      anywhere in the Step event. A diagonal moves 4 on both axes, so diagonal
+      speed is 4·√2. Deltarune matches Undertale here.
+- [x] Box clamping method: **both, and they are not interchangeable.**
+      `obj_battlesolid` is reject-on-collision, resolved per axis by step-back
+      loops that walk the intended delta down toward zero *before* the move.
+      `scr_heartclamp` is clamp-after-move and is called from exactly one place
+      (see Rule 5 above). Position commits at a single site, `x += px; y += py;`,
+      after all resolution.
+- [x] Focus/slow modifier value and application frame: **`ceil(v * 0.5)` per
+      axis** — `ceil`, not `floor`, not a bare multiply (rule 4). Applied in the
+      same Step that reads input, *before* collision resolution, gated on the
+      focus button being held and `disableslow == 0`. `disableslow` latches at
+      Create if the button was already down, so holding focus through the
+      transition into the fight does **not** slow the first frames.
+- [ ] Simplest attack for T4: **`obj_roaringknight_slash` recommended** — 84
+      lines across 6 events, the smallest self-contained attack. Caveat: it pulls
+      in `scr_heartclamp`, `obj_growtangle`, and `scr_get_box`, so T4 drags the
+      battle box in with it. That work is needed anyway. Alternative if you want
+      the box deferred: `obj_roaringknight_boxsplitter_attack` (209 lines, 4
+      events). Not yet read in full — confirm before committing to it.
 
-### Why rule 3 is not theoretical
+Attack objects by size, for planning:
 
-`scr_heartclamp` has exactly one caller in the entire game:
-`obj_roaringknight_slash`, in its **End Step**. So during that attack the soul is
-moved and collision-resolved in `obj_heart`'s Step, and only then clamped, by a
-different object, later in the same frame. Move that call into Step and the soul
-sits at a different position for one frame — which is precisely the class of
-divergence this project exists to catch.
+```
+   19  2 ev  obj_roaringknight_fountain_bullet_old
+   38  4 ev  obj_roaringknight_fountain_bullet
+   44  3 ev  obj_roaringknight_split_bullet
+   78  4 ev  obj_roaringknight_quickslash_afterimage
+   84  6 ev  obj_roaringknight_slash
+  141  7 ev  obj_roaringknight_quickslash_big
+  209  4 ev  obj_roaringknight_boxsplitter_attack
+  271  7 ev  obj_roaringknight_splitslash
+  456  9 ev  obj_roaringknight_quickslash_attack
+  761 24 ev  obj_roaringknight_quickslash
+```
 
-Confirmed incidentally while reading GEN8, in case any of it saves a lookup:
-internal name `DELTARUNE`, display name `DELTARUNE Chapter 3` (so `chapter3_mac`
-is the right file), 640x480, 246 rooms, 31 chunks, debugger disabled.
+Bullets need a spawner, so the small ones are not standalone candidates.
