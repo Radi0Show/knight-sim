@@ -585,6 +585,33 @@ combinations get an oracle spot-check as part of their translation.
   `scr_bullet_inherit(_b)` for each tooth reads those inherited fields — a
   two-level runtime inheritance chain. Creating it directly without seeding
   them crashes with "Variable ... damage not set before reading it".
+- **Attack 4 — rotatingslash. VERIFIED (one cycle).** `node
+  tools/verify-rotating.mjs`: rows 62..118 of `traces/t7-rotating.csv`, all
+  attack columns — state, timer, aim_direction, rotation, slash_number,
+  aim_x/aim_y, live slash count — plus soul position to first contact.
+
+  **The first translated attack the fight actually selects** (ac 5, every
+  phase; also chained by combinationattack). `sim/attacks/rotating-slash.js`.
+  Reached via `obj_dbulletcontroller type = 104`.
+
+  Leverage: it spawns `obj_roaringknight_slash` (attack 1, row-exact) and, via
+  quickslash_big, the split_growtangle organism (attack 3, row-exact). Most of
+  its payload was already verified — the new work was the state machine.
+
+  Three recorded inputs, each a documented deviation rather than translation:
+  the `spin` SEQUENCE (re-rolled by choose() on every aim entry), the create's
+  `random_offset`, and the shuffled fan orders (ds_list_shuffle unsolved).
+  Everything around them is verified normally.
+
+  Window stops at 118 because the ORACLE's soul snaps back to (165,160) at
+  frame 113 — the tester re-placing it, a harness artifact. Since aim locks
+  onto the soul, later cycles inherit it. Extending needs a run with the soul
+  pinned throughout.
+
+  Also fixed here: `obj_roaringknight_slash`'s choose() now falls back to
+  `gmlRng` when a scene supplies no recorded table, so attacks written after
+  the RNG discovery use the real stream while attack 1's table-based
+  verification still passes.
 - **T5 — Ship it. PLAYABLE, not yet published.**
   `python3 -m http.server 8177` then open `/web/index.html`. Arrows or WASD
   move, shift focuses, R resets, P pauses. Verified in-browser at a steady

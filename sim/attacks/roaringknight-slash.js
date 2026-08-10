@@ -20,14 +20,26 @@
 import { destroy } from '../entity.js';
 import { scrHeartclamp } from '../heartclamp.js';
 import { HEART_MASK, masksOverlap } from '../masks.js';
+import { gmlChoose } from '../rng.js';
 
-function chooseReplay(state) {
-  if (!state.chooseTable || state.chooseIndex >= state.chooseTable.length) {
-    throw new Error(
-      'choose() replay table exhausted — this scenario needs more recorded RNG outcomes',
-    );
+/**
+ * choose() for this attack.
+ *
+ * Historical note: attack 1 predates the discovery of GameMaker's actual
+ * generator, so its oracle scene supplies a recorded outcome table. Scenes
+ * that postdate `gmlRng` (rotating slash onward) supply no table and draw
+ * from the real stream instead. Both paths are exercised by the suite.
+ */
+function chooseReplay(state, values) {
+  if (state.chooseTable) {
+    if (state.chooseIndex >= state.chooseTable.length) {
+      throw new Error(
+        'choose() replay table exhausted — this scenario needs more recorded RNG outcomes',
+      );
+    }
+    return state.chooseTable[state.chooseIndex++];
   }
-  return state.chooseTable[state.chooseIndex++];
+  return gmlChoose(state.gmlRng, values);
 }
 
 // spr_rk_quickslash_marker: 250x46, origin (125,23), Precise; every subimage's
@@ -73,7 +85,7 @@ export const roaringknightSlash = {
     e.image_index = 2;
     e.image_speed = 0;
     e.image_yscale = 0.1;
-    e.slashdir = chooseReplay(state); // choose(-1, 1) — Draw-only, but consumes RNG
+    e.slashdir = chooseReplay(state, [-1, 1]); // choose(-1, 1) — Draw-only, but consumes RNG
     e.destroyonhit = false;
 
     e.isBullet = true;
@@ -147,8 +159,8 @@ export const roaringknightSlash = {
     if (e.width > 4) {
       const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
       if (gt) {
-        gt.x = gt.xstart + chooseReplay(state); // choose(-2,-1,0,1,2)
-        gt.y = gt.ystart + chooseReplay(state);
+        gt.x = gt.xstart + chooseReplay(state, [-2, -1, 0, 1, 2]); // choose(-2,-1,0,1,2)
+        gt.y = gt.ystart + chooseReplay(state, [-2, -1, 0, 1, 2]);
       }
       scrHeartclamp(state);
     }

@@ -21,6 +21,7 @@ import { buildOracleT3Scene, ORACLE_T3_INPUT } from './scenes/oracle-t3.js';
 import { buildOracleT4Scene, ORACLE_T4_INPUT } from './scenes/oracle-t4.js';
 import { buildOracleT5Scene, ORACLE_T5_INPUT } from './scenes/oracle-t5.js';
 import { buildOracleT6Scene, ORACLE_T6_INPUT } from './scenes/oracle-t6.js';
+import { buildOracleT7Scene, ORACLE_T7_INPUT } from './scenes/oracle-t7.js';
 
 function parseArgs(argv) {
   const args = { seed: 12345, frames: 600, out: null, scene: 'stub' };
@@ -56,6 +57,7 @@ const SCENES = {
   'oracle-t4': { build: buildOracleT4Scene, input: ORACLE_T4_INPUT, bulletSlots: 0 },
   'oracle-t5': { build: buildOracleT5Scene, input: ORACLE_T5_INPUT, bulletSlots: 2 },
   'oracle-t6': { build: buildOracleT6Scene, input: ORACLE_T6_INPUT, bulletSlots: 0 },
+  'oracle-t7': { build: buildOracleT7Scene, input: ORACLE_T7_INPUT, bulletSlots: 0 },
 };
 
 export function runTraceFull({ seed, frames, scene = 'stub' }) {
