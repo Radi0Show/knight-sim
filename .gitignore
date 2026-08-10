@@ -10,6 +10,10 @@ oracle/
 
 # Extracted assets
 *.png
+# ...except the curated sprite set the browser build ships. CLAUDE.md accepts
+# bundling sprites (free, non-commercial). 96 sprites / 271 frames / ~1.1 MB,
+# only what the fight code references.
+!assets/sprites/*.png
 *.wav
 *.ogg
 *.mp3

@@ -11,7 +11,7 @@ import { bindKeyboard } from '../input/keyboard.js';
 import { createRenderer } from '../render/canvas.js';
 
 const canvas = document.getElementById('game');
-const renderer = createRenderer(canvas);
+const renderer = await createRenderer(canvas);
 const keys = bindKeyboard(window);
 
 const params = new URLSearchParams(location.search);
@@ -77,6 +77,7 @@ function frame(now) {
   }
   hud.textContent =
     `frame ${state.frame}   sim ${fps}/30 Hz   hits ${state.counters.collisionHits}` +
+    `   sprites ${renderer.spriteCount}` +
     `   ${running ? '' : '[PAUSED] '}arrows/WASD move · shift focus · R reset · P pause`;
 
   requestAnimationFrame(frame);

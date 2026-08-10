@@ -659,3 +659,33 @@ plausible source of a first divergence.
    one-cell false divergence with an obvious fix.
 4. **`obj_battlesolid` masks.** The object has no sprite; instances are given
    one at runtime. Until we know what, solid geometry in `sim/` is a stand-in.
+
+## Sprites
+
+The browser build renders the game's own art, extracted from the player's data
+file. `assets/sprites/` holds **96 sprites / 271 frames / ~1.1 MB** — only the
+sprites the fight code actually references, not all 4,992.
+
+How it was produced (repeatable):
+
+```
+UndertaleModCli dump <game.ios> --sprites -o <dir>     # 14,529 PNGs, 79 MB
+# then filter to the names grepped out of the knight/soul/box/controller code
+# and copy them in, alongside manifest.json
+```
+
+`manifest.json` carries what the PNGs cannot: each sprite's **origin**,
+size, frame count and bbox. GameMaker positions every draw relative to the
+origin, so without it the art sits offset from the physics — the sprite/hitbox
+mismatch this project exists to avoid. Regenerate it with the metadata script
+in `knight-research/tools/patches`.
+
+`.gitignore` blocks `*.png` globally with an explicit `!assets/sprites/*.png`
+carve-out, so extracted art cannot be committed by accident from anywhere else.
+
+Fallback: any entity whose sprite is missing draws from its COLLISION MASK
+instead. A missing asset degrades to the exact shape the physics uses rather
+than vanishing.
+
+Not shipped: audio. CLAUDE.md's asset stance stands — the soundtrack is sold
+separately and stays out.
