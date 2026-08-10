@@ -14,8 +14,11 @@ oracle/
 *.ogg
 *.mp3
 
-# GameMaker build output
-*.yyz
+# Generated traces — regenerate with tools/run-trace.mjs, never commit
+/traces/
+*.csv
+
+node_modules/
 /build/
 /output/
 

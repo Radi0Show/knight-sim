@@ -41,6 +41,14 @@ says `data.win`; on this machine that path does not exist. References to
 knight-research/oracle/DELTARUNE.app/Contents/Resources/chapter3_mac/game.ios
 ```
 
+Node is **not on PATH** — it is an unpacked tarball at `~/tools/node` (no admin
+rights were needed, and none are available: there is no Homebrew and the `.pkg`
+installer wants a password). Every command below assumes:
+
+```
+export PATH="$HOME/tools/node/bin:$PATH"
+```
+
 Tooling is `UndertaleModCli` (`~/tools/utmt-cli`). There is **no macOS GUI build**
 of UndertaleModTool — release 0.9.1.2 ships GUI for Windows only. The CLI binary
 is Intel x86_64 and runs under Rosetta 2. Instrumenting the oracle breaks the
@@ -153,10 +161,23 @@ Definition of done for a piece: no divergence across 50 replays.
 
 - **T1 — Confirm the dump accounting. DONE.** See the table above. Answer: yes,
   the dump is complete; the gap is fully explained; content greps are reliable.
-- **T2 — `sim/` skeleton.** Fixed-timestep loop, seeded PRNG, explicit phase
-  order, state object, trace writer, headless runner in `tools/`. Acceptance: a
-  stub entity moving at a constant rate produces a byte-identical CSV across 10
-  runs.
+- **T2 — `sim/` skeleton. DONE.** Fixed-timestep accumulator (`sim/clock.js`),
+  mulberry32 (`sim/rng.js`), explicit phase order (`sim/index.js`), entities and
+  alarms (`sim/entity.js`), trace writer (`sim/trace.js`), headless runner and
+  differ in `tools/`. Acceptance met: 10/10 byte-identical, in-process and
+  across separate Node processes.
+
+  ```
+  export PATH="$HOME/tools/node/bin:$PATH"
+  node tools/verify-determinism.mjs                     # T2 acceptance
+  node tools/run-trace.mjs --seed 12345 --frames 600 --out traces/stub.csv
+  node tools/diff-trace.mjs traces/oracle.csv traces/stub.csv
+  ```
+
+  The stub scene deliberately exercises alarms, the PRNG, input, and spawn/
+  destroy churn. A stub that only moved at a constant rate would pass while
+  proving nothing, so the acceptance run also asserts that a *different* seed
+  produces a *different* trace — otherwise the test would be vacuous.
 - **T3 — Soul movement.** Translate from `obj_heart`'s Step event. Constants are
   already measured (see Open questions). Acceptance: hold-right-into-wall trace
   matches the oracle exactly.
