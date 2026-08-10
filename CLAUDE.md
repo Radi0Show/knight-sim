@@ -131,13 +131,32 @@ Seed-locked practice mode is a feature, not a compromise.
       and `Info.plist` says 1.0.0. Bytecode 17 is the only real signal. Get the
       actual number from UTMT's data display, or infer it from the FEAT chunk.
 - [ ] Can the IDE install that runtime? (blocking — determines if the port is viable)
-- [ ] Soul object name:
-- [ ] Base soul speed constant:
-- [ ] Are diagonals normalized?
-- [ ] Box clamping: clamp-after-move, or reject-on-collision?
+- [x] Soul object name: **`obj_heart`**
+- [x] Base soul speed constant: **4**, as `global.sp`, copied into the instance
+      variable `wspeed` at Create. Slow-walk halves it with **`ceil`**, not
+      `floor` and not plain multiplication — see rule 5.
+- [x] Are diagonals normalized? **No.** Horizontal and vertical are set
+      independently to +/- `wspeed`, with no `sqrt`, `lengthdir`, or 0.707 factor
+      anywhere in the Step event. A diagonal moves 4 on both axes.
+- [x] Box clamping: **both mechanisms exist and they are not interchangeable.**
+      `obj_battlesolid` is reject-on-collision, resolved per axis by decrementing
+      step-back loops before the move. `scr_heartclamp` is clamp-after-move, and
+      it is called from exactly one place in the whole game — see below. Position
+      is committed at a single site after all resolution.
 - [ ] Battle controller object name:
-- [ ] Attack objects: shared bullet manager, or bespoke state machines?
+- [x] Attack objects: **bespoke state machines.** Each attack is its own object
+      with its own events; there is no shared bullet manager. 14 objects and 58
+      code entries carry the fight.
 - [ ] Globals the battle reads (party stats, equips, flags):
+
+### Why rule 3 is not theoretical
+
+`scr_heartclamp` has exactly one caller in the entire game:
+`obj_roaringknight_slash`, in its **End Step**. So during that attack the soul is
+moved and collision-resolved in `obj_heart`'s Step, and only then clamped, by a
+different object, later in the same frame. Move that call into Step and the soul
+sits at a different position for one frame — which is precisely the class of
+divergence this project exists to catch.
 
 Confirmed incidentally while reading GEN8, in case any of it saves a lookup:
 internal name `DELTARUNE`, display name `DELTARUNE Chapter 3` (so `chapter3_mac`

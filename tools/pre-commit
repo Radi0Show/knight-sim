@@ -23,6 +23,29 @@ fail=0
 #   global.chapter
 # ---------------------------------------------------------------------------
 IDENTIFIERS=(
+  # soul and battle-box machinery
+  obj_heart
+  obj_battlesolid
+  obj_growtangle
+  obj_collidebullet
+  obj_grazebox
+  scr_heartclamp
+  scr_moveheart
+  scr_heartcolor
+  scr_get_box
+  wspeed
+
+  # the fight
+  obj_roaringknight_slash
+  obj_roaringknight_splitslash
+  obj_roaringknight_split_bullet
+  obj_roaringknight_quickslash
+  obj_roaringknight_quickslash_attack
+  obj_roaringknight_quickslash_big
+  obj_roaringknight_quickslash_afterimage
+  obj_roaringknight_boxsplitter_attack
+  obj_roaringknight_fountain_bullet
+  obj_ch3_PTB02_roaringknight
 )
 
 staged_src=$(git diff --cached --name-only --diff-filter=ACM -- src/)
