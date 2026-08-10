@@ -612,6 +612,34 @@ combinations get an oracle spot-check as part of their translation.
   `gmlRng` when a scene supplies no recorded table, so attacks written after
   the RNG discovery use the real stream while attack 1's table-based
   verification still passes.
+- **Attack 5 — Stars (cone). PARTIAL: cone verified, stars not translated.**
+  `node tools/verify-stars.mjs`: rows 91..300 of `traces/t8-stars.csv` — the
+  cone's angle easing, internal `gt_x`, and the battle box position — plus
+  soul position to row 152. 210 frames.
+
+  **Stars opens every phase**, and its dodge pressure is not the bullets: the
+  cone drags the arena leftward every frame (`gt_x -= angle/target_angle/2`,
+  box snaps to `round(gt_x)`) and squeezes the soul against the wall. Over the
+  verified window the box travels 102px left. This is also the source of the
+  "box drift" that looked like a harness bug for several rounds — it was this
+  attack all along.
+
+  `target_angle = 60` was DERIVED from the trace (steady step 0.499512 at
+  angle 59.941406), not assumed. The push formula reproduces 44/44
+  steady-state frames and `box.x == round(gt_x)` holds for all 340 frames the
+  cone is alive.
+
+  New engine capability: **gravity** in the motion phase. GML order is
+  friction on the speed magnitude, then the gravity vector added to
+  hspeed/vspeed, then move — so gravity changes DIRECTION as well as speed and
+  speed/direction are recomputed from the components. Needed by the star
+  bullets.
+
+  Still open: `obj_knight_pointing_star` (126-line Step with a gravity phase,
+  spawns starchildren) is not translated, so the scene has no stars. And at
+  oracle frame 153 the soul steps 4px left with the box wall ~50px away —
+  cause not identified; the stars are alive by then and are outside this
+  scene, so soul position is only claimed to 152.
 - **T5 — Ship it. PLAYABLE, not yet published.**
   `python3 -m http.server 8177` then open `/web/index.html`. Arrows or WASD
   move, shift focuses, R resets, P pauses. Verified in-browser at a steady

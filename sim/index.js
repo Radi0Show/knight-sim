@@ -41,8 +41,14 @@ export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'end
  * exactly how the splitter's teeth speed up (friction -0.2 / -0.05).
  * Verified against traces/t6-splitter.csv.
  *
- * Envelope: speed, direction and friction. No gravity yet, and no direct
- * hspeed/vspeed writes — extend against an oracle trace when needed.
+ * GRAVITY, added for the Stars attack. GameMaker's move step is, in order:
+ * apply friction to the speed MAGNITUDE, then add the gravity vector to
+ * hspeed/vspeed, then move. Because gravity is a vector it can change
+ * DIRECTION as well as speed, so speed/direction are recomputed from the
+ * resulting components rather than treated as independent.
+ *
+ * Envelope: speed, direction, friction, gravity, gravity_direction. Still no
+ * direct hspeed/vspeed writes — extend against an oracle trace when needed.
  *
  * FLOAT32: every built-in field narrows on store (entity.js F32_BUILTINS,
  * measured by oracle_f32_probe). Arithmetic here is f64; the narrowing
@@ -63,13 +69,28 @@ function runMotion(state) {
       }
     }
 
-    if (!e.speed) continue;
-    const r = (e.direction * Math.PI) / 180;
+    if (!e.speed && !e.gravity) continue;
     state.counters.motionSteps += 1;
+
+    // Decompose to components, add gravity, recompose.
+    const r = (e.direction * Math.PI) / 180;
+    let hs = e.speed * Math.cos(r);
+    let vs = -e.speed * Math.sin(r);
+
+    if (e.gravity) {
+      const gr = (e.gravity_direction * Math.PI) / 180;
+      hs += e.gravity * Math.cos(gr);
+      vs += -e.gravity * Math.sin(gr);
+      e.speed = Math.sqrt(hs * hs + vs * vs);
+      let dir = (Math.atan2(-vs, hs) * 180) / Math.PI;
+      if (dir < 0) dir += 360;
+      e.direction = dir;
+    }
+
     // No explicit fround: x/y are f32-narrowing accessors (see entity.js
     // F32_BUILTINS). Narrowing is structural so no call site can forget.
-    e.x = e.x + e.speed * Math.cos(r);
-    e.y = e.y - e.speed * Math.sin(r);
+    e.x = e.x + hs;
+    e.y = e.y + vs;
   }
 }
 

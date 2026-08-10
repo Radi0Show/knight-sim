@@ -40,6 +40,7 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     sp: 4, // global.sp — base soul speed
     heartx: 0, // global.heartx
     hearty: 0, // global.hearty
+    turntimer: 999, // global.turntimer — gates attack close-out
     invc: 1, // global.invc — invincibility multiplier (inv resets to invc*30)
 
     // Oracle parity switch. Some oracle patches replace obj_collidebullet's
