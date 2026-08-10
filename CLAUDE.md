@@ -429,7 +429,39 @@ combinations get an oracle spot-check as part of their translation.
   `scr_bullet_inherit(_b)` for each tooth reads those inherited fields — a
   two-level runtime inheritance chain. Creating it directly without seeding
   them crashes with "Variable ... damage not set before reading it".
-- **T5 — Ship it.** GitHub Pages or itch.io.
+- **T5 — Ship it. PLAYABLE, not yet published.**
+  `python3 -m http.server 8177` then open `/web/index.html`. Arrows or WASD
+  move, shift focuses, R resets, P pauses. Verified in-browser at a steady
+  30/30 Hz with the splitter and fountain waves both running.
+
+  ```
+  web/index.html   page + driver (owns real time; uses sim/clock.js drain)
+  render/canvas.js reads sim state, never writes
+  input/keyboard.js DOM binder -> the same input object the verifier feeds
+  sim/scenes/practice.js  the playable scene (lives in sim/, stays DOM-free)
+  ```
+
+  **Art: none shipped.** Every shape is rendered from the collision masks
+  already in `sim/data` — the same pixel grids the physics uses. What you see
+  is exactly what you collide with, and no extracted sprites are distributed.
+  Revisit only if the look demands it.
+
+  `?frames=N` fast-forwards deterministically before the first paint, and
+  `?seed=N` picks the RNG seed — reproducible screenshots of any moment,
+  through the same code path as the headless verifier. `window.__sim` exposes
+  state/step for debugging.
+
+  **`sim/` is now filesystem-free**, as the architecture always required: mask
+  data is a generated static module (`tools/gen-masks.mjs`) rather than a JSON
+  read, so the same code runs under Node and in the browser.
+
+  Known visual gaps (cosmetic, no fidelity impact): the split box halves are
+  not drawn while the box is parked offscreen during a split, and the slash
+  renders as a line rather than the original's tapering wedge.
+
+  Remaining before publishing: the attack schedule in `practice.js` is
+  hand-authored rather than the fight's real sequencing (turn machinery is out
+  of scope), and 7 attacks are still untranslated.
 
 ## Assets
 

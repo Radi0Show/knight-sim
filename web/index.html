@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Knight Fight Simulator — practice</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; background: #111; color: #ccc;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #000; border: 1px solid #333;
+    image-rendering: pixelated;
+    width: min(96vw, 1280px); height: auto; aspect-ratio: 4 / 3;
+  }
+  #hud { margin-top: 10px; opacity: .75; text-align: center; }
+</style>
+</head>
+<body>
+  <canvas id="game" width="640" height="480"></canvas>
+  <div id="hud">loading…</div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -38,13 +38,10 @@
 // angle/scale combinations should get an oracle spot-check before being
 // trusted.
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const raw = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'data', 'masks.json'), 'utf8'),
-);
+// Static import, not a filesystem read: sim/ runs in the browser as well as
+// under Node, and the architecture rule is that it touches neither the DOM
+// nor the filesystem. Regenerate the data module with tools/gen-masks.mjs.
+import { MASK_DATA as raw } from './data/masks.js';
 
 function build(m) {
   return {
