@@ -1,9 +1,10 @@
 // Attack 5 oracle-comparison scene: the Stars cone, against
 // knight-research/traces/t8-stars.csv.
 //
-// Verifies the attack's DODGE-RELEVANT core: the cone's angle easing, the
-// per-frame leftward shove of the battle box, the box snapping to round(gt_x),
-// and the soul being squeezed against the box's right edge.
+// Verifies the attack's DODGE-RELEVANT core, now including the soul for every
+// frame of the window: the cone's angle easing, the per-frame leftward shove
+// of the battle box, the box snapping to round(gt_x), and the soul squeezed
+// against the box's right edge as the arena closes in.
 //
 // The stars themselves (obj_knight_pointing_star) are not in this scene yet —
 // they are bullets with their own 126-line Step and a gravity phase. The cone
@@ -11,6 +12,13 @@
 //
 // Timeline taken from the oracle: cone appears at frame 61 with angle 0 and
 // gt_x 320; the angle starts opening at frame 91 (con reaches 2).
+//
+// The soul sits at (314,162) — the box centre, where the tester places it —
+// and stays there until frame 215, when the box has slid far enough left that
+// the squeeze (obj_heart.x = min(obj_heart.x, gt_maxx() - 22)) starts pushing
+// it. That squeeze is the attack's real dodge pressure and is now visible
+// because the soul is finally IN the arena: earlier recordings had the knight
+// dragging it to x 165 (see CLAUDE.md, "The soul-outside-the-box bug").
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
@@ -51,7 +59,7 @@ export function buildOracleT8Scene(state) {
   state.turntimer = 999;
 
   spawn(state, battlebox, { x: 320, y: 170 });
-  state.soul = spawn(state, soul, { x: 165, y: 160 });
+  state.soul = spawn(state, soul, { x: 314, y: 162 });
   state.soul.canmove = 0;
   spawn(state, spawner);
 

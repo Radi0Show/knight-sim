@@ -632,10 +632,13 @@ combinations get an oracle spot-check as part of their translation.
   `random_offset`, and the shuffled fan orders (ds_list_shuffle unsolved).
   Everything around them is verified normally.
 
-  Window stops at 118 because the ORACLE's soul snaps back to (165,160) at
-  frame 113 — the tester re-placing it, a harness artifact. Since aim locks
-  onto the soul, later cycles inherit it. Extending needs a run with the soul
-  pinned throughout.
+  Verified window is 62..281 — SIX complete intro/aim/slash/cooldown cycles.
+  It was 57 frames until two fixes landed together: the soul-outside-the-box
+  root cause, and a missing pair of lines in the cooldown
+  (`slash_offset -> 0` step 6, `slash_base -> 15` step 1) that SHORTEN the aim
+  phase each cycle — 30 frames, then 23. The bad soul placement had been
+  masking that second bug. Divergence at 282 is the attack's `return`
+  wind-down, which is not translated.
 
   Also fixed here: `obj_roaringknight_slash`'s choose() now falls back to
   `gmlRng` when a scene supplies no recorded table, so attacks written after
@@ -664,11 +667,15 @@ combinations get an oracle spot-check as part of their translation.
   speed/direction are recomputed from the components. Needed by the star
   bullets.
 
+  Re-recorded after the soul-outside-the-box fix. The soul now starts at the
+  box centre (314,162) and holds there until frame 215, when the box has slid
+  far enough left that the squeeze begins — `gt_maxx - 22` = 313, and the soul
+  moves to exactly 313. **Soul position matches for the whole window now**,
+  where before it only held to 152. The frame-153 anomaly was never the
+  stars; it was the knight dragging the soul out of the arena.
+
   Still open: `obj_knight_pointing_star` (126-line Step with a gravity phase,
-  spawns starchildren) is not translated, so the scene has no stars. And at
-  oracle frame 153 the soul steps 4px left with the box wall ~50px away —
-  cause not identified; the stars are alive by then and are outside this
-  scene, so soul position is only claimed to 152.
+  spawns starchildren) is not translated, so the scene has no stars.
 - **T5 — Ship it. PLAYABLE, not yet published.**
   `python3 -m http.server 8177` then open `/web/index.html`. Arrows or WASD
   move, shift focuses, R resets, P pauses. Verified in-browser at a steady

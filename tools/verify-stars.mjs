@@ -41,16 +41,18 @@ function same(a, b) {
   return Math.abs(na - nb) <= 0.5 * Math.pow(10, -dp);
 }
 
-// Cone mechanics over the whole window; soul only while it is attributable
-// to the cone. At oracle frame 153 the soul steps 4px left with the box wall
-// still ~50px away — the stars are alive by then and are NOT in this scene,
-// so the cause sits outside what is being verified. Claiming soul position
-// past that point would be claiming something untested.
+// Cone mechanics AND soul position over the whole window.
+//
+// The soul check used to stop at 153, where it stepped 4px with the box wall
+// far away. That was not the stars: the knight was dragging the soul out of
+// the arena (myattackchoice defaulting to 0 — see CLAUDE.md). With the soul
+// correctly placed, the only thing that moves it is the cone's squeeze, and
+// that now matches for every frame.
 const CONE_COLS = [
   ['angle', 'angle'], ['anglelerp', 'anglelerp'],
   ['gtx_internal', 'gtx_internal'], ['gt_x', 'gt_x'],
 ];
-const SOUL_UNTIL = 152;
+const SOUL_UNTIL = 300;
 
 console.log(`oracle: ${oraclePath}`);
 let fail = 0; let checked = 0;
