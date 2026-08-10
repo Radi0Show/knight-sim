@@ -78,6 +78,7 @@ export const roaringknightSlash = {
 
     e.isBullet = true;
     e.xscale = 1;
+    e.image_angle = 0; // real spawners set image_angle = direction
   },
 
   alarm: {
@@ -88,14 +89,17 @@ export const roaringknightSlash = {
   },
 
   // Collision test used by the engine's collision phase (the heart's
-  // Collision_obj_collidebullet -> event_user(5)). Floor-sampling of the
-  // 0.1-yscaled line mask — which, at these parameters, never overlaps an
-  // integer-positioned heart (the scaled line falls in a sub-pixel window
-  // containing no integer row). Oracle-confirmed: t4-slash shows no inv
-  // reset across the slash's whole life. UNVERIFIED for other spawn
-  // geometries — a positive-contact scenario has no oracle data yet.
+  // Collision_obj_collidebullet -> event_user(5)). The model behind
+  // masksOverlap is calibrated against 48 oracle data points, this mask
+  // included (tools/verify-contact.mjs): axis-aligned at yscale 0.1 the
+  // line cannot connect (its integer bbox samples off the mask row), which
+  // is why t4-slash records no hit; rotated to the diagonals the real
+  // spawners use, it does.
   collides(e, heart, state) {
-    return masksOverlap(HEART_MASK, heart.x, heart.y, SLASH_MASK, e.x, e.y, e.xscale, e.image_yscale);
+    return masksOverlap(
+      HEART_MASK, heart.x, heart.y,
+      SLASH_MASK, e.x, e.y, e.xscale, e.image_yscale, e.image_angle,
+    );
   },
 
   // Other_15 (User Event 5) — fired by the heart's collision event.

@@ -270,11 +270,23 @@ distributes `360/(n*2)*a + offset + aim_direction`), and aims at
 `(obj_heart.x + 10, obj_heart.y + 10)` — dead centre on the soul. In the real
 fight these connect.
 
-**Blocking prerequisite for most remaining attacks:** `sim/masks.js` has no
-rotation support and is over-permissive at sub-pixel scale. A rotation-capable
-precise-mask test, oracle-validated against the table above, is needed before
-any rotated attack can be translated. That is the next piece of engine work,
-ahead of attacks 2..10.
+**RESOLVED — the collision model is now calibrated.** `masksOverlap` in
+`sim/masks.js` implements the model the data selects: positions floored,
+B's rotated bbox rounded to an integer world rect as a pre-check (floor min
+edge, ceil-1 max edge), then corner+floor inverse sampling. Each ingredient
+is pinned by data that discriminates it: centre sampling wrongly hits at
+yscale 0.5-0.9; without the bbox pre-check, trig epsilons at 90° decide hits
+and get them wrong. `node tools/verify-contact.mjs` replays all 48 points —
+the table above, the sub-pixel sweep, and the T3 grow-in stall — and passes.
+
+A bonus finding: the grow-in (rotating fractional-scale box) matches this
+model exactly once the box state live during the heart's Step is taken as
+timer=row rather than row+1. The "growth window" was a frame-alignment
+error, not a rasterization mystery. The grow animation is still not modelled
+in `sim/battlebox.js`; pin the alignment with a dedicated trace when it is.
+
+Remaining collision caveat: none known. New attacks at untested angle/scale
+combinations get an oracle spot-check as part of their translation.
 - **T5 — Ship it.** GitHub Pages or itch.io.
 
 ## Assets
