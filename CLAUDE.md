@@ -24,7 +24,7 @@ whose per-frame state is provably identical to the original's.
 
 ## Clean-room boundary (important)
 
-Decompiled GML from `data.win` must **never** enter `src/`. The flow is:
+Decompiled GML from the original data file must **never** enter `src/`. The flow is:
 
 ```
 gml_dump/  →  notes/  →  src/
@@ -41,7 +41,7 @@ fires, do not weaken the hook — rewrite the code.
 
 ```
 knight-research/        PRIVATE, never published
-  oracle/               instrumented data.win        [gitignored]
+  oracle/               instrumented game.ios        [gitignored]
   gml_dump/             full UTMT text export        [gitignored]
   traces/               oracle CSVs
   notes/                per-attack specs
@@ -51,7 +51,26 @@ knight-sim/             the standalone build
   CLAUDE.md             this file
 ```
 
-Never commit: `data.win`, extracted sprites/audio, or decompiled GML.
+Never commit: `game.ios` / `data.win`, extracted sprites/audio, or decompiled GML.
+
+## The target build (macOS)
+
+This install is macOS, where the GameMaker data file is named **`game.ios`**, not
+`data.win` — same FORM/GEN8 container, different extension. Every guide online
+says `data.win`; on this machine that path does not exist.
+
+Chapter 3 data, working copy:
+
+```
+knight-research/oracle/DELTARUNE.app/Contents/Resources/chapter3_mac/game.ios
+```
+
+Chapters 1–5 each have their own `chapterN_mac/game.ios`; the 2.8 MB one at the
+`Resources/` root is just the launcher.
+
+Instrumenting the oracle breaks the bundle's code signature, and unsigned modified
+bundles will not launch on Apple Silicon. Re-sign ad hoc after every oracle
+rebuild: `codesign --force --deep --sign - <app>`.
 
 ## Trace format
 
@@ -103,9 +122,14 @@ Seed-locked practice mode is a feature, not a compromise.
 
 ## Open questions (fill in as discovered)
 
-- [ ] GEN8 game speed:
-- [ ] GEN8 bytecode version:
-- [ ] GameMaker runtime version:
+- [x] GEN8 game speed: **30.0** — read directly from the GMS2 tail of GEN8.
+      Confirms rule 1. The fixed timestep is not an assumption.
+- [x] GEN8 bytecode version: **17**
+- [ ] GameMaker runtime version: **not recoverable from the shipped files.** GEN8
+      reports IDE version 2.0.0.0, which modern GameMaker writes as a placeholder;
+      there is no `runtime-YYYY.x.x.x` string in the data file or the Mac runner,
+      and `Info.plist` says 1.0.0. Bytecode 17 is the only real signal. Get the
+      actual number from UTMT's data display, or infer it from the FEAT chunk.
 - [ ] Can the IDE install that runtime? (blocking — determines if the port is viable)
 - [ ] Soul object name:
 - [ ] Base soul speed constant:
@@ -114,3 +138,7 @@ Seed-locked practice mode is a feature, not a compromise.
 - [ ] Battle controller object name:
 - [ ] Attack objects: shared bullet manager, or bespoke state machines?
 - [ ] Globals the battle reads (party stats, equips, flags):
+
+Confirmed incidentally while reading GEN8, in case any of it saves a lookup:
+internal name `DELTARUNE`, display name `DELTARUNE Chapter 3` (so `chapter3_mac`
+is the right file), 640x480, 246 rooms, 31 chunks, debugger disabled.
