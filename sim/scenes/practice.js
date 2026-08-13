@@ -495,6 +495,9 @@ const director = {
         // frame 1 of turn 1; the sim read 0.20 for the whole of turn 1 and
         // was one ramp step behind for the rest of the fight.
         advanceTurn(state);
+        // `phaseturn++` — the SELECTOR's own first line, in the same block.
+        // Reset to 0 when a phase ends, exactly as its branches do.
+        state.phaseturn = e.turn === 0 ? 1 : (state.phaseturn ?? 0) + 1;
         const upcoming = FIGHT_TABLE[e.phase][e.turn];
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');

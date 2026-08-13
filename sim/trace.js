@@ -164,12 +164,21 @@ function wideRow(state) {
     // `phase` is a human string in the narrow row; here it is the numbers, so
     // a diff points at a turn rather than at prose.
     int(state.phaseNum ?? 0),
-    // `phaseturn` IS 1-BASED IN THE GAME — its first turn is 1, and the
-    // selector's branches read `phaseturn == 1..5`. The sim indexes turns from
-    // 0 internally, which is fine, but the TRACE has to speak the game's
-    // numbering or every row disagrees by one for no reason. Caught on frame 1
-    // of the first complete recording.
-    int((state.turnNum ?? 0) + 1),
+    // `phaseturn` IS NOT THE SIM'S TURN INDEX, and the two disagree for most
+    // of every turn.
+    //
+    // The sim's `turnNum` is the turn ABOUT TO RUN — it advances the moment
+    // the previous turn ends. `phaseturn` is incremented by the SELECTOR
+    // (Other_10), which the Knight only calls in his `mnfight == 1.5` setup,
+    // i.e. after the party has finished acting. So through the whole party
+    // menu the game still reads the PREVIOUS turn's number — 0 during turn 1.
+    //
+    // Both directions of this were wrong in turn: first the raw 0-based index
+    // (oracle 1, sim 0 once the attack was up), then a blanket +1 (oracle 0,
+    // sim 1 during the menu). Neither is an off-by-one to be patched at the
+    // trace; they are different quantities, so the sim tracks the game's own
+    // counter and reports that.
+    int(state.phaseturn ?? 0),
     state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-',
     state.fightBar ? int(state.fightBar.boltx) : '-',
     int(state.dialogue?.balloonturn ?? 0),
