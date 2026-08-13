@@ -2483,3 +2483,58 @@ in the field is right.
 
 **Q toggles the MUSIC only.** The effects are feedback — a graze, a scoring
 bolt — and muting them makes the fight harder to read.
+
+## The second damage entry point, and two write-only variables
+
+**`scr_damage_maxhp` did not exist in this build at all.** Flurry's slash calls
+`scr_damage_maxhp(0.66, false, true)`, and almost every rule differs from
+`scr_damage`:
+
+    tdamage = ceil(global.maxhp[chartarget] * arg0);
+    if (charaction == 10 && !arg1) tdamage = ceil(tdamage / 1.5);
+    if (arg2) tdamage = clamp(tdamage, 1, global.hp[chartarget] - 1);
+
+  * a FRACTION OF MAX HP, not a number run through the defence walk
+  * **DF does nothing to it** — there is no scr_damage_calculation on the
+    single-target path, so armour cannot reduce it
+  * **it can never fell you** — `clamp(..., 1, hp - 1)`
+  * **the ShadowMantle halves the FRACTION**, `arg0 /= 2`, before anything
+    else happens: 0.66 becomes 0.33
+  * DEFEND is `/1.5` here, where the ordinary path uses `ceil(2t / 3)`
+
+### The Flurry chain
+
+`obj_roaringknight_splitslash`'s contact deals NOTHING. It sets
+`playerstrike = 1`, hides the soul, and the hurt lands `35 + hurt_delay`
+frames later — after the box has finished splitting. That delay is the attack:
+you are cut, and a beat afterwards it hurts. The port modelled the timing and
+the visuals and simply never called the damage. Flurry went from 15 HP a turn
+to 65.
+
+### TWO WRITE-ONLY VARIABLES, and they were mine
+
+`splitslash.js` wrote `state.inv` in two places. Nothing reads it — the field
+the damage path gates on is `state.invTimer`. So `global.inv = -1`, which is
+what GUARANTEES the deferred hurt lands, never happened, and the
+invulnerability the attack grants afterwards was never set either.
+
+This is the exact class of bug CLAUDE.md catalogues in the original's GML
+(`destroy_on_hit` vs `destroyonhit`, `turn_timer`, `splitbox`) — a name that
+looks right, assigns cleanly, and is read nowhere. Worth noting that the
+catalogue now has entries from both sides.
+
+### Q could flip the flag but never stop a note
+
+`startLoop` — the deferred path added when the music was made lazy — called
+`fire()` and DISCARDED the source, so it was never registered in `loops` and
+`stopLoop` had nothing to find. Since the music is the one cue that is never
+preloaded, every music start goes through that path, so the toggle could never
+work. The `c.loop` branch had always tracked it correctly; the deferred twin
+did not.
+
+### Where the damage stands
+
+    stars     360   (75 AOE x3 party)      tracking  6510
+    flurry     65   (66% maxhp, clamped)   tunnel    5136
+    rotating 4821                          vortex    5136
+    roaring  2568

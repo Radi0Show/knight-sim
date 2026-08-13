@@ -45,6 +45,7 @@
 // organism's `split_wait`.
 
 import { spawn, destroy } from '../entity.js';
+import { scrDamageMaxhp } from '../damage.js';
 import { clamp01, lerp, lengthdirX, lengthdirY, scrEaseOut, sign } from '../gml.js';
 import { scrBulletInit } from '../bullets/regularbullet.js';
 import { QUICKSLASH_SHAPE, scrPreciseHitRotatedRect } from '../masks.js';
@@ -249,7 +250,24 @@ export const splitslash = {
       e.playerstrike = 0;
       // Hand the soul back its own drawing — see onHit.
       if (state.soul) state.soul.image_alpha = 1;
-      state.inv = state.invc * 30;
+
+      // THE DAMAGE, and it was missing entirely.
+      //
+      //     if (target != 3) scr_damage_maxhp(0.66, false, true);
+      //
+      // Flurry's slash does not deal a damage NUMBER — it takes 66% of the
+      // target's MAX HP, ignoring DF, halved to 33% by the ShadowMantle, and
+      // clamped so it can never fell you. The contact handler deals nothing;
+      // it only sets `playerstrike` and the hurt lands here, `35 + hurt_delay`
+      // frames later, after the box has finished splitting. That delay is the
+      // attack: you are cut, and then a beat afterwards it hurts.
+      if (e.target !== 3) scrDamageMaxhp(state, 0.66, false, true, { target: 0 });
+
+      // `global.inv = global.invc * 30`. This wrote `state.inv`, which is
+      // READ NOWHERE — a write-only variable, the same class of bug CLAUDE.md
+      // catalogues in the original's GML, only this one was mine. The field
+      // the damage path actually gates on is `invTimer`.
+      state.invTimer = state.invc * 30;
       destroy(e);
     }
   },
@@ -281,7 +299,9 @@ export const splitslash = {
     e.active = 0;
     e.memheartx = heart.x;
     e.memhearty = heart.y;
-    state.inv = -1;
+    // `global.inv = -1` — clears invulnerability so the deferred hurt above
+    // is guaranteed to land. Same write-only-variable bug as below.
+    state.invTimer = -1;
 
     // THE SOUL IS HIDDEN AND REDRAWN BY THE SLASH. `obj_heart.image_alpha = 0`
     // stops the heart drawing itself; from here the splitslash's Draw event

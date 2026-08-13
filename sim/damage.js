@@ -369,3 +369,63 @@ export function freshParty() {
 export function partyWiped(state) {
   return state.partyHp.every((h) => h <= 0);
 }
+
+/**
+ * `scr_damage_maxhp(fraction, ignoreDefend, cannotFell)` — THE SECOND DAMAGE
+ * ENTRY POINT, and this build did not have it at all.
+ *
+ * Flurry's slash calls `scr_damage_maxhp(0.66, false, true)`. It is not a
+ * damage number run through the defence walk; it is a FRACTION OF MAX HP, and
+ * almost every rule is different:
+ *
+ *     tdamage = ceil(global.maxhp[chartarget] * arg0);
+ *     if (charaction == 10 && !arg1) tdamage = ceil(tdamage / 1.5);   // DEFEND
+ *     if (arg2) tdamage = clamp(tdamage, 1, global.hp[chartarget] - 1);
+ *
+ *   * **DF DOES NOTHING.** There is no `scr_damage_calculation` on the
+ *     single-target path — armour cannot reduce it.
+ *   * **IT CANNOT FELL YOU.** `clamp(..., 1, hp - 1)` leaves you on at least
+ *     1 HP however big the fraction is. A 66% hit on someone at 40% health
+ *     takes them to 1, not below.
+ *   * **THE SHADOW MANTLE HALVES THE FRACTION**, not the result:
+ *     `arg0 /= 2`, so 0.66 becomes 0.33 before anything else happens.
+ *   * **DEFEND is `/1.5`**, applied before the clamp.
+ *
+ * The same targeting block as `scr_damage` runs first — the Kris redirect and
+ * the mantle counter — but gated on `!i_ex(obj_knight_roaring2)`: during
+ * Roaring there is no redirect at all.
+ */
+export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell = false, opts = {}) {
+  if (state.invTimer >= 0) return 0;
+  const hp = state.partyHp;
+
+  // Targeting, then the mantle's halving of the FRACTION.
+  let target = opts.target ?? 0;
+  if (!state.roaringActive) {
+    target = knightTarget(state, target, {
+      ...opts,
+      choose: (...xs) => (state.gmlRng ? gmlChoose(state.gmlRng, xs) : xs[0]),
+    });
+    if ((gearOf(state)[target]?.armor ?? []).includes(23)) fraction /= 2;
+  }
+
+  const maxhp = PARTY[target].maxhp;
+  let t = Math.ceil(maxhp * fraction);
+  if (state.charaction?.[target] === ACTION_DEFEND && !ignoreDefend) {
+    t = Math.ceil(t / 1.5);
+  }
+  if (cannotFell) {
+    // `clamp(tdamage, 1, hp - 1)` — it can take you to 1 and no further.
+    t = Math.max(1, Math.min(t, hp[target] - 1));
+  }
+  if (t <= 0) return 0;
+
+  hp[target] -= t;
+  if (hp[target] <= 0) hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+  heroHurt(state, target);
+  spawnDmgNumber(state, PARTY_POS[target].x, PARTY_POS[target].y, t,
+    hp[target] <= 0 ? TYPE_DEAD : TYPE_PARTY, 2);
+  state.invTimer = state.invc * 30;
+  return t;
+}
+

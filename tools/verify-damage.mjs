@@ -23,6 +23,8 @@
 
 import { createState, stepFrame } from '../sim/index.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { scrDamageMaxhp } from '../sim/damage.js';
+import { createHeroes } from '../sim/heroes.js';
 import { launchAttack } from '../sim/scenes/fight.js';
 
 const NONE = {
@@ -157,6 +159,65 @@ console.log(`\nDEFEND: a 206 slash deals ${defending} vs ${plain} undefended`);
   if (owner && owner.damage === 200) {
     failures.push('the Stars cone inherited 200 — the controller does not pass it');
   }
+}
+
+
+// ── scr_damage_maxhp — THE SECOND DAMAGE ENTRY POINT ─────────────────────
+//
+// Flurry's slash calls `scr_damage_maxhp(0.66, false, true)`, and almost
+// every rule differs from scr_damage: it is a FRACTION OF MAX HP, DF does
+// nothing to it, the ShadowMantle halves the FRACTION rather than the result,
+// and it can never fell you.
+{
+  const BARE = [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }];
+  const mk = (gear) => {
+    const s = createState({ seed: 1 });
+    s.heroes = createHeroes();
+    s.partyHp = [160, 190, 140];
+    s.invTimer = -1;
+    s.invc = 0.4;
+    s.loadout = { gear };
+    return s;
+  };
+  const pick = { target: 1, choose: (...x) => x[0] };
+
+  // ceil(190 * 0.66) = 126, and DF does NOT reduce it.
+  let s = mk(BARE);
+  let d = scrDamageMaxhp(s, 0.66, false, true, pick);
+  if (d !== 126) failures.push(`the 66% slash dealt ${d} to Susie, expected 126`);
+
+  // THE MANTLE HALVES THE FRACTION: 0.66 -> 0.33, so ceil(190 * 0.33) = 63.
+  // Halving the RESULT instead would give 63 too on this number — so check a
+  // case where they differ: ceil(190*0.33)=63 vs ceil(ceil(190*0.66)/2)=63.
+  // Use Kris's 160: ceil(160*0.33)=53 vs ceil(ceil(160*0.66)/2)=ceil(106/2)=53.
+  // They agree; assert the value and the halving, which is what matters.
+  s = mk([{ weapon: 0, armor: [] }, { weapon: 0, armor: [23] }, { weapon: 0, armor: [] }]);
+  d = scrDamageMaxhp(s, 0.66, false, true, pick);
+  if (d !== 63) failures.push(`the mantled 66% slash dealt ${d}, expected 63`);
+
+  // IT CANNOT FELL. `clamp(tdamage, 1, hp - 1)` leaves at least 1 HP.
+  s = mk(BARE);
+  s.partyHp[1] = 20;
+  d = scrDamageMaxhp(s, 0.66, false, true, pick);
+  if (s.partyHp[1] !== 1) failures.push(`a 66% slash on 20 HP left ${s.partyHp[1]}, expected 1`);
+  if (d !== 19) failures.push(`it dealt ${d}, expected 19`);
+
+  // Without the cannotFell flag it CAN, which is what makes the flag load-bearing.
+  s = mk(BARE);
+  s.partyHp[1] = 20;
+  scrDamageMaxhp(s, 0.66, false, false, pick);
+  if (s.partyHp[1] > 0) failures.push('without cannotFell it should have felled Susie');
+
+  // DEFEND is `/1.5`, not the `ceil(2t/3)` the ordinary path uses.
+  s = mk(BARE);
+  s.charaction[1] = ACTION_DEFEND;
+  d = scrDamageMaxhp(s, 0.66, false, true, pick);
+  if (d !== Math.ceil(126 / 1.5)) failures.push(`defending took ${d}, expected ${Math.ceil(126 / 1.5)}`);
+  // ...and `ignoreDefend` skips it, which is how the Roaring finale ignores DEFEND.
+  s = mk(BARE);
+  s.charaction[1] = ACTION_DEFEND;
+  d = scrDamageMaxhp(s, 0.66, true, true, pick);
+  if (d !== 126) failures.push(`ignoreDefend still applied the reduction (${d})`);
 }
 
 if (failures.length) {

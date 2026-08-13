@@ -158,7 +158,12 @@ export function createAudio() {
   function startLoop(name, opts) {
     wantedLoops.delete(name);
     if (loops.has(name)) return;
-    fire(name, opts.pitch, opts.gain, true);
+    // TRACK THE SOURCE, exactly as the `c.loop` branch does. Discarding it
+    // here meant `stopLoop` had nothing to find — and since the music is the
+    // one cue that is never preloaded, EVERY music start goes through this
+    // deferred path, so the Q key could flip the flag and never stop a note.
+    const src = fire(name, opts.pitch, opts.gain, true);
+    if (src) loops.set(name, src);
   }
 
   function stopLoop(name) {
