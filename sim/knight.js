@@ -98,6 +98,10 @@ export function createKnight() {
     holdbreathcount: 0,
     /** Set when the phase-4 Roaring turn runs. Half of the end condition. */
     haveusedroaring: false,
+    // `progamer = true` — the knight's Create. Cleared by scr_damage's
+    // chapter-3 block on any landed hit; read once, by the phase-4 ending
+    // line. True until you get touched.
+    progamer: true,
     endCutscene: 0,
     endcon: 0,
   };

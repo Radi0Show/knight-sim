@@ -34,7 +34,7 @@ import { swordTunnelManager } from '../attacks/sword-tunnel.js';
 import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { roaring2 } from '../attacks/roaring.js';
-import { gmlIrandom, gmlCreate } from '../rng.js';
+import { gmlIrandom, gmlCreate, gmlChoose } from '../rng.js';
 import { KNIGHT } from '../actors.js';
 
 /**
@@ -310,6 +310,16 @@ export function launchAttack(state, entry) {
       const dc = spawn(state, starsController, { ...CONE_POS });
       dc.difficulty = difficulty;
       dc.endtimer = cone.endtimer;
+      // `if (difficulty == 0) side = choose(-1, 1);` — the last line of the
+      // type-98 init, and a REAL draw on the anchored stream. It cannot live
+      // in the controller's create: `difficulty` is assigned after spawn
+      // returns, so a create-time check reads undefined and silently skips —
+      // the first version did exactly that and consumed nothing. Difficulty 2
+      // draws its side per star instead (choose(0, 66, -66), in the spawn
+      // branch).
+      if (difficulty === 0 && state.gmlRng) {
+        dc.side = gmlChoose(state.gmlRng, [-1, 1]);
+      }
       if (difficulty >= 2) state.turntimer += 60;
       return dc;
     }

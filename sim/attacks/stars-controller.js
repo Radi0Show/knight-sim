@@ -25,7 +25,7 @@
 
 import { spawn } from '../entity.js';
 import { lerp } from '../gml.js';
-import { gmlRandom } from '../rng.js';
+import { gmlChoose, gmlRandom } from '../rng.js';
 import { pointingStar } from './pointing-star.js';
 import { heartFollower } from './pointing-starchild.js';
 

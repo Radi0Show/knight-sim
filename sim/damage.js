@@ -325,6 +325,11 @@ export function scrDamage(state, damage, target, opts = {}) {
  */
 export function scrDamageSingle(state, damage, target, opts = {}) {
   if (state.invTimer >= 0) return 0;
+  // `with (obj_knight_enemy) progamer = false;` — scr_damage's chapter-3
+  // block, inside the same `global.inv < 0` gate. Any hit that actually
+  // lands ends the hitless run; the flag starts true in the knight's Create
+  // and is only ever read by the phase-4 ending line ("Kris coughed...").
+  if (state.knight) state.knight.progamer = false;
   // WHO GETS HIT is decided here, not by the bullet. `scr_damage`'s chapter-3
   // block redirects away from Kris and pulls two hits in three onto the
   // ShadowMantle wearer — see knightTarget. Bullets that pass `target` were
@@ -350,6 +355,11 @@ export function scrDamageSingle(state, damage, target, opts = {}) {
  */
 export function scrDamageAll(state, damage, opts = {}) {
   if (state.invTimer >= 0) return 0;
+  // `with (obj_knight_enemy) progamer = false;` — scr_damage's chapter-3
+  // block, inside the same `global.inv < 0` gate. Any hit that actually
+  // lands ends the hitless run; the flag starts true in the knight's Create
+  // and is only ever read by the phase-4 ending line ("Kris coughed...").
+  if (state.knight) state.knight.progamer = false;
   let total = 0;
   for (let ti = 0; ti < 3; ti++) {
     if (state.partyHp[ti] > 0) total += scrDamage(state, damage, ti, opts);

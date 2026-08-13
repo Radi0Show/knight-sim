@@ -43,7 +43,30 @@
 import { scrMovetowards, scrEaseIn, scrEaseOut, lerp } from '../gml.js';
 import { cue } from '../audio.js';
 import { scrAfterimage } from '../fx.js';
-import { gmlIrandom, gmlIrandomRange } from '../rng.js';
+import { gmlIrandom, gmlIrandomRange, gmlRandomRange } from '../rng.js';
+
+/**
+ * The end of the cone's Step, verbatim: knockback-or-drift, the two fake_gt
+ * jitter draws (REAL stream consumption — the values are visual), the box
+ * snap and the soul squeeze. Called exactly once per frame from both the
+ * pre-con-2 path and the live path.
+ */
+function dragStep(e, state, gt, heart) {
+  if (e.knockback !== 0) {
+    const kb = scrEaseIn(e.knockback / 10, 5) * 10;
+    e.gt_x -= kb;
+    e.knockback = scrMovetowards(e.knockback, 0, 0.5);
+    e.fakeGtXoff = gmlRandomRange(state.gmlRng, -1, 1) * (kb / 10);
+    e.fakeGtYoff = gmlRandomRange(state.gmlRng, -1, 1) * (kb / 10);
+  } else {
+    e.gt_x -= e.angle / e.target_angle / 2;
+    e.fakeGtXoff = gmlRandomRange(state.gmlRng, -1, 1) * (e.angle / e.target_angle);
+    e.fakeGtYoff = gmlRandomRange(state.gmlRng, -1, 1) * (e.angle / e.target_angle);
+  }
+  // The box snaps to the integer position; the soul is squeezed against it.
+  if (gt) gt.x = Math.round(e.gt_x);
+  if (gt && heart) heart.x = Math.min(heart.x, gtMaxX(gt) - 22);
+}
 
 function box(state) {
   return state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
@@ -164,7 +187,16 @@ export const pointingCone = {
       }
     }
 
-    if (e.con < 2) return;
+    // The drag block is TOP-LEVEL in the Step — it runs from the cone's
+    // BIRTH, not from con 2, and both of its arms consume two random_range
+    // draws per frame. Gating it behind the con machinery starved the shared
+    // stream by 2 per early frame, which the whole-fight diff measured as the
+    // first star rolling values from ~40 draws upstream. The early-return arm
+    // runs it too, so both paths consume exactly once per frame.
+    if (e.con < 2) {
+      dragStep(e, state, gt, heart);
+      return;
+    }
 
     if (state.turntimer <= e.endtimer) {
       // FIRE. On the first frame of the closing branch angle_lerp is still 1,
@@ -206,17 +238,7 @@ export const pointingCone = {
       e.x += 0.25;
     }
 
-    if (e.knockback !== 0) {
-      const kb = scrEaseIn(e.knockback / 10, 5) * 10;
-      e.gt_x -= kb;
-      e.knockback = scrMovetowards(e.knockback, 0, 0.5);
-    } else {
-      e.gt_x -= e.angle / e.target_angle / 2;
-    }
-
-    // The box snaps to the integer position; the soul is squeezed against it.
-    if (gt) gt.x = Math.round(e.gt_x);
-    if (gt && heart) heart.x = Math.min(heart.x, gtMaxX(gt) - 22);
+    dragStep(e, state, gt, heart);
   },
 
   /** The opening AND the close-out, both driven from the original's Draw. */

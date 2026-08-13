@@ -355,6 +355,7 @@ const director = {
           phase4turn: e.phase === 4 ? e.turn : undefined,
           partyHp: state.partyHp,
           haveusedroaring: state.knight?.haveusedroaring,
+          progamer: state.knight?.progamer,
           downSeen: state.downSeen,
         });
         if (msg) state.battlemsg = msg;
