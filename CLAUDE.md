@@ -1444,3 +1444,58 @@ three:
 | party damage halved/doubled by SWOON | **Kris only** — the block is inside `if (object_index == obj_herokris)`, which the wiki cites and misreads |
 
 Useful for cross-checking, never for settling. See task #45 for what is left.
+
+## THE CUSTOM ARENA IS A DIFFERENT OBJECT THAN IT LOOKS
+
+`obj_growtangle`'s first Step (`!init`), for any box whose max scale is not
+exactly 2 x 2:
+
+```gml
+customBox = true;
+sprite_index = spr_battlebg_stretch_hitbox;          // THE MASK SWAPS
+if ((maxxscale % 2) != 0) maxxscale = round(maxxscale * 37.5) / 37.5;
+if ((maxyscale % 2) != 0) maxyscale = round(maxyscale * 37.5) / 37.5;
+```
+
+Three facts, each measured against a dense per-frame recording of the box
+(`oracle_box.csv`, in the whole-fight patch):
+
+1. **The scale is quantised to 1/37.5.** Stars' "2.25 x 1.75" is REALLY
+   2.24 x 1.76; the sword tunnel's "3" is 2.98666... The f32 stored values
+   (2.2400000095 / 1.7599999905) match the recording to the last digit.
+2. **The wall is `spr_battlebg_stretch_hitbox`, not `spr_battlebg_0`.**
+   Different sprite, different border (4px vs 2px in the stored masks).
+3. **The EFFECTIVE border is one source pixel thinner than the stored mask**
+   — free interior [3..71], fitted to six oracle wall constraints that no
+   alternative sampling reconciles with the stored [4..70]. Recorded as an
+   honest deviation in sim/masks.js; unverified at other scales.
+
+The box is CREATED FRESH EACH TURN in the game, so this init runs per turn —
+a persistent sim box must re-arm it (`gt.init = false`) at every arena open.
+
+## LIVE RNG IS RE-ANCHORED PER ATTACK LAUNCH — by both sides, on purpose
+
+Matching the game's continuous stream is impossible: it burns draws in
+random-pitch `snd_play_x` calls and other engine noise no sim should model
+(a scan put one roll thousands of draws from the sim's position). Resolution,
+same as the shuffle and bolt-schedule replays: `scr_bulletspawner` — the one
+gate every knight attack passes through — reseeds `seed + n * 1000` in the
+oracle patch, and `launchAttack` mirrors it (`reanchorRng`; ac 15 advances n
+twice, its branch calls the spawner twice). Report results as "mechanics
+one-to-one, RNG re-anchored per launch". Free play is unaffected.
+
+Corollaries that already bit:
+
+- **A visual's draws are still draws.** The cone's fake_gt shake is two
+  `random_range` per frame FROM BIRTH (the drag block is top-level in its
+  Step, not con-gated), and skipping "cosmetic" consumption desyncs
+  everything after it. The old header note "anything needing stream fidelity
+  must account for them" was a debt, not documentation.
+- **A create-time field check can silently skip a draw**: `dc.difficulty` is
+  assigned AFTER `spawn()` returns, so a `create()` that branches on it reads
+  undefined. The type-98 `side = choose(-1, 1)` draw lives at the call site
+  (launchAttack case 1) for exactly this reason. The proof was a
+  byte-identical diff after "adding" the draw.
+- In-window random-pitch sounds consume: quickslash 2/fire, quickslash_big 1,
+  splitslash 1 (consumed in the sim's cue site already), swordtunnelanim
+  several. Each needs a matching consume when its attack enters the diff.
