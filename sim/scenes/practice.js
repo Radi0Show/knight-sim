@@ -453,7 +453,13 @@ const director = {
       const order = [0, 1, 2].filter((c) => state.menu.fight[c] && isUp(state, c));
       // The schedule is RANDOM, so the bar draws from the sim's generator —
       // which also means a replayed seed replays the same bolt pattern.
-      if (order.length) e.bar = createFightBar(state.rng, order);
+      if (order.length) {
+        // Replay the oracle's schedule when one was supplied — see
+        // sim/fightbar.js. Consumed in creation order, one per bar.
+        const rec = state.boltSchedules?.[state.boltIndex];
+        if (rec) state.boltIndex += 1;
+        e.bar = createFightBar(state.rng, order, true, rec);
+      }
       e.resolved = [false, false, false];
     }
 

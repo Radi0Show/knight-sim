@@ -63,6 +63,31 @@ if (shIdx >= 0) {
   console.log(`shuffle: replaying ${lists.length} recorded list(s)`);
 }
 
+// THE ATTACK BAR'S SCHEDULE IS REPLAYED FROM THE ORACLE, for the same reason
+// the shuffle is: `my_method == 1` builds it with choose() per bolt plus a
+// rejection-sampled character, and the two sides' RNG call orders differ
+// (scr_randomtarget draws every turn; Draw events consume too).
+//
+// Each logged line is `frame,boltframe:boltchar|boltframe:boltchar|...`, one
+// per bar, in creation order. Without this the sides run different bolt
+// frames, and since the scoring window forgives 15 frames of earliness the
+// sim scores bolts the oracle has not reached — which reads as a damage
+// divergence and is nothing of the kind.
+const boltIdx = argv.indexOf('--bolts');
+if (boltIdx >= 0) {
+  const text = readFileSync(argv[boltIdx + 1], 'utf8').trim();
+  const schedules = text
+    ? text.split('\n').map((line) => line.split(',').slice(1).join(',')
+        .split('|').map((b) => {
+          const [frame, char] = b.split(':').map(Number);
+          return { char, frame, alive: true, red: false };
+        }))
+    : [];
+  state.boltSchedules = schedules;
+  state.boltIndex = 0;
+  console.log(`bolts: replaying ${schedules.length} recorded schedule(s)`);
+}
+
 buildPracticeScene(state, { seed: state.seed });
 
 // KEEP THE PARTY ALIVE — and say plainly what that costs.

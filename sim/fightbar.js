@@ -121,14 +121,30 @@ function buildBolts(rng, havechar, oneButton) {
  * @param {number[]} order  slots that chose FIGHT
  * @param {boolean} oneButton  `global.flag[13] == 0`, the default
  */
-export function createFightBar(rng, order = [0, 1, 2], oneButton = true) {
+export function createFightBar(rng, order = [0, 1, 2], oneButton = true, recorded = null) {
   const havechar = [0, 1, 2].map((c) => (order.includes(c) ? 1 : 0));
   return {
     active: true,
     oneButton,
     boltx: 0,
     havechar,
-    bolts: buildBolts(rng, havechar, oneButton),
+    // THE SCHEDULE IS REPLAYED WHEN THE ORACLE SUPPLIED ONE.
+    //
+    // `my_method == 1` builds it with `choose(0, diff, diff * 1.5)` per bolt
+    // plus a rejection-sampled character, so reproducing it needs the real
+    // RNG stream — and the call order is not the same on both sides
+    // (scr_randomtarget draws every turn; CLAUDE.md records that Draw events
+    // consume too). Same situation as ds_list_shuffle, same answer: log it
+    // from the game and replay it here.
+    //
+    // Without this the two sides run DIFFERENT bolt frames, and since the
+    // scoring window forgives 15 frames of earliness, the sim scores bolts
+    // the oracle has not reached — which reads as a damage divergence and is
+    // nothing of the kind.
+    //
+    // Falls back to the sim's own generator when nothing is supplied, so
+    // ordinary play is unaffected.
+    bolts: recorded ?? buildBolts(rng, havechar, oneButton),
     points: [0, 0, 0],
     /** `pressbuffer[j] = 5` then -1 a frame — the row's white flash. */
     pressbuffer: [0, 0, 0, 0],
