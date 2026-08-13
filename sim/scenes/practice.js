@@ -68,7 +68,31 @@ const ATTACKPRESS_HOLD = 50;
 const ATTACKPRESS_FADE = 13;
 
 /** The beat after a turn ends, before the panels rise. */
-const TURN_GAP = 20;
+/**
+ * The beat between a turn ending and the menu reopening — ONE FRAME, from the
+ * game rather than from taste.
+ *
+ *     // obj_battlecontroller Create
+ *     myfightreturntimer = 1;
+ *
+ *     // obj_battlecontroller Step
+ *     if (global.myfight == 5) {
+ *         myfightreturntimer--;
+ *         if (myfightreturntimer <= 0) {
+ *             scr_mnendturn();        // mnfight = 0; myfight = 0;
+ *             global.spelldelay = 10; // bmenuno = 0; charturn = 0;
+ *
+ * `scr_mnendturn` reopens the menu with no delay of its own, so the whole gap
+ * is this one countdown. (`scr_wincombat` sets it to 15, but that is the
+ * victory path, not a turn.)
+ *
+ * THIS WAS 20 — invented, and flagged as a stand-in in its own comment ever
+ * since. The whole-fight diff caught it as soon as the oracle's menu column
+ * read the right variable: the real menu is open on frame 1 and the sim's did
+ * not appear until frame 20. It was the last invented timing constant in the
+ * turn loop.
+ */
+const TURN_GAP = 1;
 
 /** How long bullets get to leave on their own before the sweep. */
 const DRAIN_FRAMES = 90;
