@@ -420,13 +420,17 @@ function drawBattleMsg(ctx, state, font) {
   // the charbox HP strip at y 430-449 — visible overlap, caught by looking at
   // the render rather than by any test.
   //
-  // UNCERTAIN, and flagged rather than guessed: 18 is very tight for glyphs
-  // this tall, so `charline` may select a smaller font for the fc == 0 path
-  // that this renderer does not model. 30 is used here because it is the
-  // value the game uses for the other message in this same band and it does
-  // not collide. If a screenshot comparison ever runs, this is a number to
-  // check first.
-  const lh = 30;
+  // 18 IS RIGHT, and the charbox proves it. The strip sits at y 430-449, so
+  // two lines at 376 have to fit above it:
+  //
+  //     vspace 18  ->  lines at 376 and 394, glyphs ending ~426   fits
+  //     vspace 30  ->  lines at 376 and 406, glyphs ending ~438   COLLIDES
+  //
+  // 30 was used here first, borrowed from the fc == 22 path, and it put the
+  // second line straight through the party's names — which is what the
+  // spacing is chosen to avoid. The game's own number for this message is the
+  // one that clears the strip.
+  const lh = 18;
   const lines = state.battlemsg.split('&');
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i]) continue;
