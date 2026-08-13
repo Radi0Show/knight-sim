@@ -387,14 +387,6 @@ const director = {
     // party members picks from their button row, and only when the last one
     // confirms does the enemy attack. The gap above is the beat before the
     // panels rise.
-    // THE EXCHANGE runs before the menu, one beat per turn from turn 6.
-    // `balloonturn++` sits inside `if (global.hp[2] > 0)`, so a downed Susie
-    // freezes it where it stands rather than skipping ahead — she is the one
-    // being talked to.
-    if (!e.balloonDone) {
-      e.balloonDone = true;
-      advanceBalloon(state.dialogue, state);
-    }
     if (state.dialogue.text) {
       state.dialogue.timer += 1;
       const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
@@ -543,6 +535,30 @@ const director = {
       return;
     }
     e.maxdelay = undefined;
+
+    // ---- ENEMY TALK, and it belongs HERE, not before the menu ------------
+    //
+    // The phase order is `myfight 0` (the party's menu) -> the attack bar ->
+    // `mnfight 1` (enemytalk) -> `mnfight 1.5` (setup) -> `mnfight 2`
+    // (bullets). obj_attackpress sets `global.mnfight = 1` when the bar
+    // finishes, and only THEN does the Knight's talk branch run:
+    //
+    //     if (scr_isphase("enemytalk") && talked == 0 && ...) {
+    //         ...
+    //         if (global.hp[2] > 0) balloonturn++;
+    //
+    // This ran before the menu, so the sim's `balloonturn` was one turn ahead
+    // of the game's for the whole fight — the whole-fight diff caught it on
+    // frame 1 as `oracle 0 / sim 1`.
+    //
+    // `balloonturn++` sits inside `if (global.hp[2] > 0)`, so a downed Susie
+    // freezes the exchange where it stands rather than skipping ahead — she
+    // is the one being talked to.
+    if (!e.balloonDone) {
+      e.balloonDone = true;
+      advanceBalloon(state.dialogue, state);
+    }
+    if (state.dialogue.text) return;
 
     // `rtimer` — the arena is up and EMPTY for 12 frames before the attack
     // spawns. That beat is what makes the board's arrival readable, and it is
