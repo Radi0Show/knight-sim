@@ -34,6 +34,7 @@ import {
   endCutsceneReached, startEndCutscene, DR_PHASE4,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
+import { cueLoop } from '../audio.js';
 import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
 
 
@@ -124,6 +125,14 @@ const director = {
     // then. `end_cutscene_version > 0` makes obj_battlecontroller's Draw, the
     // tension bar's and obj_attackpress's all exit on their first line, so the
     // whole battle UI goes at once.
+    // `global.batmusic[1] = mus_loop_ext(global.batmusic[0], ...)` in
+    // obj_battlecontroller's Create — the fight's track LOOPS for the whole
+    // battle. `knight.ogg`, set as batmusic[0] by the room.
+    if (!e.musicStarted) {
+      e.musicStarted = true;
+      cueLoop(state, 'mus_knight');
+    }
+
     if (endCutsceneReached(state)) {
       startEndCutscene(state);
       state.menu.open = false;

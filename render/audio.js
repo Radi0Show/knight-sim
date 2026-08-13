@@ -96,7 +96,20 @@ export function createAudio() {
    */
   function preloadAll() {
     if (!available) return;
-    for (const name of available.keys()) buffer(name);
+    for (const name of available.keys()) {
+      // THE MUSIC IS NOT PRELOADED WITH THE REST. `knight.ogg` is 2.1 MB —
+      // larger than every sprite, font and sound effect on the site put
+      // together — and preloading decodes it into raw PCM, which is far
+      // bigger again. Blocking the fight's first frame on that is the wrong
+      // trade when the SFX are a few KB each.
+      //
+      // It is fetched on the frame the track is first cued instead. The
+      // first-cue-is-silent problem that made preloadAll necessary does not
+      // apply: a looping track that starts a beat late is inaudible as a
+      // fault, where a missing hit sound is not.
+      if (name.startsWith('mus_')) continue;
+      buffer(name);
+    }
   }
 
   function buffer(name) {

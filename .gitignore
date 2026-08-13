@@ -38,11 +38,11 @@ node_modules/
 # the sound effects are specifically permitted by Toby Fox and Sebastian Wolf,
 # so the SFX travel with the build like the sprites do.
 #
-# STILL EXCLUDED, and the distinction is the whole point: these are the short
-# SFX extracted from audiogroup1, NOT music. Nothing from the soundtrack goes
-# in — no `mus_*`, no `bgm`, no full tracks.
+# MUSIC SHIPS TOO now — the sound effects AND the soundtrack are recorded in
+# CLAUDE.md as permitted. The fight's track is `knight.ogg`, which the game
+# loads as a LOOSE FILE (`snd_init("knight.ogg")` out of Resources/mus/)
+# rather than packed into an audiogroup like the SFX, so it needed no
+# extraction pass at all — only a copy.
 !assets/audio/*.wav
 !assets/audio/index.json
-assets/audio/*.ogg
-assets/audio/mus_*
-assets/audio/bgm*
+!assets/audio/*.ogg

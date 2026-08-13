@@ -22,5 +22,7 @@
  "snd_rocket_long": "snd_rocket_long.wav",
  "snd_select": "snd_select.wav",
  "snd_stardrop": "snd_stardrop.wav",
- "snd_wideslash_low": "snd_wideslash_low.wav"
+ "snd_wideslash_low": "snd_wideslash_low.wav",
+ "mus_knight": "knight.ogg",
+ "mus_knight_appears": "knight_appears.ogg"
 }

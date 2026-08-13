@@ -53,14 +53,7 @@ jobs:
         run: |
           mkdir -p _site
           cp -r web sim render input assets _site/
-          # SFX ship; MUSIC does not. The sound effects are permitted, the
-          # soundtrack is sold separately — so this removes anything that
-          # looks like a track even though .gitignore should already have
-          # kept it out of the checkout. Two independent guards, because the
-          # cost of getting this wrong is a public upload you cannot recall.
-          rm -f _site/assets/audio/mus_* _site/assets/audio/bgm* \
-                _site/assets/audio/*.ogg 2>/dev/null || true
-          echo "audio shipping: $(ls _site/assets/audio 2>/dev/null | wc -l) files"
+          echo "audio shipping: $(ls _site/assets/audio 2>/dev/null | wc -l) files, $(du -sh _site/assets/audio | cut -f1)"
           # A REDIRECT, not a copy. `web/index.html` loads `./main.js`, so
           # copying it to the root would look right and 404 — and rewriting
           # the path is a fragile thing to do in CI where nobody sees it fail.

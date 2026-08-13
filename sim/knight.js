@@ -291,6 +291,7 @@ export function startEndCutscene(state) {
   k.stronghurtanim = true;
   k.animState = 3;
   cue(state, 'snd_knight_hurt');
-  cueStop(state, 'mus_battle');
+  // `mus_fade(global.batmusic[1], 1)` — the track fades out as the fight ends.
+  cueStop(state, 'mus_knight');
   return true;
 }
