@@ -112,6 +112,18 @@ buildPracticeScene(state, { seed: state.seed });
 const keepAlive = argv.includes('--keep-alive');
 if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verified');
 
+// USE THE ROWS `stepFrame` ALREADY WROTE, do not generate them again.
+//
+// stepFrame does `state.trace.push(traceRow(state)); state.frame += 1;` — the
+// row is captured BEFORE the counter advances, so its first row is frame 0,
+// matching the oracle's first in-room frame.
+//
+// Calling traceRow() again after stepFrame returns reads the ALREADY
+// INCREMENTED counter, so every row came out numbered one too high. The
+// differ joins on the frame column, so that silently compared the sim's
+// frame N against the oracle's frame N — which are different moments — and
+// showed up as the sim being consistently one frame behind on the menu, the
+// bar and everything downstream.
 const rows = [traceHeader(state)];
 for (let f = 0; f < replay.frames; f++) {
   stepFrame(state, replay.inputAt(f));
@@ -119,8 +131,8 @@ for (let f = 0; f < replay.frames; f++) {
     state.partyHp = freshParty();
     state.gameOver = false;
   }
-  rows.push(traceRow(state));
 }
+rows.push(...state.trace);
 writeFileSync(out, `${rows.join('\n')}\n`);
 
 console.log(`${replay.frames} frames -> ${out}`);
