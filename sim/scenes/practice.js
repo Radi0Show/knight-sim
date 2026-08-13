@@ -19,6 +19,7 @@ import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
+import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
@@ -100,9 +101,12 @@ const DRAIN_FRAMES = 90;
 const director = {
   name: 'fight_director',
 
-  create(e) {
+  create(e, state) {
     e.phase = 1;
     e.turn = 0;
+    // `*downmessage` — one-shot per character per FIGHT, never cleared.
+    state.downSeen = { kris: false, susie: false, ralsei: false };
+    state.battlemsg = OPENING_MSG;
     e.owner = null;
     e.gap = TURN_GAP;
     e.started = false;
@@ -292,6 +296,31 @@ const director = {
       e.spawnDelay = RTIMER_SPAWN;
       e.turnsRun += 1;
       clearTurn(state);
+
+      // THE FLAVOUR LINE, set at the END of a turn — the same block that
+      // holds the phase-4 gate:
+      //
+      //     if (global.mnfight == 2 && global.turntimer <= 1
+      //         && setdownmessage == false) { ... turns += 1;
+      //         if (phase == 1) { if (phaseturn == 0) battlemsg[0] = "..."; }
+      //
+      // It is written here, not when the menu opens, because the message for
+      // a phase's turn 0 is the line that plays as the fight CROSSES INTO
+      // that phase — phase 1's last turn has already done `phase = 2;
+      // phaseturn = 0` by the time this runs. See sim/battlemsg.js.
+      //
+      // `global.battlemsg[0]` is never cleared between turns, so a null here
+      // leaves the previous line up rather than blanking the box.
+      {
+        const msg = battleMsgFor(e.phase, state.phaseturn ?? 0, {
+          phase4turn: e.phase === 4 ? e.turn : undefined,
+          partyHp: state.partyHp,
+          haveusedroaring: state.knight?.haveusedroaring,
+          downSeen: state.downSeen,
+        });
+        if (msg) state.battlemsg = msg;
+      }
+
       const prevPhase = e.phase;
       const prevTurn = e.turn;
       const nx = nextTurn(e.phase, e.turn);
