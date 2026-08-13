@@ -22,6 +22,7 @@ import { stepMenu, openMenu, createMenu, listRows, BUTTONS } from '../sim/menu.j
 import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford } from '../sim/spells.js';
 import { freshInventory } from '../sim/items.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
+import { stepRudeBuster, rudeBusterBusy } from '../sim/rudebuster.js';
 
 const failures = [];
 const NONE = { left: false, right: false, up: false, down: false, confirm: false, cancel: false };
@@ -99,15 +100,87 @@ tap(st, 'confirm');
 if (st.menu.charturn !== 1) failures.push('an unaffordable spell advanced the turn');
 if (st.tension < 0) failures.push('an unaffordable spell spent TP');
 
-// ── Rude Buster actually damages the Knight ──────────────────────────────
+// ── Rude Buster is a TIMING MINIGAME, not an instant subtraction ─────────
+//
+// Casting starts an animation; the damage lands when the bolt does, and a
+// press just before impact adds up to +30. This suite used to assert the HP
+// dropped on cast, which passed while the whole mechanic was missing.
+//
+// `/** Run the spell to completion, pressing on the frame `pressAt`. */`
+function resolveRude(pressAt) {
+  const s = fresh(1);
+  s.tension = 250;
+  const hp0 = s.knight.hp;
+  castSpell(s, 1, 4, 0);
+  let f = 0;
+  while (rudeBusterBusy(s) && f < 400) {
+    const b = s.rude.bolt;
+    stepRudeBuster(s, !!b && b.explode === 0 && b.boltTimer + 1 === pressAt);
+    f += 1;
+  }
+  return { dealt: hp0 - s.knight.hp, tp: s.tension, frames: f, state: s };
+}
+
+// It must NOT resolve on cast — the animation has to run first.
 st = fresh(1);
 st.tension = 250;
 const hp0 = st.knight.hp;
 const line = castSpell(st, 1, 4, 0);
-if (st.knight.hp >= hp0) failures.push('Rude Buster did no damage');
+if (st.knight.hp !== hp0) failures.push('Rude Buster dealt damage instantly — the bolt never flew');
+if (!rudeBusterBusy(st)) failures.push('casting Rude Buster started nothing');
 if (st.tension !== 125) failures.push(`Rude Buster left ${st.tension} TP, expected 125`);
 if (!line) failures.push('Rude Buster returned no message');
 if (hp0 !== KNIGHT_MAXHP) failures.push('the knight did not start at full HP');
+
+// The bolt lands and deals damage on its own.
+const noPress = resolveRude(-1);
+if (noPress.dealt <= 0) failures.push('the bolt landed for no damage');
+if (rudeBusterBusy(noPress.state)) failures.push('Rude Buster never finished');
+// `damage = round(damage / 2)` against the Knight, applied to spellDamage 177.
+if (noPress.dealt !== 89) failures.push(`unpressed Rude Buster dealt ${noPress.dealt}, expected 89`);
+
+// Find the frame it lands on, then press exactly there for the full +30.
+const landOn = (() => {
+  const s = fresh(1);
+  s.tension = 250;
+  castSpell(s, 1, 4, 0);
+  let f = 0;
+  let final = 0;
+  while (rudeBusterBusy(s) && f < 400) {
+    stepRudeBuster(s, false);
+    if (s.rude.bolt?.explode === 1 && !final) final = s.rude.bolt.boltTimer;
+    f += 1;
+  }
+  return final;
+})();
+if (landOn < 4) failures.push(`the bolt lands on frame ${landOn} — before the press window opens at 4`);
+
+// THE BONUS IS HALVED WITH THE BASE, because the Knight's `/ 2` is applied
+// AFTER it is added. round((177 + 30) / 2) = 104, not 89 + 30.
+const perfect = resolveRude(landOn);
+if (perfect.dealt !== 104) failures.push(`a perfect press dealt ${perfect.dealt}, expected 104`);
+if (perfect.dealt >= 89 + 30) failures.push('the timing bonus was not halved with the base');
+
+// Earlier presses are worth less, monotonically — that gradient IS the game.
+let prev = perfect.dealt;
+for (let gap = 1; gap <= 4 && landOn - gap >= 4; gap++) {
+  const got = resolveRude(landOn - gap).dealt;
+  if (got > prev) failures.push(`pressing ${gap} frames earlier dealt MORE (${got} > ${prev})`);
+  if (got < noPress.dealt) failures.push(`a press dealt less than no press at all (${got})`);
+  prev = got;
+}
+
+// ONE PRESS ONLY. `chosen_bolt == 0` locks it, so mashing cannot stack bonuses.
+{
+  const s = fresh(1);
+  s.tension = 250;
+  const before = s.knight.hp;
+  castSpell(s, 1, 4, 0);
+  let f = 0;
+  while (rudeBusterBusy(s) && f < 400) { stepRudeBuster(s, true); f += 1; }
+  const mashed = before - s.knight.hp;
+  if (mashed > perfect.dealt) failures.push(`mashing dealt ${mashed}, more than a perfect press`);
+}
 
 // Heal Prayer heals `magic * 5` = 55 at Ralsei's 11, and reaches the FALLEN.
 st = fresh(2);
@@ -152,6 +225,7 @@ console.log(`Kris: ${ACTS[0].map((a) => a.name).join(', ')}`);
 console.log(`Susie: ${SPELL_LIST[1].map((i) => `${SPELLS[i].name} ${SPELLS[i].cost}TP`).join(', ')}`);
 console.log(`Ralsei: ${SPELL_LIST[2].map((i) => `${SPELLS[i].name} ${SPELLS[i].cost}TP`).join(', ')}`);
 console.log('HoldBreath: soul 4 -> 5, 6 during Roaring, and works exactly once');
+console.log(`Rude Buster: bolt lands frame ${landOn} · no press ${noPress.dealt} · perfect ${perfect.dealt} (bonus halved with the base)`);
 
 if (failures.length) {
   console.log('');

@@ -2868,6 +2868,56 @@
    "spr_rouxls_point_0.png"
   ]
  },
+ "spr_rudebuster_beam": {
+  "w": 43,
+  "h": 62,
+  "ox": 20,
+  "oy": 30,
+  "frames": 7,
+  "bbox": [
+   0,
+   0,
+   42,
+   61
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_rudebuster_beam_0.png",
+   "spr_rudebuster_beam_1.png",
+   "spr_rudebuster_beam_2.png",
+   "spr_rudebuster_beam_3.png",
+   "spr_rudebuster_beam_4.png",
+   "spr_rudebuster_beam_5.png",
+   "spr_rudebuster_beam_6.png"
+  ]
+ },
+ "spr_rudebuster_beam_red": {
+  "w": 43,
+  "h": 62,
+  "ox": 20,
+  "oy": 30,
+  "frames": 7,
+  "bbox": [
+   0,
+   0,
+   42,
+   61
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_rudebuster_beam_red_0.png",
+   "spr_rudebuster_beam_red_1.png",
+   "spr_rudebuster_beam_red_2.png",
+   "spr_rudebuster_beam_red_3.png",
+   "spr_rudebuster_beam_red_4.png",
+   "spr_rudebuster_beam_red_5.png",
+   "spr_rudebuster_beam_red_6.png"
+  ]
+ },
  "spr_shutta_ball": {
   "w": 40,
   "h": 40,
@@ -2942,6 +2992,39 @@
   "playbacktype": "FramesPerGameFrame",
   "files": [
    "spr_susie_dw_fell_0.png"
+  ]
+ },
+ "spr_susie_rudebuster": {
+  "w": 123,
+  "h": 79,
+  "ox": 41,
+  "oy": 32,
+  "frames": 15,
+  "bbox": [
+   12,
+   0,
+   104,
+   77
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_susie_rudebuster_0.png",
+   "spr_susie_rudebuster_1.png",
+   "spr_susie_rudebuster_2.png",
+   "spr_susie_rudebuster_3.png",
+   "spr_susie_rudebuster_4.png",
+   "spr_susie_rudebuster_5.png",
+   "spr_susie_rudebuster_6.png",
+   "spr_susie_rudebuster_7.png",
+   "spr_susie_rudebuster_8.png",
+   "spr_susie_rudebuster_9.png",
+   "spr_susie_rudebuster_10.png",
+   "spr_susie_rudebuster_11.png",
+   "spr_susie_rudebuster_12.png",
+   "spr_susie_rudebuster_13.png",
+   "spr_susie_rudebuster_14.png"
   ]
  },
  "spr_susieb_act": {

@@ -20,6 +20,7 @@ import { drawGraze } from './graze.js';
 import { drawFightBar } from './fightbar.js';
 import { drawBackground } from './background.js';
 import { drawDmgNumbers, drawAttackVfx } from './dmgnumbers.js';
+import { drawRudeBuster } from './rudebuster.js';
 import {
   drawSwordTunnelSword, drawTrackingSword, drawTrackingSwordsManager,
   drawSplitslashStrike,
@@ -500,6 +501,7 @@ export async function createRenderer(canvas) {
     // the enemy's depth, and the band is drawn on top of everything.
     // The impact lands UNDER the number — the number is thrown up out of it.
     drawAttackVfx(ctx, state, sprites);
+    drawRudeBuster(ctx, state, sprites);
     drawDmgNumbers(ctx, state, sprites);
     drawMenu(ctx, state, sprites);
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.

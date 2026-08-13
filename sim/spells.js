@@ -24,8 +24,15 @@
 
 import { PARTY } from './damage.js';
 import { spellDamage, damageKnight } from './knight.js';
+import { castRudeBuster } from './rudebuster.js';
 import { applyHeal } from './items.js';
 import { cue } from './audio.js';
+
+// Where the caster and the Knight stand. Duplicated from sim/actors.js rather
+// than imported: actors.js pulls in damage.js which pulls in this, and the
+// cycle is not worth untangling for two coordinates.
+const PARTY_POS = [{ x: 126, y: 104 }, { x: 80, y: 142 }, { x: 58, y: 190 }];
+const KNIGHT_POS = { x: 425, y: 78 };
 
 /** `scr_spellinfo`, the cases this fight can reach. */
 export const SPELLS = {
@@ -117,10 +124,17 @@ export function castSpell(state, slot, spellId, target = 0) {
   state.tension -= s.cost;
 
   if (spellId === 4) {
-    const dealt = spellDamage(state, slot);
-    damageKnight(state, dealt);
-    cue(state, 'snd_rudebuster');
-    return `Rude Buster: ${dealt}`;
+    // RUDE BUSTER DOES NOT RESOLVE HERE. It is a timing minigame: the
+    // animation plays, a bolt flies, and pressing Z just before it lands adds
+    // up to +30 before the Knight's halving. Subtracting the damage on cast —
+    // which is what this did — threw the whole mechanic away and made the
+    // spell a worse Rude Buster than the game's.
+    //
+    // See sim/rudebuster.js. `scr_spell` sets `global.spelldelay = 70`, so the
+    // turn holds while it resolves.
+    castRudeBuster(state, PARTY_POS[slot].x, PARTY_POS[slot].y,
+      spellDamage(state, slot), KNIGHT_POS.x, KNIGHT_POS.y);
+    return 'Rude Buster!';
   }
   if (spellId === 2) {
     // Heal Prayer heals `magic * 5` — 55 at Ralsei's magic of 11. Through

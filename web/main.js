@@ -103,11 +103,6 @@ const hud = document.getElementById('hud');
 // translated attack that the real fight never selects, so it must not be
 // mistaken for practice against the real thing. See CLAUDE.md, "THE REAL
 // FIGHT". Nothing invented ships; anything unrepresentative is labelled here.
-import { SANDBOX_NOTE } from '../sim/scenes/practice.js';
-
-const PRACTICE_NOTE =
-  'PRACTICE MODE — one attack on repeat · real difficulty · pick another above';
-
 // ---- the picker -----------------------------------------------------------
 //
 // Built from ATTACK_MENU so it can never drift from what the scene can launch.
@@ -263,11 +258,19 @@ function frame(now) {
     simFrames = 0;
     lastFpsSample = now;
   }
-  // The sandbox label is not decoration: this scene shows a faithfully
-  // translated attack that the real fight never selects. Nothing invented
-  // ships, and anything unrepresentative is labelled where the player sees it.
+  // THE BANNER IS GONE, and rule 5 is still satisfied.
+  //
+  // It existed because the scene used to show content the real fight never
+  // selects, and anything unrepresentative has to be labelled where the player
+  // sees it. Two things changed: the fight scene now runs the real order with
+  // real HP and the real 5840 phase-4 gate, so the sandbox text was describing
+  // things that are no longer true of it; and practice mode labels each
+  // unreachable attack in the DROPDOWN itself (`name — where`), which is
+  // nearer the choice than a banner is.
+  //
+  // If an unlabelled placeholder is ever added back, the label goes on the
+  // thing itself, not here.
   hud.innerHTML =
-    `<b style="color:#e0a">${mode === 'practice' ? PRACTICE_NOTE : SANDBOX_NOTE}</b><br>` +
     (state.gameOver ? '<b style="color:#f44">GAME OVER — R to retry</b><br>' : '') +
     `frame ${state.frame} · sim ${fps}/30 Hz · hits ${state.counters.collisionHits}` +
     ` · HP ${state.partyHp.map((h) => Math.max(h, 0)).join('/')}` +

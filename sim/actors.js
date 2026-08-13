@@ -131,6 +131,10 @@ export const partyActor = {
     e.isActor = true;
   },
   step(e, state) {
+    // `with (obj_herosusie) visible = 0` — obj_rudebuster_anim REPLACES her
+    // for its 28 frames rather than drawing over her. Leaving her visible
+    // gives you two Susies, one of them casting.
+    e.visible = !(e.slot === 1 && state.rude?.anim);
     const h = state.heroes?.[e.slot];
     if (!h || !h.sprite) return;
     e.sprite_index = h.sprite;

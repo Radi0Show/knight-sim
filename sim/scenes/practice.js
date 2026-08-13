@@ -26,6 +26,7 @@ import { endTurnItems } from '../menu.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK } from '../heroes.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
+import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
@@ -110,6 +111,12 @@ const director = {
     // replayed seed replays the same arcs.
     stepDmgNumbers(state, () => rngNext(state.rng));
     stepAttackVfx(state);
+    // obj_rudebuster_anim + obj_rudebuster_bolt. The press is an EDGE, and it
+    // is the same button that confirms in the menu — but the menu is closed
+    // while the bolt is in flight, so they cannot collide.
+    const rudePress = !!state.input?.confirm && !e.rudeHeld;
+    e.rudeHeld = !!state.input?.confirm;
+    stepRudeBuster(state, rudePress);
 
     // THE FIGHT'S END. `haveusedroaring && hp <= maxhp * 0.8` — both, and only
     // then. `end_cutscene_version > 0` makes obj_battlecontroller's Draw, the
@@ -247,6 +254,11 @@ const director = {
       endTurnItems(state);
       state.menu.needsCommit = false;
     }
+
+    // `global.spelldelay = 70` — the turn holds while Rude Buster resolves.
+    // Without this the Knight's attack launches over the bolt still in flight
+    // and the press window lands during the bullet phase.
+    if (rudeBusterBusy(state)) return;
 
     // ---- RESOLUTION: the attack bar, before the enemy's turn ---------------
     //
