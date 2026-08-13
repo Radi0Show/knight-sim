@@ -12,7 +12,7 @@
 // reproduces a live run exactly, which is the property that lets one recording
 // stand in for a fight forever.
 
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
@@ -30,11 +30,38 @@ if (!token) {
 
 const replay = decodeReplay(token);
 const state = createState({ seed: replay.meta.seed, traceBulletSlots: slots });
-// The wide row, and the shuffle pinned — see docs/VERIFICATION.md. Both sides
-// must agree on the order or rotating slash diverges for a reason that is not
-// a bug.
 state.traceWide = true;
-state.pinnedShuffle = true;
+
+// THE SHUFFLE IS REPLAYED FROM THE ORACLE, not reproduced.
+//
+// `ds_list_shuffle`'s algorithm is unsolved (CLAUDE.md), so the sim cannot
+// derive a given seed's ordering — and rotating slash runs in every phase, so
+// without this the whole-fight diff would fail on every one of them for a
+// reason that is not a bug in the fight.
+//
+// oracle_fullfight.csx logs each shuffled `slash_list` as it is built; this
+// feeds them back in build order through the hook rotating-slash.js already
+// has for oracle_t7. The real shuffle still runs in the game and still burns
+// its draws, so nothing downstream of it is falsified.
+//
+// This used to set `state.pinnedShuffle = true`, WHICH NOTHING READ. The flag
+// was invented here and never wired to anything — the same write-only-variable
+// failure CLAUDE.md records for `state.inv` and the original's
+// `destroy_on_hit`. It read as "the shuffle is handled" while the sim quietly
+// rolled its own order.
+const shIdx = argv.indexOf('--shuffle');
+if (shIdx >= 0) {
+  const text = readFileSync(argv[shIdx + 1], 'utf8').trim();
+  const lists = text
+    ? text.split('\n').map((line) => line.split(',').slice(1).join(',')
+        .split('|').map(Number))
+    : [];
+  state.fixedSlashOrder = true;
+  state.angleLists = lists;
+  state.angleIndex = 0;
+  console.log(`shuffle: replaying ${lists.length} recorded list(s)`);
+}
+
 buildPracticeScene(state, { seed: state.seed });
 
 const rows = [traceHeader(state)];

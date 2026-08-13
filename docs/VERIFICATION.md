@@ -85,10 +85,50 @@ a green suite imply otherwise.
 
 ## Order of work
 
-1. `--wide` trace mode in `sim/trace.js` and a sim-side full-fight runner  ← **built**
-2. `oracle_fullfight.csx` — drive the game from a token, trace the wide row
-3. One recorded fight; commit the token and the CSV to `knight-research`
-4. `verify-fullfight.mjs` — the diff, added to `npm run verify`
+1. `--wide` trace mode in `sim/trace.js` and a sim-side full-fight runner — **built**
+2. `oracle_fullfight.csx` — drive the game from a token, trace the wide row — **written and compiling**
+3. `verify-fullfight.mjs` — the diff, in `npm run verify` — **built, 10 injected faults caught**
+4. One recorded fight ← **the only step left, and the only one that needs the game**
 5. Then the renderer pass, separately
 
-Step 2 needs a game run and a patch cycle; steps 1 and 4 do not.
+## Running it
+
+One command, on the machine with the game and the private bundle:
+
+```bash
+cd ~/knight-research
+./tools/build-oracle.sh tools/patches/oracle_fullfight.csx   # once per patch change
+./tools/record-fullfight.sh fight1 "<replay token>" 600
+```
+
+That writes the input table, plays the fight, collects the trace and the
+shuffle log, replays the same token through the sim, and diffs. Afterwards
+`npm run verify` picks the recording up on its own — `verify-fullfight.mjs`
+diffs every `fullfight-*.csv` in `~/knight-research/traces`.
+
+Without those traces it SKIPS loudly rather than passing, so CI cannot report
+a green tick for a fight it has never seen.
+
+## How the differ reports
+
+By SYSTEM, in causal order, earliest divergence first — not "first differing
+cell". 96 columns x ~9000 rows is 850,000 cells, and by the time a fight has
+drifted the first differing cell is whichever column happens to sort first,
+not the fault. The groups are `turn → soul → damage → tension → knight →
+bullets`, because input drives the soul, the soul drives what hits you, hits
+drive HP, HP drives whether the turn ends, and the turn drives what spawns.
+**The first group printed is the one to fix.**
+
+Bullet columns are positional (spawn order on both sides), so the COUNT is
+checked first and the positional columns are suppressed past a count
+divergence — one missing bullet is one fault, not forty.
+
+## What is taken as given
+
+**The shuffle order.** `ds_list_shuffle` burns 16 draws per element and its
+algorithm resisted an 18-sample search, so the sim cannot derive a given
+seed's ordering. The patch LOGS each shuffled `slash_list` as the game builds
+it and the sim replays those values — the real shuffle still runs and still
+consumes its draws, so nothing downstream is falsified. Report any result as
+**"mechanics one-to-one, shuffle order replayed"**, the same phrasing the
+per-attack suites use.
