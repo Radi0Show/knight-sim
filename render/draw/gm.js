@@ -43,6 +43,17 @@ export const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
 const tintCache = new Map();
 export function tinted(img, color) {
   if (!img) return null;
+  // COLOUR IS AN [r, g, b] ARRAY. A string gets indexed character by
+  // character and yields the literal `rgb(r,g,b)` — not a colour, so the fill
+  // silently does nothing and the sprite draws untinted. An invalid
+  // fillStyle throws nothing and changes nothing, so the mistake is
+  // completely silent; it cost two rounds of "the Flurry flame still looks
+  // wrong" before it was found. Fail loudly instead.
+  if (!Array.isArray(color)) {
+    throw new TypeError(
+      `tinted() needs an [r,g,b] array, got ${JSON.stringify(color)}`,
+    );
+  }
   // ONLY <img> IS CACHEABLE. Callers also pass CANVASES that are rebuilt every
   // frame (the cut box's two halves), and a canvas has no `.src` — so the key
   // would collapse to "undefined|<colour>" and every later call would get the

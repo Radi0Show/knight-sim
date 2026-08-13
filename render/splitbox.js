@@ -1,4 +1,4 @@
-import { tinted } from './draw/gm.js';
+import { c_gray as C_GRAY, tinted } from './draw/gm.js';
 // obj_knight_split_growtangle's Draw event — the cut battle box.
 //
 // This is the single most important thing to draw in Flurry: the attack spends
@@ -302,7 +302,17 @@ export function createSplitBox(sprites) {
       // multiply under an ADDITIVE blend is exactly alpha 0.5. This is a
       // normal blend, so the equivalence does not hold, and borrowing it here
       // was reading the note without its condition.
-      ctx.drawImage(tinted(img, 'rgb(128,128,128)'), -ox, -oy);
+      // `tinted` takes an [r,g,b] ARRAY — it builds the fill with
+      // `rgb(color[0], color[1], color[2])`. Passing the string
+      // 'rgb(128,128,128)' indexed the string itself and produced the
+      // literal `rgb(r,g,b)`, which is not a colour: the fill silently did
+      // NOTHING and the flame drew at full brightness.
+      //
+      // So the first fix (alpha 0.5 -> c_gray multiply) was right in
+      // principle and never took effect. Two rounds of "the flame still
+      // looks wrong" came from this one type mismatch, which no test could
+      // see because an invalid fillStyle throws nothing and changes nothing.
+      ctx.drawImage(tinted(img, C_GRAY), -ox, -oy);
       ctx.restore();
     };
 
