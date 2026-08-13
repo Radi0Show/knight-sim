@@ -91,6 +91,54 @@ a green suite imply otherwise.
 4. One recorded fight ← **the only step left, and the only one that needs the game**
 5. Then the renderer pass, separately
 
+## What a recording must contain before it means anything
+
+A trace that is present but empty of fight is more dangerous than one that is
+missing, because it looks like evidence. The first "whole-fight" recordings
+ran ONE turn and flatlined for the remaining 790 frames, and the differ
+happily reported "exact through frame 21" against them — true, and it had
+never compared a second turn, a phase transition, a difficulty variant or the
+phase-4 gate.
+
+`verify-fullfight.mjs` now refuses to diff a recording with fewer than 3
+distinct phase/turn values or a >40% tail with no bullets, and names the
+likely cause. Check the numbers directly too, and **quote the ORACLE's
+coverage, not the sim's** — conflating them is how the one-turn recording
+survived several reports.
+
+A healthy recording of the 9000-frame token looks like:
+
+```
+distinct phase/turn: 11+     all of phases 1 and 2, into 3
+frames with bullets: 2000+
+dead tail:           under a few hundred frames
+```
+
+## What --keep-alive does and does not verify
+
+A scripted input does not dodge, so the party wipes in a turn or two and the
+fight stops. Both sides pin party HP — and BOTH must also `scr_revive`, since
+being down is five globals and restoring HP alone leaves the party at full
+health and still swooned.
+
+**A --keep-alive run does not verify party HP bookkeeping**: not the
+ShadowMantle's two-hits-in-three targeting, not Kris never being the default
+target, not the swoon scaling. Damage still fires and still resets the inv
+clock, so the damage PATH is exercised; only the resulting HP is unchecked. A
+survivable hand-authored run is the other half of the picture.
+
+## The premise is set explicitly, not inherited
+
+`scr_gamestart` zeroes the inventory and equipment only arrives from a save
+file, so a freshly booted tester party fights BARE while the sim assumes
+DEFAULT_GEAR. The patch pins `battleat/battledf/battlemag` to exactly what
+`sim/damage.js statFor` produces, and the diag file carries them so a
+mismatch surfaces rather than hiding.
+
+Not covered by that pin: per-item effects that are not stat contributions —
+the ShadowMantle's targeting, Devilsknife's Rude Buster discount, BlueRibbon
+heal multipliers.
+
 ## Running it
 
 One command, on the machine with the game and the private bundle:
