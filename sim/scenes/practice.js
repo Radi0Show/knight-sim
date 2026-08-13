@@ -282,6 +282,12 @@ const director = {
       e.started = false;
       e.balloonDone = false;
       e.arenaOpen = false;
+      // THE SOUL DOES NOT SURVIVE THE TURN. obj_heart is created per bullet
+      // phase and gone by the menu — see the arena-open block below.
+      if (state.soul) {
+        state.soul.alive = false;
+        state.soul = null;
+      }
       e.gap = TURN_GAP;
       e.spawnDelay = RTIMER_SPAWN;
       e.turnsRun += 1;
@@ -540,6 +546,33 @@ const director = {
         // attack, not after the first party turn. The oracle reads 0.21 on
         // frame 1 of turn 1; the sim read 0.20 for the whole of turn 1 and
         // was one ramp step behind for the rest of the fight.
+        // THE KNIGHT DELIVERS THE SOUL, in this same setup block:
+        //
+        //     if (!instance_exists(obj_moveheart) && !i_ex(obj_heart)
+        //         && myattackchoice != -1)
+        //         scr_moveheart();
+        //
+        //     function scr_moveheart() {
+        //         global.inv = 0;
+        //         return instance_create(obj_herokris.x + 10,
+        //                                obj_herokris.y + 40, obj_moveheart);
+        //     }
+        //
+        // scr_moveheart does NOT create the soul — it launches an
+        // `obj_moveheart` from Kris that flies to the box and creates
+        // obj_heart on landing, resetting `global.inv = 0` on the way.
+        //
+        // So there is no soul during the party's menu at all. This scene kept
+        // one alive for the whole fight and froze it while the menu was open,
+        // which the whole-fight diff caught: the oracle's soul was gone and
+        // the sim's sat at a fixed position.
+        //
+        // `myattackchoice != -1` MEANS THE CHARGE-UP TURN GETS NO SOUL —
+        // no board, no bullets, no soul. Independent confirmation of the
+        // phase-4 charge-up finding, from a completely different line.
+        //
+        // The flight itself is not modelled yet; the soul appears at its
+        // landing spot. That is a renderer gap, not a sim one.
         advanceTurn(state);
         // `phaseturn++` — the SELECTOR's own first line, in the same block.
         // Reset to 0 when a phase ends, exactly as its branches do.
@@ -549,6 +582,12 @@ const director = {
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
         e.arenaOpen = true;
+        if (upcoming.ac !== -1 && !state.soul) {
+          // NO SOUL AT BUILD. The first turn's arena-open delivers it, exactly as the
+  // Knight does. Starting with one put a soul on screen through the opening
+  // menu, where the real fight has none.
+  state.soul = null;
+        }
       }
       e.spawnDelay -= 1;
       return;
