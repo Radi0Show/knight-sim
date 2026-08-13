@@ -276,7 +276,39 @@ export function createSplitBox(sprites) {
       ctx.drawImage(tB, e.x + splid - HALF + jx2, e.y + dist - HALF + jy2);
     }
 
-    // The burning cut faces.
+    // The burning cut faces — GATED TWICE, and the sim had neither gate.
+    //
+    //     if (con > 0) {
+    //         if (round(distance) == 0) {
+    //             draw_sprite_ext(spr_whitepixel, 0, x + xoffset, y - 74,
+    //                             _dist * 2, _splid * 2, angle, c_white, 1);
+    //         }
+    //         else if (vertical) { ...flame... }
+    //         else              { ...flame... }
+    //     }
+    //
+    // 1. `con > 0`. Before the cut starts there is no flame at all. Drawing it
+    //    unconditionally puts burning edges on a box that has not been cut.
+    //
+    // 2. `round(distance) == 0` takes the whitepixel branch INSTEAD of the
+    //    flame — and that branch is invisible. `_splid` and `_dist` are
+    //    `vertical ? round(distance) : 0` and its mirror, so at distance 0
+    //    BOTH are zero and the sprite is drawn at scale (0, 0). ORIGINAL
+    //    QUIRK, preserved: it reads like a seam being drawn and renders as
+    //    nothing. `round` also means anything under half a pixel counts as
+    //    closed, so the flame cuts out just before the halves visually meet.
+    //
+    // So the flame vanishing as the box closes is CORRECT — but the sim was
+    // getting there by accident while also drawing flame during `con == 0`
+    // and at distance 0, where the game draws none.
+    if ((e.con ?? 0) <= 0) return;
+    if (Math.round(distance) === 0) {
+      // The whitepixel branch. Scale is zero in both axes here, so this is
+      // deliberately a no-op — written out rather than omitted so the next
+      // reader does not "restore" a seam that never appears.
+      return;
+    }
+
     const flame = sprites.get('spr_rk_split_flame_edge');
     if (!flame || !flame.frames.length) return;
     // `flame_index` IS PER INSTANCE and lives on the object, not on the
