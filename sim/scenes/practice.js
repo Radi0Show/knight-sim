@@ -34,7 +34,7 @@ import {
   endCutsceneReached, startEndCutscene, DR_PHASE4,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
-import { cueLoop } from '../audio.js';
+import { cueLoop, cue, cueStop } from '../audio.js';
 import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
 
 
@@ -355,6 +355,14 @@ const director = {
           // the writer before the `arg1 > 0` test, and a zero draws MISS.
           spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, c);
           continue;
+        }
+        // `if (points == 150) { snd_stop(snd_criticalswing);
+        //                        snd_play(snd_criticalswing); }`
+        // obj_heroparent's state 1. A critical sounds different, which is the
+        // only feedback that the bar was perfect rather than merely good.
+        if (acc === 150) {
+          cueStop(state, 'snd_criticalswing');
+          cue(state, 'snd_criticalswing');
         }
         const dealt = fightDamage(state, c, acc);
         if (dealt > 0) {

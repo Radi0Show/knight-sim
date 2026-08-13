@@ -2377,3 +2377,47 @@ The formula suites now run against an explicitly EMPTY loadout so they test
 formulas rather than the current build, with the equipped numbers pinned
 separately — otherwise a gear retune moves every assertion and a real
 regression hides in the churn.
+
+## Damage: the inheritance chain (37 suites)
+
+**Most attacks were doing exactly 1 damage, and the cause is one line.**
+
+`scr_bulletspawner`: `__dc.damage = global.monsterat[myself] * 5;`
+
+The Knight's AT is 40, so every attack's controller carries **200**, and
+`scr_bullet_inherit` copies it the whole way down:
+
+    dc.damage = 200
+      -> _manager.damage = damage     obj_dbulletcontroller's Step
+        -> inst.damage = damage       the manager's Step
+          -> slash.damage = damage    the sword's Step
+
+The last hop is the one that matters. `obj_tracking_sword_slash`'s own Create
+sets `damage = 1` — and its parent OVERWRITES it two lines after creating it.
+**That 1 is dead code in the original**, and it is exactly the value this build
+kept, because the port read each object's Create and never modelled the
+inheritance. `scr_damage_calculation` then floored everything at 1.
+
+The managers were being launched with hardcoded 1 and 10. Tracking swords went
+from ~1 damage a hit to 6510 cumulative over a turn.
+
+**STARS IS THE EXCEPTION AND IT IS NOT A BUG.** `obj_dbulletcontroller` creates
+`obj_knight_pointing_cone` WITHOUT `scr_bullet_inherit` — it sets only
+`difficulty` — so the cone never receives 200 and its stars keep their own
+`damage = 1`. Stars really is chip damage. `verify-damage` now asserts that it
+does NOT inherit, so a later pass cannot "fix" it into 200.
+
+An audit of every `damage` the sim sets against the dump found no other
+mismatch; the values were right and the chain was missing.
+
+## The missing SFX
+
+Thirty-three cues were referenced by the sim and had no sample — the original
+extraction only covered the bullet attacks, and everything added since (Rude
+Buster, the impacts, the Knight's hurt, the block bell) was silent.
+
+`snd_knight_cut2` and `snd_impact` were being CUED all along; they just had
+nothing to play. Also wired `snd_criticalswing`, which obj_heroparent plays on
+`points == 150` — the only feedback that a bar was perfect rather than good.
+
+59 cues now, 58 preloaded (the music is deliberately not), none missing.

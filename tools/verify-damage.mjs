@@ -22,6 +22,13 @@
 // on damage tells the difference.
 
 import { createState, stepFrame } from '../sim/index.js';
+import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { launchAttack } from '../sim/scenes/fight.js';
+
+const NONE = {
+  left: false, right: false, up: false, down: false,
+  focus: false, confirm: false, cancel: false,
+};
 import { buildSingleAttackScene, ATTACK_MENU } from '../sim/scenes/single.js';
 import {
   PARTY, scrDamageCalculation, battleDf, scrDamageSingle, ACTION_DEFEND,
@@ -101,6 +108,56 @@ for (const [id, hp, total] of results) {
   console.log(`${id.padEnd(12)} ${hp.padEnd(18)} ${total} HP lost`);
 }
 console.log(`\nDEFEND: a 206 slash deals ${defending} vs ${plain} undefended`);
+
+
+// ── THE INHERITANCE CHAIN ────────────────────────────────────────────────
+//
+// `scr_bulletspawner`: `__dc.damage = global.monsterat[myself] * 5;`
+//
+// The Knight's AT is 40, so every attack's controller carries **200**, and
+// `scr_bullet_inherit` copies it all the way down:
+//
+//     dc.damage = 200 -> manager -> sword -> slash
+//
+// The last hop is the one that matters: `obj_tracking_sword_slash`'s own
+// Create sets `damage = 1`, and its parent OVERWRITES it two lines after
+// creating it. That 1 is dead code in the original — and it is exactly what
+// this build kept, because it read each object's Create and never modelled
+// the inheritance. Six of the seven attacks did one point of damage a hit.
+{
+  const s = createState({ seed: 5, traceBulletSlots: 0 });
+  buildPracticeScene(s, { seed: 5 });
+  const owner = launchAttack(s, { ac: 11, difficulty: 0, name: 'Tracking Swords' });
+  if (!owner) failures.push('the tracking manager did not launch');
+  else if (owner.damage !== 200) {
+    failures.push(`the manager carries ${owner.damage}, expected 200 (monsterat 40 x 5)`);
+  }
+  // And it must REACH the slash, whose own Create says 1.
+  let slash = null;
+  for (let f = 0; f < 400 && !slash; f++) {
+    stepFrame(s, NONE);
+    slash = s.entities.find((e) => e.alive && e.type.name === 'obj_tracking_sword_slash');
+  }
+  if (!slash) failures.push('no slash spawned in 400 frames');
+  else if (slash.damage === 1) {
+    failures.push("the slash kept its own damage = 1 — the parent's 200 never reached it");
+  } else if (slash.damage !== 200) {
+    failures.push(`the slash carries ${slash.damage}, expected 200`);
+  }
+}
+
+// STARS IS THE EXCEPTION, and it is not a bug. `obj_dbulletcontroller` creates
+// `obj_knight_pointing_cone` WITHOUT calling scr_bullet_inherit — it sets only
+// `difficulty` — so the cone never receives 200 and its stars keep their own
+// `damage = 1`. Stars really is chip damage; do not "fix" it to 200.
+{
+  const s = createState({ seed: 5, traceBulletSlots: 0 });
+  buildPracticeScene(s, { seed: 5 });
+  const owner = launchAttack(s, { ac: 1, difficulty: 0, name: 'Stars' });
+  if (owner && owner.damage === 200) {
+    failures.push('the Stars cone inherited 200 — the controller does not pass it');
+  }
+}
 
 if (failures.length) {
   console.log('');

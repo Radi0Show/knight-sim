@@ -22,6 +22,7 @@
 //     bullet sweep, which is turn-system machinery.
 
 import { spawn } from '../entity.js';
+import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
 import { SOUL_START } from '../actors.js';
 import { boxsplitterAttack } from '../attacks/boxsplitter-attack.js';
@@ -144,6 +145,29 @@ export function openArena(state, entry) {
   gt.visible = true;
 }
 
+/**
+ * `scr_bulletspawner`: `__dc.damage = global.monsterat[myself] * 5;`
+ *
+ * THE ROOT OF EVERY BULLET'S DAMAGE, and the reason most attacks were doing
+ * exactly 1. The Knight's AT is 40, so the controller carries **200**, and
+ * `scr_bullet_inherit` copies it down the whole chain:
+ *
+ *     dc.damage = 200
+ *       -> _manager.damage = damage          (obj_dbulletcontroller Step)
+ *         -> inst.damage = damage            (the manager's Step)
+ *           -> slash.damage = damage         (the sword's Step)
+ *
+ * The last one matters most: `obj_tracking_sword_slash`'s own Create sets
+ * `damage = 1`, and the parent OVERWRITES it two lines after creating it. That
+ * 1 is dead code in the original — and it is exactly the value this build kept,
+ * because it read each object's Create and never modelled the inheritance.
+ *
+ * So the managers were launched with 1 and 10 instead of 200, every bullet
+ * inherited that, and `scr_damage_calculation` floored the result at 1. Six of
+ * the seven attacks did one point of damage a hit.
+ */
+const CONTROLLER_DAMAGE = KNIGHT_AT * 5;
+
 export function launchAttack(state, entry) {
   const { ac, difficulty } = entry;
 
@@ -240,7 +264,7 @@ export function launchAttack(state, entry) {
     case 14: {
       const mg = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       mg.variant = difficulty;
-      mg.damage = 1;
+      mg.damage = CONTROLLER_DAMAGE;
       trackingSwordsManager.init(mg, state);
       return mg;
     }
@@ -250,7 +274,7 @@ export function launchAttack(state, entry) {
       mg.timer = -40 + gmlIrandom(state.gmlRng, 10);
       mg.difficulty = difficulty;
       mg.knightDifficulty = difficulty;
-      mg.damage = 1;
+      mg.damage = CONTROLLER_DAMAGE;
       swordTunnelManager.init(mg, state);
       return mg;
     }
@@ -258,10 +282,10 @@ export function launchAttack(state, entry) {
     case 15: {
       // ac 15 is TWO controllers: the vortex, then tracking swords over it.
       const mg = spawn(state, swordVortexManager, { x: arena.x, y: arena.y });
-      mg.damage = 10;
+      mg.damage = CONTROLLER_DAMAGE;
       const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       tr.variant = 0;
-      tr.damage = 1;
+      tr.damage = CONTROLLER_DAMAGE;
       trackingSwordsManager.init(tr, state);
       return mg;
     }
