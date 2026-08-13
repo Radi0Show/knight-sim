@@ -455,6 +455,107 @@ T3-T6 never saw it because encounter 777 has no knight.
 `grep -rn 'obj_heart\.x *='` over the dump found it in seconds. The rule below
 exists because of this.
 
+## A shortcut must carry EVERY side effect of what it replaces
+
+The oracle harness forced `talked = 1` to get past an enemy-talk stall. That
+single line caused THREE separate bugs, each of which presented as something
+else entirely, and each of which took a game run to find. The branch it
+skipped does six things:
+
+```gml
+if (scr_isphase("enemytalk") && talked == 0 && end_cutscene_version == 0) {
+    scr_randomtarget();                       // picks mytarget; CONSUMES RNG
+    if (!instance_exists(obj_darkener))        // the board's teardown
+        instance_create(0, 0, obj_darkener);
+    global.fc = 22; global.typer = 81;
+    susietalks = 1;
+    if (global.hp[2] > 0) balloonturn++;       // the Susie exchange
+    ... balloons ...
+    talked = 0.5; talktimer = 0; rtimer = 0;   // rtimer, PER TURN
+}
+```
+
+| dropped | presented as |
+|---|---|
+| `obj_darkener` | the battle board never changed shape — it is the only thing that sets `growcon = 3`, and `obj_growtangle` self-destructs on `timer <= 0 && growcon == 3` |
+| `rtimer = 0` | **"the Knight is not attacking"** — he SELECTED correctly every turn and never launched, because `rtimer == 12` is an EQUALITY and rtimer climbed past it |
+| `balloonturn++` | the Susie dialogue never advanced |
+
+The stall it was working around was itself a harness gap: the next state waits
+on `button3_p()`, and the replay token had no button3 bit. Adding one removed
+the need for the shortcut entirely.
+
+**Before standing in for a branch, list everything it assigns.** A shortcut
+that carries one side effect is not a shortcut, it is three latent bugs.
+
+Two more of the same shape, both from the same session: a pre-created
+`obj_growtangle` made the Knight's `if (!instance_exists(obj_growtangle))`
+guard false so his selector never ran at all (crash: "difficulty not set
+before reading it"), and `clearTurn` resurrecting the soul silently undid the
+per-turn soul lifecycle.
+
+## Restoring HP does not stand anyone up
+
+`--keep-alive` pinned `global.hp` each frame and the party stayed swooned:
+full health, no menu, no attacks. Being down is FIVE globals.
+
+```gml
+scr_dead(i):   charmove[i] = 0; charcantarget[i] = 0; chardead[i] = 1;
+               charaction[i] = 0; charspecial[i] = 0;
+scr_revive(i): charmove[i] = 1; charcantarget[i] = 1; chardead[i] = 0;
+```
+
+Kris is never the default target, so he was the only one still fighting —
+every recording had a one-character party against the sim's three, skewing the
+attack bar, damage, TP and the Kris SWOON scaling together. **Spotted by
+watching the game, not by any suite.**
+
+Note the index bases differ: `charmove`/`charcantarget`/`chardead` are
+SLOT-indexed (0..2); `global.hp` is CHARACTER-indexed (1..3).
+
+The sim has no `chardead` at all — `isUp()` is `partyHp[target] > 0`. That is
+safe in normal play (HP only rises through a revive, which calls scr_revive)
+but it cannot represent "healed but still down", which is exactly what the
+harness was creating.
+
+## A green suite does not mean a change took effect
+
+Twice in one session a change that altered NOTHING passed all 39 suites,
+because "unchanged" and "correct" look identical to a regression test:
+
+- the soul-lifecycle edit landed on the wrong one of three spawn sites
+- `state.pinnedShuffle` was invented in a runner and never read by anything
+
+Both were caught by the oracle diff contradicting a number, not by the suites.
+**Green answers "did I break something", not "did my change do anything".**
+Verify a behavioural change by observing the behaviour — run it and read the
+state — not by watching the suites stay green.
+
+Related: do not conclude an outcome from a number that does not measure it.
+"The darkener fix failed" was reported from a turn count while the board it
+fixed was working; "16 distinct phase/turn values" was quoted from the SIM
+while the oracle had 2.
+
+## Instrument before theorising
+
+Three consecutive guesses at the Knight-not-attacking stall cost three game
+runs and were all wrong. One guarded diagnostic — `myattackchoice`,
+`phaseturn`, `talked`, growtangle and darkener counts, `rtimer`, `attacked` —
+found it in a single row:
+
+```
+mnfight=2 ac=2 pturn=3 talked=1 gt=1 dark=1 rtimer=180 attacked=0
+```
+
+Selection advancing, spawn never firing. The answer was unmissable once the
+variables were on screen together.
+
+Guard every instance read: `variable_instance_exists(obj_x.id, "field")`.
+These are assigned at different points in the turn, and a per-frame diagnostic
+sees the object before any of them exist — the first version of that
+instrument crashed the game at frame 0 reading `rtimer`, which is the same
+class of bug it was written to find.
+
 ## Working method — learned the hard way
 
 Two failure modes cost most of a session each. Both are cheap to avoid.
