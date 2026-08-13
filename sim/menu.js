@@ -25,6 +25,23 @@ import {
   HERO_SPELL, HERO_ITEM, HERO_ACT, heroAct,
 } from './heroes.js';
 
+/**
+ * `global.charaction[c] = 2` — CHOSE A SPELL. The cast itself happens later,
+ * during obj_attackpress's delay window, so the animation plays after the
+ * whole party has committed rather than over the next character's menu.
+ *
+ * TP is still spent NOW: `scr_spellconsumeb` deducts on selection, which is
+ * what stops two characters spending the same 125.
+ */
+function recordSpell(state, c, id, target) {
+  if (!canAfford(state, id)) return null;
+  state.tension -= SPELLS[id].cost;
+  state.charaction[c] = 2;
+  state.pendingSpell = state.pendingSpell ?? [];
+  state.pendingSpell[c] = { id, target };
+  return `${SPELLS[id].name}!`;
+}
+
 /** `global.faceaction[c] = n` — the standing pose, read by hero state 0. */
 function setFace(state, c, face) {
   const h = state.heroes?.[c];
@@ -320,7 +337,7 @@ export function stepMenu(state, input) {
       if (p?.kind === 'item') {
         did = useItem(state, p.slot, t, bagOf(state));
       } else if (p?.kind === 'spell') {
-        did = castSpell(state, c, p.id, t);
+        did = recordSpell(state, c, p.id, t);
       }
       if (did) {
         menu.lastItem = did;
@@ -469,8 +486,13 @@ export function stepMenu(state, input) {
             menu.submenu = 'target';
             selNoise = true;
           } else {
+            // A SPELL IS RECORDED, NOT CAST. `obj_attackpress`'s Create
+            // collects everyone whose `charaction` is 2 (spell) or 4 (item)
+            // and its Draw fires their animation on a DELAY, before the bolts
+            // run. Casting on the button press ran Rude Buster's whole
+            // animation while the NEXT character was still choosing.
             const did = menu.submenu === 'magic'
-              ? castSpell(state, c, row.id, c)
+              ? recordSpell(state, c, row.id, c)
               : useItem(state, menu.gridIndex, c, bagOf(state));
             if (!did) {
               cue(state, 'snd_error');

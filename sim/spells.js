@@ -118,10 +118,17 @@ export function soulSpeed(state) {
  * that cannot be spared is a wasted 40, and this fight's Knight is exactly
  * that enemy.
  */
-export function castSpell(state, slot, spellId, target = 0) {
+export function castSpell(state, slot, spellId, target = 0, opts = {}) {
   const s = SPELLS[spellId];
-  if (!s || state.tension < s.cost) return null;
-  state.tension -= s.cost;
+  if (!s) return null;
+  // `scr_spellconsumeb` deducts TP when the spell is SELECTED, not when it
+  // resolves — that is what stops two characters spending the same 125 in one
+  // turn. The menu's recordSpell has already paid, so the resolve pass must
+  // not charge again.
+  if (!opts.alreadyPaid) {
+    if (state.tension < s.cost) return null;
+    state.tension -= s.cost;
+  }
 
   if (spellId === 4) {
     // RUDE BUSTER DOES NOT RESOLVE HERE. It is a timing minigame: the

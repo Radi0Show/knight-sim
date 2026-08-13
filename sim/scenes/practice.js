@@ -23,10 +23,11 @@ import { createMenu, stepMenu, openMenu } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
 import { endTurnItems } from '../menu.js';
-import { createHeroes, stepHeroes, heroAct, HERO_ATTACK } from '../heroes.js';
+import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_SPELL } from '../heroes.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
+import { castSpell } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
@@ -81,6 +82,7 @@ const director = {
     e.soulHold = null;
     e.bar = null;
     e.barHold = 0;
+    e.arenaOpen = false;
     e.spawnDelay = RTIMER_SPAWN;
     e.turnsRun = 0;
     e.elapsed = 0;
@@ -148,7 +150,14 @@ const director = {
     // box's geometry in their Create and a genuinely absent one would need each
     // of them re-checked. The visible behaviour is the same; the deviation is
     // recorded here rather than left implicit.
-    state.boardVisible = !!e.started;
+    // DERIVED FROM `arenaOpen`, NOT `started`. `e.started` is assigned at the
+    // BOTTOM of this event and read here at the top, so on the frame an attack
+    // launches this line saw the previous value and the board blinked out for
+    // exactly one frame, mid-grow, every single turn.
+    //
+    // `arenaOpen` is set where the board's life actually changes — when
+    // openArena runs, and cleared when the turn ends — so it cannot lag.
+    state.boardVisible = !!e.arenaOpen;
     if (state.menu.open && state.soul) {
       if (e.soulHold) {
         state.soul.x = e.soulHold.x;
@@ -201,6 +210,7 @@ const director = {
       if (!finished) return;
 
       e.started = false;
+      e.arenaOpen = false;
       e.gap = TURN_GAP;
       e.spawnDelay = RTIMER_SPAWN;
       e.turnsRun += 1;
@@ -255,87 +265,116 @@ const director = {
       state.menu.needsCommit = false;
     }
 
-    // `global.spelldelay = 70` — the turn holds while Rude Buster resolves.
-    // Without this the Knight's attack launches over the bolt still in flight
-    // and the press window lands during the bullet phase.
-    if (rudeBusterBusy(state)) return;
-
-    // ---- RESOLUTION: the attack bar, before the enemy's turn ---------------
+    // ---- THE RESOLVE PHASE: obj_attackpress ---------------------------------
     //
-    // Armed once for everyone who chose FIGHT. It runs to completion — every
-    // bolt hit or passed — and only then does the Knight attack, which is the
-    // real turn order (COMMAND, RESOLVE, ENEMY).
+    // Its Create and Draw define the whole order, and this build had two parts
+    // of it wrong.
+    //
+    //     Create:  for each char with charaction 4 (item) or 2 (spell):
+    //                  if (maxdelay == 0) maxdelay = 25;
+    //                  maxdelay += 15;
+    //     Draw:    maxdelaytimer += 1;
+    //              at maxdelaytimer == spelldelay[xyz] -> that character's
+    //                  state = 4 or 2, i.e. their animation STARTS
+    //              if (maxdelaytimer >= maxdelay) active = 1;   // bolts run
+    //
+    // So the bar EXISTS from the moment the menu closes but sits inactive
+    // while the spells and items play out. Rude Buster happens first, the
+    // bolts come after — which is the order you actually see.
     if (state.menu.fight.some(Boolean) && !e.bar) {
       const order = [0, 1, 2].filter((c) => state.menu.fight[c] && isUp(state, c));
       // The schedule is RANDOM, so the bar draws from the sim's generator —
       // which also means a replayed seed replays the same bolt pattern.
       if (order.length) e.bar = createFightBar(state.rng, order);
+      e.resolved = [false, false, false];
     }
-    // `if (e.bar)`, NOT `if (e.bar && !e.bar.done)`. The narrower guard skips
-    // this whole block the moment the last bolt clears, so the scoring ran but
-    // the hold never advanced and `e.bar` was never nulled — a finished bar
-    // stayed on screen for the rest of the fight while the turn carried on
-    // behind it.
-    if (e.bar) {
-      // ONE BUTTON, edge-triggered. The bar is not per-character input: a
-      // single press scans every live bolt and scores the nearest, so the
-      // director hands it one boolean rather than three.
-      if (!e.bar.done) {
-        stepFightBar(e.bar, !!state.input?.confirm);
-        state.fightBar = e.bar;
-        if (!e.bar.done) return;
-      }
 
-      // SCORE IT ONCE. `attacked[i]` latches in obj_attackpress precisely so
-      // `event_user(1)` fires a single time per character; without an
-      // equivalent latch here the whole block ran on every frame of the hold
-      // below, and the Knight took the same hit sixty-three times.
-      if (!e.barScored) {
-        e.barScored = true;
-        // AND SWING. `event_user(1)` puts obj_heroparent into `state = 1` — the
-        // attack animation. That was never wired, so FIGHT dealt damage with
-        // the party standing still in their raised-weapon pose.
-        //
-        // `scr_tensionheal(round(points / 10))` is gated on damage being
-        // positive: a hit the Knight shrugs off pays no TP either.
-        for (let c = 0; c < 3; c++) {
-          const acc = e.bar.points[c];
-          if (acc <= 0) continue;
-          heroAct(state, c, HERO_ATTACK);
-          const dealt = fightDamage(state, c, acc);
-          if (dealt > 0) {
-            damageKnight(state, dealt);
-            scrTensionheal(state, fightTp(acc));
-          }
-          // The number pops off the Knight whether or not it did anything —
-          // `scr_damage_enemy` creates the writer BEFORE the `arg1 > 0` test,
-          // and a zero draws "MISS" instead of a digit.
-          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, c);
-          // obj_basicattack — the impact. `points == 150` is the critical, and
-          // it scales the same sprite up rather than using different art.
-          if (dealt > 0) {
-            spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, c, acc === 150,
-              () => rngNext(state.rng));
-          }
+    // `maxdelay` — 0 with no spells or items, otherwise 25 + 15 per caster.
+    if (e.maxdelay === undefined) {
+      const casters = (state.pendingSpell ?? []).filter(Boolean).length;
+      e.maxdelay = casters ? 25 + 15 * casters : 0;
+      e.maxdelaytimer = 0;
+      // `spelldelay[xyz]` defaults to 10 for all three, so the first caster's
+      // animation starts ten frames in and the rest follow at the same offset
+      // — they overlap, which is why a two-spell turn does not take twice as
+      // long as a one-spell turn.
+      e.spellFired = [false, false, false];
+    }
+
+    if (e.maxdelaytimer < e.maxdelay) {
+      e.maxdelaytimer += 1;
+      for (let c = 0; c < 3; c++) {
+        const p = state.pendingSpell?.[c];
+        if (p && !e.spellFired[c] && e.maxdelaytimer >= 10) {
+          e.spellFired[c] = true;
+          heroAct(state, c, HERO_SPELL);
+          castSpell(state, c, p.id, p.target, { alreadyPaid: true });
         }
       }
+      return;
+    }
+    // Everything queued has fired; the bolt may still be flying.
+    if (rudeBusterBusy(state)) return;
+    if (state.pendingSpell) state.pendingSpell = [];
 
-      // The bar does not vanish the instant the last bolt clears: `posttimer`
-      // runs to `timermax` and then the black fade takes 13 more frames. That
-      // hold is where the attack animations actually play.
+    if (e.bar) {
+      if (!e.bar.done) {
+        // ONE BUTTON, edge-triggered. A single press scans every live bolt and
+        // scores the nearest, so the director hands it one boolean.
+        stepFightBar(e.bar, !!state.input?.confirm);
+        state.fightBar = e.bar;
+      }
+
+      // EACH CHARACTER SWINGS AS THEIR OWN BOLT CLEARS, not all together at
+      // the end. obj_attackpress fires `event_user(1)` per character the frame
+      // `boltcount[i]` hits zero:
+      //
+      //     if (boltcount[i] == 0 && havechar[i] == 1 && attacked[i] == 0)
+      //         { attacked[i] = 1; target = i; event_user(1); }
+      //
+      // `stepFightBar` already latches `attacked[i]` for exactly this. Scoring
+      // the whole party at once made three characters swing on one frame with
+      // one shared animation length, when their attack sprites are 6, 6 and 4
+      // frames and their bolts land at different times.
+      for (let c = 0; c < 3; c++) {
+        if (!e.bar.attacked[c] || e.resolved[c]) continue;
+        e.resolved[c] = true;
+        const acc = e.bar.points[c];
+        heroAct(state, c, HERO_ATTACK);
+        if (acc <= 0) {
+          // A missed bolt still writes a number — `scr_damage_enemy` creates
+          // the writer before the `arg1 > 0` test, and a zero draws MISS.
+          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, c);
+          continue;
+        }
+        const dealt = fightDamage(state, c, acc);
+        if (dealt > 0) {
+          damageKnight(state, dealt);
+          scrTensionheal(state, fightTp(acc));
+          spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, c, acc === 150,
+            () => rngNext(state.rng));
+        }
+        spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, c);
+      }
+
+      if (!e.bar.done) return;
+
+      // `posttimer` runs to `timermax` and the black fade takes 13 more
+      // frames. That hold is where the attack animations actually play out.
       if ((e.barHold ?? 0) < ATTACKPRESS_HOLD + ATTACKPRESS_FADE) {
         e.barHold = (e.barHold ?? 0) + 1;
         return;
       }
       e.barHold = 0;
-      e.barScored = false;
       e.bar = null;
       state.fightBar = null;
       state.menu.fight = [false, false, false];
       // `damagereduction += 0.01` once per resolved turn, inside [0.2, 0.35).
       advanceTurn(state);
+      e.maxdelay = undefined;
       return;
     }
+    e.maxdelay = undefined;
 
     // `rtimer` — the arena is up and EMPTY for 12 frames before the attack
     // spawns. That beat is what makes the board's arrival readable, and it is
@@ -358,9 +397,9 @@ const director = {
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
+        e.arenaOpen = true;
       }
       e.spawnDelay -= 1;
-      state.boardVisible = true;
       return;
     }
 
