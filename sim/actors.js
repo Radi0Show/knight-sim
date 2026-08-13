@@ -53,8 +53,25 @@ export const knightActor = {
     e.isActor = true;
   },
   step(e, state) {
-    e.siner2 += 1;
-    e.y = e.ystart + Math.cos(e.siner2 / 8) * 8;
+    const k = state.knight;
+    const roaring = state.entities.some(
+      (x) => x.alive && x.type.name === 'obj_knight_roaring2',
+    );
+
+    // `if (!i_ex(obj_knight_roaring2)) siner2++;` — THE BOB FREEZES DURING
+    // ROARING. It is the first line of the Draw and it is guarded, so the
+    // phase-4 finale holds him still while his own attack draws him. Running
+    // the counter through it left him bobbing under a knight that is supposed
+    // to be locked in place.
+    if (!roaring) e.siner2 += 1;
+
+    // `if (i_ex(obj_knight_swordtunnelanim)) exit;` — during Sword Tunnel a
+    // separate object performs the whole animation, and this Draw stops dead:
+    // no bob, no afterimages, no sprite. Without this he bobbed and trailed
+    // ghosts behind his own performance.
+    if (state.entities.some(
+      (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
+    )) return;
 
     // THE HURT STROBE. `state == 3 && hurttimer >= 0` alternates the idle
     // sprite with `spr_roaringknight_ball_transition` FRAME 7 — one specific
@@ -65,11 +82,16 @@ export const knightActor = {
     // `blockanim` swaps the idle for `spr_roaringknight_block_ol` for 15
     // frames instead. It only fires while `damagereduction < 0.1`, so in this
     // fight that is the 0.04 opening and nothing else.
-    const k = state.knight;
     // The Draw applies `x + shakex` at every draw site rather than moving the
     // instance. Nothing in this renderer reads a `shakex` field, so it goes
     // onto the position — the visible result is identical and it needs no new
     // plumbing through the generic blit.
+    //
+    // `+ hurtspriteoffx / + hurtspriteoffy` are in every one of those draw
+    // sites too and are NOT translated, deliberately: `scr_enemy_object_init`
+    // sets both to 0 and a whole-dump grep finds no other assignment. They are
+    // write-only, the same family as `linex` and `splitbox`. Adding fields
+    // that are provably always zero would only invite someone to "fix" them.
     e.x = KNIGHT.x + (k?.shakex ?? 0);
     if (k?.blockanim) {
       e.sprite_index = 'spr_roaringknight_block_ol';
@@ -83,19 +105,56 @@ export const knightActor = {
     // THE AFTERIMAGE TRAIL, from his Draw event. Every fourth frame he leaves
     // a ghost of himself at 0.6 alpha that fades at 0.02 and drifts right at
     // hspeed 2 — the shimmer that makes him read as barely-contained rather
-    // than a static sprite.
+    // than a static sprite. He is otherwise motionless: `siner` is set to 0 in
+    // his Create and incremented NOWHERE, so `draw_sprite_ext(idlesprite,
+    // siner, ...)` draws frame 0 for the entire fight. The bob and this trail
+    // are the whole of his idle animation.
     //
-    // Gated exactly as the original gates it: not while he is hidden
-    // (`image_alpha != 0`, which Flurry sets to 0 when its manager becomes the
-    // visible knight), and not during ROARING, which draws its own knight.
+    // THE BOB AND THE TRAIL LIVE INSIDE THE STATE GATE:
+    //
+    //     if (state == 0 || state == 3) {
+    //         image_index = 0;
+    //         y = ystart + (cos(siner2 / 8) * 8);
+    //         aetimer++;
+    //         if ((aetimer % 4) == 0 && image_alpha != 0 && chargeupcon == 0)
+    //
+    // so both stop in any other state, and `aetimer` does not even advance —
+    // which means the trail resumes on its own cadence rather than catching
+    // up. `siner2` keeps counting outside the gate, so the bob resumes at the
+    // phase of the clock rather than where it left off.
+    if (k && k.animState !== 0 && k.animState !== 3) return;
+    e.y = e.ystart + Math.cos(e.siner2 / 8) * 8;
     e.aetimer += 1;
     if (e.aetimer % 4 !== 0) return;
+    // Not while he is hidden — Flurry sets image_alpha to 0 when its manager
+    // becomes the visible knight.
     if (!e.image_alpha || e.visible === false) return;
-    if (state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2')) return;
+    // `chargeupcon == 0`: NO TRAIL WHILE HE WINDS UP. The charge-up turn is
+    // the one where he holds still and glows, and a trail during it reads as
+    // movement at exactly the moment the fight wants stillness.
+    if (k?.chargeupcon) return;
+    // `if (state == 0 && !i_ex(obj_knight_roaring2))` — the idle branch is
+    // additionally gated on ROARING, which draws its own knight.
+    if (roaring && (k?.animState ?? 0) === 0) return;
 
     const a = spawn(state, afterimage, { x: e.x, y: e.y });
-    a.sprite_index = 'spr_roaringknight_idle';
-    a.image_index = e.image_index;
+    // The state-3 branch spawns the STROBE, not the idle:
+    //
+    //     if ((hurttimer % 2) == 0 || stronghurtanim == false)
+    //         afterimage.sprite_index = idlesprite;
+    //     else { sprite_index = spr_roaringknight_ball_transition;
+    //            image_index = 7; }
+    //
+    // The ghosts alternate with the body, so a heavy hit strobes the whole
+    // trail rather than the sprite alone. Spawning idle ghosts behind a
+    // strobing knight was half the effect.
+    if (k?.animState === 3 && k.stronghurtanim && k.hurttimer % 2 !== 0) {
+      a.sprite_index = 'spr_roaringknight_ball_transition';
+      a.image_index = 7;
+    } else {
+      a.sprite_index = 'spr_roaringknight_idle';
+      a.image_index = e.image_index;
+    }
     a.image_alpha = 0.6;
     a.fadeSpeed = 0.02;
     a.image_speed = 0;
