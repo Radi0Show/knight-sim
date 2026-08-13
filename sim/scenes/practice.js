@@ -24,7 +24,7 @@ import { createMenu, stepMenu, openMenu } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
 import { endTurnItems } from '../menu.js';
-import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_SPELL } from '../heroes.js';
+import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_SPELL } from '../heroes.js';
 import {
   advanceBalloon, advanceReply, clearDialogue, dialogueDone,
 } from '../dialogue.js';
@@ -543,8 +543,45 @@ const director = {
 
       // `posttimer` runs to `timermax` and the black fade takes 13 more
       // frames. That hold is where the attack animations actually play out.
-      if ((e.barHold ?? 0) < ATTACKPRESS_HOLD + ATTACKPRESS_FADE) {
-        e.barHold = (e.barHold ?? 0) + 1;
+      //
+      // AND THE BAR IS WHAT ENDS THEM. At `posttimer > timermax` — the moment
+      // the fade starts, not when it finishes — obj_attackpress reaches
+      // through and resets everyone:
+      //
+      //     if (posttimer > timermax) {
+      //         fade = 1;
+      //         with (obj_heroparent) {
+      //             if (state == 1) state = 0;
+      //             attacked = 0;
+      //             itemed = 0;
+      //         }
+      //         ...
+      //         global.mnfight = 1;
+      //         global.myfight = -1;
+      //     }
+      //
+      // Without it a character who attacked stays in state 1 — frozen on the
+      // last frame of their swing — until something else happens to reset
+      // them. Reported as "Susie's animation stops on one sprite for a bit",
+      // and that is exactly what it is: the pose held for the whole 63-frame
+      // hold because nothing ended it.
+      //
+      // `state == 1` is tested specifically, so a character mid-ITEM or
+      // mid-SPELL is left alone; only the attack pose is cut.
+      e.barHold = (e.barHold ?? 0) + 1;
+      if (e.barHold === ATTACKPRESS_HOLD) {
+        for (const h of state.heroes ?? []) {
+          if (h.state === HERO_ATTACK) h.state = HERO_IDLE;
+          h.attacked = false;
+          h.itemed = false;
+        }
+        // `fade = 1` — the bar paints a black rectangle over itself for the
+        // next 13 frames rather than vanishing. See render/fightbar.js.
+        e.bar.fade = true;
+        e.bar.fadeamt = 0;
+      }
+      if (e.bar.fade) e.bar.fadeamt = (e.bar.fadeamt ?? 0) + 0.08;
+      if (e.barHold < ATTACKPRESS_HOLD + ATTACKPRESS_FADE) {
         return;
       }
       e.barHold = 0;

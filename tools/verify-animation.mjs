@@ -14,7 +14,11 @@
 //     without bound and GameMaker's own wrap is what loops the idle.
 //   * The Knight's strobe needs `stronghurtanim`, which needs damage >= 100.
 
-import { createState } from '../sim/index.js';
+import { createState, stepFrame } from '../sim/index.js';
+import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { freshParty } from '../sim/damage.js';
+
+const NONE = { left: false, right: false, up: false, down: false, focus: false };
 import {
   createHeroes, stepHeroes, heroAct, HERO_SPRITES,
   FACE_IDLE, FACE_ATTACK, FACE_SPELL, FACE_ITEM, FACE_DEFEND, FACE_ACT,
@@ -180,3 +184,75 @@ if (failures.length) {
   process.exit(1);
 }
 console.log('\nPASS  party and knight animation (no oracle — see header)');
+
+// ── THE BAR ENDS THE ATTACK POSE ─────────────────────────────────────────
+//
+// Two symptoms, one cause, both reported from watching the game:
+// "Susie's animation stops on one sprite for a bit" and "the attack bar stays
+// and looks weird after you attack".
+//
+// obj_attackpress reaches through and resets everyone at the moment its fade
+// STARTS, not when it ends:
+//
+//     if (posttimer > timermax) {
+//         fade = 1;
+//         with (obj_heroparent) {
+//             if (state == 1) state = 0;
+//             attacked = 0;
+//             itemed = 0;
+//         }
+//     }
+//     if (fade == 1) {
+//         fadeamt += 0.08;
+//         draw_rectangle(x - 1, y, x + 640, y + 300);   // black, alpha fadeamt
+//         if (fadeamt > 1) instance_destroy();
+//     }
+//
+// So the attacker holds their swing for the whole `timermax` window and is
+// cut back to idle when the black fade begins — the bar is what ends the
+// pose, and nothing else does. `state == 1` is tested specifically, so a
+// character mid-ITEM or mid-SPELL is untouched.
+{
+  const s = createState({ seed: 4, traceBulletSlots: 0 });
+  buildPracticeScene(s, { seed: 4 });
+
+  let confirmPulse = false;
+  const drive = () => {
+    if (!s.menu?.open) return NONE;
+    confirmPulse = !confirmPulse;
+    return { ...NONE, confirm: confirmPulse };
+  };
+
+  let sawAttackPose = false;
+  let poseEndedWithFade = false;
+  let sawFade = false;
+
+  for (let f = 0; f < 900; f++) {
+    stepFrame(s, drive());
+    s.partyHp = freshParty();
+    s.gameOver = false;
+
+    const attacking = (s.heroes ?? []).some((h) => h.state === 1);
+    if (attacking) sawAttackPose = true;
+
+    if (s.fightBar?.fade) {
+      sawFade = true;
+      // On any frame the fade is running, nobody may still be mid-swing.
+      if (!attacking) poseEndedWithFade = true;
+      else poseEndedWithFade = false;
+    }
+  }
+
+  if (!sawAttackPose) failures.push('no character ever entered the attack pose');
+  if (!sawFade) failures.push('the bar never started its black fade');
+  if (sawFade && !poseEndedWithFade) {
+    failures.push('a character was still in the attack pose while the bar faded '
+      + '— the bar is what ends it');
+  }
+}
+
+if (failures.length) {
+  for (const f of failures) console.log(`→ FAILURE  ${f}`);
+  process.exit(1);
+}
+console.log('the attack bar ends the attack pose and fades to black before it goes');

@@ -197,6 +197,18 @@ function slide(menu, c, raised) {
     if (menu.mmy[c] > -24) menu.mmy[c] -= 4;
     if (menu.mmy[c] > -16) menu.mmy[c] -= 6;
     if (menu.mmy[c] > -8) menu.mmy[c] -= 8;
+    // ORIGINAL BUG: `if (mmy[c] < -32) mmy[c] = -64;` IS UNREACHABLE.
+    //
+    // The four tests above are sequential on the same variable, so from 0 the
+    // value walks 0 -> -12 -> -18 -> -24 -> -26 -> -28 -> -30 -> -32 and
+    // sticks there: `-32 > -32` is false so nothing decrements it further,
+    // and `-32 < -32` is false so this line never fires. The box raises 32
+    // pixels, never 64.
+    //
+    // Kept verbatim rather than removed, per the project's rule on original
+    // bugs: a later cleanup that "fixes" the arithmetic would double the
+    // raise and move the whole charbox row. Same family as `splitbox`,
+    // `linex` and `destroy_on_hit` in CLAUDE.md's dead-variable table.
     if (menu.mmy[c] < -32) menu.mmy[c] = -64;
   } else if (menu.mmy[c] < -14) {
     menu.mmy[c] += 15;

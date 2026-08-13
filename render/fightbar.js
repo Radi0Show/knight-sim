@@ -143,5 +143,30 @@ export function drawFightBar(ctx, bar, sprites, originX = BAR_X, originY = BAR_Y
       );
     }
   }
+
+  // THE BAR DOES NOT VANISH — IT IS PAINTED OUT.
+  //
+  //     if (fade == 1 || fakefade == 1) {
+  //         fadeamt += 0.08;
+  //         draw_set_color(c_black);
+  //         draw_set_alpha(fadeamt);
+  //         draw_rectangle(x - 1, y, x + 640, y + 300, false);
+  //         draw_set_alpha(1);
+  //         if (fade == 1 && fadeamt > 1) instance_destroy();
+  //     }
+  //
+  // A black rectangle over the whole bar area, growing opaque at 0.08 a frame
+  // — about 13 frames — and only then is the object destroyed. Without it the
+  // bar sits fully lit through the post-attack hold and then disappears
+  // abruptly, which is what "the attack bar stays and looks weird after you
+  // attack" describes.
+  //
+  // The rectangle is 640 wide and 300 tall from the bar's own origin, so it
+  // covers the rows and everything drawn among them, not just the track.
+  if (bar.fade) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, bar.fadeamt ?? 0)})`;
+    ctx.fillRect(x - 1, y, 641, 300);
+  }
+
   ctx.restore();
 }
