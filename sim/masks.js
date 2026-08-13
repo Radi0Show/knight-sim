@@ -66,6 +66,35 @@ export const HEART_MASK = build(raw.heart);
  */
 export const HEART_SMALL_MASK = build(raw.heartsmall);
 export const BATTLEBG_MASK = build(raw.battlebg);
+/**
+ * THE CUSTOM BOX'S WALL — `spr_battlebg_stretch_hitbox`, as the runtime
+ * BEHAVES, not as the data file stores it.
+ *
+ * obj_growtangle's first Step swaps any non-default-scale box onto this
+ * sprite (and snaps the scale — see sim/battlebox.js). The mask extracted
+ * from game.ios (knight-research tools/patches/extract_mask.csx) has a 4px
+ * border: free interior source cols/rows [4..70]. The recorded fight
+ * disagrees: with the box at (320,170) / (230,170), snapped scale
+ * 2.24 x 1.76, the soul's rests are
+ *
+ *     east  381   (heart col-17 pixel: 398 free, 399 blocked)
+ *     south 214   (row-17 pixel: 231 free, 232 blocked)
+ *     north 109   (row-2 pixel: 111 free, 110 blocked)
+ *
+ * Six inequalities, and under the calibrated floor-sampling model they all
+ * select a border ONE SOURCE PIXEL THINNER than the stored mask — free
+ * interior [3..71] — while the stored [4..70] misses east by a pixel in one
+ * direction and north by a pixel in the other, and no alternative sampling
+ * (round, ceil, pixel-centre, interval overlap, nearest-neighbour
+ * pre-rasterisation — all tried) reconciles the stored mask with the
+ * measurements. So the EFFECTIVE mask ships, with the deviation recorded:
+ * fitted at scale 2.24 x 1.76 only; the corners are unmeasured (drawn square
+ * here, rounded in the stored data); the sword tunnel's snapped 2.9866...
+ * box will exercise it at a second scale and the whole-fight diff will say
+ * if the fit holds. Default scale-2 boxes keep spr_battlebg_0's mask, whose
+ * [2..72] interior is T3-verified — this entry does not touch them.
+ */
+export const BATTLEBG_STRETCH_HITBOX_MASK = build(raw.battlebgStretchHitbox);
 export const FOUNTAIN_MASK = build(raw.fountain);
 export const TOOTH_MASK = build(raw.tooth);
 export const STAR_MASK = build(raw.star);

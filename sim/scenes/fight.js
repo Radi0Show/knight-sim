@@ -22,6 +22,7 @@
 // gate at the end of any turn rather than on a turn count.
 
 import { spawn } from '../entity.js';
+import { BATTLEBG_MASK } from '../masks.js';
 import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
 import { SOUL_START } from '../actors.js';
@@ -168,6 +169,14 @@ export function openArena(state, entry) {
   gt.ystart = gt.y;
   gt.maxxscale = arena.xscale;
   gt.maxyscale = arena.yscale;
+  // THE BOX IS NEW EACH TURN in the game — created in the mnfight-1.5 block
+  // with its scales already assigned, so its `!init` first-Step block (the
+  // scale snap and the hitbox-mask swap, sim/battlebox.js) runs once per
+  // TURN. The sim's growtangle persists, so re-arm it here or the snap fires
+  // exactly once at build, with the default 2 x 2 still in place, and every
+  // custom arena keeps the unsnapped scale and the wrong wall.
+  gt.init = false;
+  gt.mask = BATTLEBG_MASK;
   gt.growcon = 1;
   gt.timer = 0;
   gt.image_xscale = 0;
@@ -227,6 +236,9 @@ export function launchAttack(state, entry) {
     // attack that resizes the arena resizes what the soul can reach.
     gt.maxxscale = arena.xscale;
     gt.maxyscale = arena.yscale;
+    // Re-arm the per-turn init — see the note at the other assignment.
+    gt.init = false;
+    gt.mask = BATTLEBG_MASK;
     gt.growcon = 1;
     gt.timer = 0;
     gt.image_xscale = 0;

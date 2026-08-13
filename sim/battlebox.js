@@ -14,7 +14,7 @@ import { afterimage } from './fx.js';
 // masks have rasterization semantics the oracle showed we do not reproduce
 // (t3 trace frames 0-3). Grow-in support needs its own oracle study first.
 
-import { BATTLEBG_MASK } from './masks.js';
+import { BATTLEBG_MASK, BATTLEBG_STRETCH_HITBOX_MASK } from './masks.js';
 
 /**
  * Put a box straight into its settled state.
@@ -123,6 +123,41 @@ export const battlebox = {
    * soul is centred and still for those frames, so nothing depends on it.
    */
   step(e, state) {
+    // THE FIRST-STEP INIT — obj_growtangle's `if (!init)` block, and it is
+    // where a custom-sized arena stops being the ring everyone measures.
+    //
+    //     if (visible && (maxxscale != 2 || maxyscale != 2)
+    //         && sprite_index == spr_battlebg_0) {
+    //         customBox = true;
+    //         sprite_index = spr_battlebg_stretch_hitbox;   // THE MASK SWAPS
+    //         if ((maxxscale % 2) != 0)
+    //             maxxscale = round(maxxscale * 37.5) / 37.5;
+    //         if ((maxyscale % 2) != 0)
+    //             maxyscale = round(maxyscale * 37.5) / 37.5;
+    //         ...bakes spr_custom_box for the visual...
+    //     }
+    //
+    // TWO consequences, both measured in the whole-fight recording:
+    //
+    //  * THE SCALE IS QUANTISED to multiples of 1/37.5, so the 75px sprite
+    //    lands on whole pixels: Stars' 2.25 x 1.75 becomes **2.24 x 1.76**
+    //    (f32: 2.2400000095 / 1.7599999905, exactly the recorded values),
+    //    and the sword tunnel's 3 becomes 2.9866666...  The sim's box was
+    //    2.25 for the whole turn — every wall sat in a subtly wrong place.
+    //
+    //  * THE COLLISION MASK CHANGES SPRITE. spr_battlebg_stretch_hitbox is
+    //    not spr_battlebg_0: its wall sits differently, and the effective
+    //    interior is [3..71] (see sim/masks.js for the oracle fit).
+    if (!e.init) {
+      e.init = true;
+      if (e.visible !== false && (e.maxxscale !== 2 || e.maxyscale !== 2)) {
+        e.customBox = true;
+        if (e.maxxscale % 2 !== 0) e.maxxscale = Math.round(e.maxxscale * 37.5) / 37.5;
+        if (e.maxyscale % 2 !== 0) e.maxyscale = Math.round(e.maxyscale * 37.5) / 37.5;
+        e.mask = BATTLEBG_STRETCH_HITBOX_MASK;
+      }
+    }
+
     const growing =
       (e.timer < e.maxtimer && e.growcon === 1) || (e.timer > 0 && e.growcon === 3);
     if (!growing) return;

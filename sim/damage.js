@@ -415,10 +415,19 @@ export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell
     t = Math.ceil(t / 1.5);
   }
   if (cannotFell) {
-    // `clamp(tdamage, 1, hp - 1)` — it can take you to 1 and no further.
-    t = Math.max(1, Math.min(t, hp[target] - 1));
+    // `clamp(tdamage, 1, hp - 1)` — it can take you to 1 and no further, and
+    // THE OPERAND ORDER IS THE MECHANIC: GML's clamp is min(max(v, lo), hi),
+    // so when the target is ALREADY at 1 the range degenerates to [1, 0] and
+    // the HIGH bound wins — tdamage 0, a MISS. This used to be written
+    // max(lo, min(v, hi)), which lets the LOW bound win and deals 1: the
+    // slash killed a 1-HP character the game explicitly spares. The wiki
+    // documents the spare ("displays as MISS"); the dump's clamp confirms it.
+    t = Math.min(Math.max(t, 1), hp[target] - 1);
   }
-  if (t <= 0) return 0;
+  // NO EARLY RETURN AT ZERO. The original carries on: `hurt = 1`, the
+  // dmgwriter (a 0 draws MISS) and the invulnerability all still happen —
+  // the slash connects and whiffs visibly, it does not silently not-happen.
+  if (t < 0) t = 0;
 
   hp[target] -= t;
   if (hp[target] <= 0) hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
