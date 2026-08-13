@@ -31,7 +31,7 @@
 // -63 degree diagonal the marker has been telegraphing, and the two halves are
 // handed to markers that slide apart.
 
-import { drawSpriteExt, drawBeamColor, mergeColor, clamp01, c_white, c_gray, c_red } from './gm.js';
+import { drawSpriteExt, drawBeamColor, mergeColor, clamp01, tinted, c_white, c_gray, c_red } from './gm.js';
 import { drawPointingStarchild } from './pointing-starchild.js';
 
 const W = 640;
@@ -284,34 +284,55 @@ export function drawRoaring(ctx, e, state, deps) {
     }
   }
 
-  // TWO PASSES, and the split is by COLOUR: the first skips white stars, the
-  // second skips dark-grey ones. The dark ones therefore go under the grate and
-  // the white ones over it — the same before/after-the-grate trick the Stars
-  // cone uses, sorted by tint instead of by size.
+  // THREE PASSES, not two — the event has three `with (obj_knight_roaring_star)`
+  // blocks and the first TWO are both above the grate line:
+  //
+  //     pass A  if (image_blend == c_white)  continue;   // dark stars
+  //     pass B  if (image_blend == c_dkgray) continue;   // white stars
+  //     ...the grate...
+  //     pass C  if ((image_blend == c_dkgray || image_xscale > 1) && con < 1)
+  //                 continue;                             // over the grate
+  //
+  // So EVERY star is drawn under the grate, and then white small ones — plus
+  // ANY star that has begun charging (`con >= 1`), whatever its colour or size
+  // — are drawn AGAIN on top of it. The second copy is what makes an active
+  // star burn through the scanlines while the idle field stays striped. The
+  // old two-pass reading drew each star once and split them by colour, which
+  // striped the active ones too and halved the bright field's intensity.
   const roarStars = alive('obj_knight_roaring_star');
   const isWhite = (x) => !x.image_blend || x.image_blend === c_white
     || (Array.isArray(x.image_blend) && x.image_blend[0] === 255 && x.image_blend[1] === 255);
-  for (const st of roarStars) {
-    if (isWhite(st)) continue;
-    drawRoaringStar(sg, st, sprites, st.con === 0 ? 0 : 1);
-  }
+  const drawStar = (st) => drawRoaringStar(sg, st, sprites, st.con === 0 ? 0 : 1);
+
+  for (const st of roarStars) { if (!isWhite(st)) drawStar(st); }   // pass A
+  for (const st of roarStars) { if (isWhite(st)) drawStar(st); }    // pass B
 
   const grate = sprites.get('spr_knight_line_grate');
   if (grate && grate.frames[0]) {
-    // `gpu_set_colorwriteenable(true, true, true, false)` then a BLACK grate:
-    // it writes colour but not alpha, so the scanlines darken what is already
-    // there without punching holes in it. `multiply` is the 2D equivalent.
+    // `gpu_set_colorwriteenable(true, true, true, false)` and the grate tinted
+    // **c_black**: colour is written, alpha is not, so wherever the grate has
+    // ink the pixels turn black but keep their alpha — and black contributes
+    // nothing when star_surface is later added onto my_surface, so the striped
+    // rows simply vanish from the glow.
+    //
+    // The old version multiplied by the grate's OWN pixels, and the grate's
+    // ink is white — dst * 1 is a NO-OP. The scanline effect was silently
+    // absent, which no test can see. 'source-atop' with a black-tinted copy is
+    // the real equivalent: draw black, only where the destination already has
+    // alpha, leaving that alpha as it was.
     sg.save();
     sg.setTransform(1, 0, 0, 1, 0, 0);
-    sg.globalCompositeOperation = 'multiply';
-    sg.drawImage(grate.frames[0], 0, e.star_flicker,
+    sg.globalCompositeOperation = 'source-atop';
+    sg.drawImage(tinted(grate.frames[0], [0, 0, 0]), 0, e.star_flicker,
       grate.frames[0].width * 2, grate.frames[0].height * 2);
     sg.restore();
   }
 
-  for (const st of roarStars) {
-    if (!isWhite(st)) continue;
-    drawRoaringStar(sg, st, sprites, st.con === 0 ? 0 : 1);
+  for (const st of roarStars) {                                     // pass C
+    const dark = !isWhite(st);
+    const large = (st.image_xscale ?? 1) > 1;
+    if ((dark || large) && (st.con ?? 0) < 1) continue;
+    drawStar(st);
   }
 
   for (const k of alive('obj_knight_pointing_starchild')) {
@@ -394,8 +415,14 @@ export function drawRoaring(ctx, e, state, deps) {
     const myy = H * 0.5 + Math.sin((dir * Math.PI) / 180) * 280;
     const thick = 4 + 8 * (1 - Math.min(e.line_timer, 16) / 16);
     const col = [Math.round(e.r), Math.round(e.g), Math.round(e.b)];
+    // `gpu_set_colorwriteenable(true, true, true, false)` with NORMAL blending
+    // — not a multiply. The coloured gradient and the black core replace what
+    // is under them (weighted by their own alpha) while leaving the surface's
+    // alpha untouched; my_surface is opaque black-filled, so plain source-over
+    // is exact. The old 'multiply' darkened the vortex through the marker
+    // instead of painting the marker over it, which muted the reddening ramp
+    // the r/g/b lerps exist to show.
     mg.save();
-    mg.globalCompositeOperation = 'multiply';
     if (grad) drawSpriteExt(mg, grad, 0, mx, myy, e.line_timer, thick, dir, col, 1);
     if (mark) drawSpriteExt(mg, mark, 0, mx, myy, e.line_timer, thick, dir, [0, 0, 0], 1);
     mg.restore();
