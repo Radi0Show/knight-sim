@@ -638,7 +638,18 @@ const director = {
 export function buildPracticeScene(state, { seed = 12345 } = {}) {
   state.menu = createMenu();
   state.hp = 0;
-  state.invTimer = -1;
+  // `global.inv` STARTS AT 0, not -1.
+  //
+  // scr_moveheart sets `global.inv = 0` when it launches the soul, and
+  // scr_gamestart initialises it to 0. The only thing that decrements it is
+  // obj_heart's own Step (`global.inv -= 1`), so with no soul on screen it
+  // simply sits where it was — 0 through the whole opening menu.
+  //
+  // This started at -1, which is the value it reaches after one frame of a
+  // live soul, not its resting value. The whole-fight diff showed it as
+  // `oracle 0.0 / sim -1.0` from frame 1, which reads like a fault in the inv
+  // clock and is only a wrong initial constant.
+  state.invTimer = 0;
   state.phase = 'practice';
   state.view = { x: 0, y: 0 };
   state.flag22 = 0;
