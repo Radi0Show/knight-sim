@@ -127,20 +127,45 @@ const total = [0, 1, 2].reduce((a, c) => a + fightDamage(turn, c, 150), 0);
 eq(total, 56, 'a perfect three-bolt turn');
 
 // ── THE FIGHT'S END CONDITION ────────────────────────────────────────────
-// `haveusedroaring && hp <= maxhp * 0.8`. BOTH, and neither alone: damaging
-// the Knight to 5840 without reaching phase 4 does nothing, and Roaring at
-// full health does nothing. That is what stops the fight being rushed.
+// THREE terms, not two. The condition sits inside `if (state == 3 &&
+// hurttimer >= 0)` in obj_knight_enemy's Draw, and `state = 3` is assigned by
+// `scr_damage_enemy` — so THE KNIGHT MUST BE MID-HIT.
+//
+// Dropping that outer test is not a subtle inaccuracy. `haveusedroaring` is
+// set by the same selector line that launches ROARING, and the HP gate is
+// already satisfied by then (it is what opened phase 4), so a two-term
+// condition fires on ROARING's own launch frame and the finale never plays.
+// The real fight ends on the NEXT HIT THE PARTY LANDS after ROARING.
 {
-  const k = mk();
+  const hurt = (s) => { s.knight.animState = 3; s.knight.hurttimer = 30; return s; };
+
+  const k = hurt(mk());
   k.knight.hp = 1;
   if (endCutsceneReached(k)) failures.push('low HP alone ended the fight');
-  const r = mk();
+  const r = hurt(mk());
   r.knight.haveusedroaring = true;
   if (endCutsceneReached(r)) failures.push('Roaring alone at full HP ended the fight');
-  const both = mk();
+
+  // Both terms, but the Knight is NOT being hit — the state after ROARING
+  // resolves and before the party's next attack lands.
+  const idle = mk();
+  idle.knight.haveusedroaring = true;
+  idle.knight.hp = PHASE4_GATE;
+  if (endCutsceneReached(idle)) {
+    failures.push('the fight ended without the Knight being hit — ROARING would be cut off');
+  }
+
+  const both = hurt(mk());
   both.knight.haveusedroaring = true;
   both.knight.hp = PHASE4_GATE;
   if (!endCutsceneReached(both)) failures.push('Roaring at exactly 5840 did not end the fight');
+
+  // `endcon != 1` is the re-entry guard, separate from end_cutscene_version.
+  const again = hurt(mk());
+  again.knight.haveusedroaring = true;
+  again.knight.hp = PHASE4_GATE;
+  again.knight.endcon = 1;
+  if (endCutsceneReached(again)) failures.push('endcon did not block re-entry');
   // `<=`, so the gate itself counts.
   startEndCutscene(both);
   if (both.knight.endCutscene !== 1) failures.push('the end cutscene did not start');

@@ -76,6 +76,10 @@ const SUITES = [
   ['verify-dmgnumbers.mjs', 'damage numbers + impacts — stack, squash, bounces'],
   ['verify-animation.mjs', 'party + knight animation — poses, timers, hurt strobe'],
   ['verify-dialogue.mjs', 'the fight dialogue — the two-beat exchange'],
+  // The whole-fight diff. Skips loudly without ~/knight-research/traces, so on
+  // CI this reports SKIP rather than a green tick it has not earned.
+  ['verify-fullfight.mjs', 'the whole fight — one token, two runs, one diff'],
+  ['sabotage-fullfight.mjs', 'the whole-fight differ itself — 10 injected faults'],
   ['verify-equipment.mjs', 'equipment — tables from the dump, mantle, graze factors'],
   ['verify-knight.mjs', 'knight damage — FIGHT, spells, the reduction ramp'],
 ['verify-replay.mjs', 'replay tokens — round-trip and reproduce a live run'],

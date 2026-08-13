@@ -134,8 +134,15 @@ export function traceRow(state) {
 /**
  * One wide row. Bullets are sorted by SPAWN ORDER (`seq`), never instance id —
  * ids shift as objects are added, and the game's own per-frame iteration order
- * is not spawn order either. Where the two runs disagree on ordering, the
- * differ matches nearest and asserts the count, as verify-roaring-pull does.
+ * is not spawn order either.
+ *
+ * Spawn order makes the bullet columns POSITIONAL, so the differ compares them
+ * cell for cell with no matching step: `b3_x` is the fourth bullet to exist on
+ * each side. The one thing that breaks is a disagreement about how many
+ * bullets are alive, which shifts every column at once — so
+ * tools/verify-fullfight.mjs checks the COUNT first and suppresses the
+ * positional columns past a count divergence, reporting one fault instead of
+ * forty.
  */
 function wideRow(state) {
   const soul = state.soul;

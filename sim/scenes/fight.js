@@ -11,15 +11,15 @@
 // WHAT IS STILL A STAND-IN, stated plainly because the rule is that nothing
 // invented ships unlabelled:
 //
-//   * The TURN SYSTEM is not modelled (dodge-only). A turn here ends when the
-//     turn clock runs out or the attack tears itself down, not when the party
-//     acts. Phase 4 is entered on a turn count instead of the real HP < 80%,
-//     since HP is out of scope.
 //   * The cone's spawn point for Stars is MEASURED from the recording rather
 //     than computed — obj_dbulletcontroller's type-98 branch that creates it
 //     is not translated, only the star spawner it drives.
 //   * Between-turn cleanup stands in for the battle controller's end-of-turn
-//     bullet sweep, which is turn-system machinery.
+//     bullet sweep.
+//
+// NO LONGER A STAND-IN: the turn system is modelled (the party acts, then the
+// Knight does), and phase 4 is entered on the real `monsterhp <= maxhp * 0.8`
+// gate at the end of any turn rather than on a turn count.
 
 import { spawn } from '../entity.js';
 import { KNIGHT_AT } from '../knight.js';
@@ -63,8 +63,29 @@ export const FIGHT_TABLE = {
     { ac: 13, difficulty: 4, name: 'Sword Tunnel' },
     { ac: 5, difficulty: 2, name: 'Rotating Slash' },
   ],
+  // PHASE 4 IS THREE TURNS, AND THE MIDDLE ONE IS EMPTY.
+  //
+  //     phase4turn++;
+  //     if (phase4turn == 1 && rotatingslash3used == true) phase4turn = 2;
+  //     if (phase4turn == 1) { myattackchoice = 5;  difficulty = 2; }
+  //     if (phase4turn == 2) { myattackchoice = -1; difficulty = 1; }
+  //     if (phase4turn == 3) { myattackchoice = 9;  difficulty = 0;
+  //                            damagereduction = 0.4; haveusedroaring = true;
+  //                            phase = 3; }
+  //
+  // `myattackchoice == -1` is a branch with an EMPTY BODY in the Step's arena
+  // block — no `obj_growtangle`, so no board and no bullets — and it is the
+  // only choice that takes no `scr_turntimer` override, keeping the default
+  // 90 from the mnfight 1.5 -> 2 transition. What it does instead is
+  // `chargeupcon = 1`: the Knight's wind-up, under the message "The Knight's
+  // hands glow a strange color...". A turn that attacks with nothing looks
+  // like a bug in a table and is the most telegraphed beat in the fight.
+  //
+  // The difficulty on turn 1 is 2, not the 3 this had. There is no
+  // difficulty 3 rotating slash anywhere in the selector.
   4: [
-    { ac: 5, difficulty: 3, name: 'Rotating Slash' },
+    { ac: 5, difficulty: 2, name: 'Rotating Slash' },
+    { ac: -1, difficulty: 1, name: 'Charge-up' },
     { ac: 9, difficulty: 0, name: 'ROARING' },
   ],
 };
@@ -82,6 +103,11 @@ function turnLength(ac, difficulty) {
   // roaring_timer 375. Using the knight's 240 here cut Roaring off mid-spiral
   // and then relaunched it.
   if (ac === 5 || ac === 9) return 999999;
+  // The charge-up turn takes NO override. Every other choice ends its arm of
+  // the `attacked == 0` block with its own `scr_turntimer(...)`; `ac -1` sets
+  // `chargeupcon = 1` and nothing else, so the turn keeps the 90 assigned at
+  // the mnfight 1.5 -> 2 transition. It is the shortest turn in the fight.
+  if (ac === -1) return 90;
   if (ac === 2) return 350;
   if (ac === 11) return difficulty === 0 ? 292 : 300;
   if (ac === 13) return difficulty === 3 ? 360 : 330;
@@ -128,6 +154,11 @@ const CONE_POS = { x: 425, y: 78.56589 };
  * rtimer window — restarted it halfway and the board visibly stuttered.
  */
 export function openArena(state, entry) {
+  // `myattackchoice == -1` has an EMPTY branch where every other choice
+  // creates an obj_growtangle. No board rises on the charge-up turn — the
+  // Knight winds up over an empty screen. Opening one here would put an
+  // arena on the one turn of the fight that deliberately has none.
+  if (entry.ac === -1) return;
   const arena = arenaFor(entry.ac);
   const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
   if (!gt) return;
@@ -170,6 +201,14 @@ const CONTROLLER_DAMAGE = KNIGHT_AT * 5;
 
 export function launchAttack(state, entry) {
   const { ac, difficulty } = entry;
+
+  // The charge-up turn spawns no controller. `chargeupcon = 1` is the whole
+  // of its arm in the Step, and that drives the Knight's own Draw, not a
+  // bullet spawner.
+  if (ac === -1) {
+    state.knight.chargeupcon = 1;
+    return null;
+  }
 
   const arena = arenaFor(ac);
   const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
@@ -349,17 +388,53 @@ export function clearTurn(state) {
   }
 }
 
-/** Walks FIGHT_TABLE. `turn` is 0-based within the phase. */
+/**
+ * Walks FIGHT_TABLE. `turn` is 0-based within the phase.
+ *
+ * The selector's phase blocks are a run of plain `if (phase == N)` tests, not
+ * `else if`, and each phase's last turn reassigns `phase` and zeroes
+ * `phaseturn` INSIDE that run. So the transition falls through into the next
+ * phase's block in the same call with `phaseturn == 0`, which matches none of
+ * its `phaseturn == 1..5` tests and therefore changes nothing.
+ *
+ * That fall-through is what makes PHASE 1 FIVE TURNS. Its `phaseturn == 5`
+ * branch sets `phase = 2; phaseturn = 0`, so the `phaseturn == 6/7/8/9`
+ * branches below it cannot fire — not that call, and not the next one, by
+ * which time `phase` is 2. Attacks 12 (diagonal), 16, 17 (tracking variants)
+ * and 7 (combination) are therefore UNREACHABLE in a real fight; the only way
+ * in is `if (scr_debug() && overrideAttack > 0) phaseturn = overrideAttack`.
+ * They are debug content, the same class as ac 6 underboxattack.
+ *
+ * CLAUDE.md's phase table listed all nine and is wrong; this is the third
+ * time on this project that reading a table instead of the control flow
+ * produced a fight that does not exist.
+ */
 export function nextTurn(phase, turn) {
   const list = FIGHT_TABLE[phase];
   if (turn + 1 < list.length) return { phase, turn: turn + 1 };
   // Phase 3 loops from its first turn; 1 and 2 advance.
   if (phase === 3) return { phase: 3, turn: 0 };
-  // PHASE 4 RESTARTS THE FIGHT. In the real game it ends with the knight's
-  // defeat, which needs HP — out of scope here. This used to return the last
-  // turn, which meant ROARING relaunched itself forever the moment it
-  // finished. Looping the whole fight is the harness's choice and is labelled
-  // in the HUD; repeating one attack was just a bug.
-  if (phase === 4) return { phase: 1, turn: 0 };
+  // ROARING SETS `phase = 3`, so the fight falls back into the phase-3 loop
+  // rather than restarting or repeating itself. It does not end here: the end
+  // cutscene is gated on the Knight being HURT (see endCutsceneReached), so
+  // what actually follows ROARING is one more party turn, and the fight ends
+  // on the next hit that lands.
+  if (phase === 4) return { phase: 3, turn: 0 };
   return { phase: phase + 1, turn: 0 };
+}
+
+/**
+ * Entering phase 4. `phase4turn == 1` is SKIPPED when the phase-3 rotating
+ * slash has already run:
+ *
+ *     phase4turn++;
+ *     if (phase4turn == 1 && rotatingslash3used == true) phase4turn = 2;
+ *
+ * `rotatingslash3used` is set by phase 3's own turn 5, so a fight that
+ * completed a phase-3 loop opens phase 4 on the charge-up. A fight whose HP
+ * gate trips mid-phase-3 has not set it, and gets the rotating slash first.
+ * Both are reachable, which is why this is a function and not a constant.
+ */
+export function phase4Entry(rotatingslash3used) {
+  return rotatingslash3used ? 1 : 0;
 }

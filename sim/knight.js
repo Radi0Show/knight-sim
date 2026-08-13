@@ -324,7 +324,28 @@ export function phase4Reached(state) {
  */
 export function endCutsceneReached(state) {
   const k = state.knight;
-  return !!k.haveusedroaring && k.endCutscene === 0 && k.hp <= PHASE4_GATE;
+  // THE FIGHT ENDS ON A HIT, NOT ON A THRESHOLD. The condition lives in
+  // obj_knight_enemy's DRAW, and it is nested:
+  //
+  //     if (state == 3 && hurttimer >= 0) {
+  //         if (haveusedroaring == true && end_cutscene_version == 0
+  //             && global.monsterhp[myself] <= (global.monstermaxhp[myself] * 0.8)
+  //             && endcon != 1) { ... end_cutscene_version = 1; }
+  //     }
+  //
+  // `state = 3` is assigned by `scr_damage_enemy`, so the outer test means
+  // THE KNIGHT IS CURRENTLY BEING HURT. Without it the end fires the instant
+  // ROARING's own selector line sets `haveusedroaring = true` — the HP gate
+  // is already satisfied by then, since that is what opened phase 4 — and
+  // ROARING would be cut off before it ever ran. That is the difference
+  // between a finale and a fight that stops at the beginning of one.
+  //
+  // What really happens: ROARING plays, `phase` falls back to 3, the party
+  // gets one more turn, and the fight ends on the next hit that lands. Which
+  // is what "The enemy suddenly let down its guard!" is telling you to do.
+  if (k.animState !== 3 || !(k.hurttimer >= 0)) return false;
+  return !!k.haveusedroaring && k.endCutscene === 0 && k.endcon !== 1
+    && k.hp <= PHASE4_GATE;
 }
 
 /** Fire it. Idempotent — `endcon` is exactly the original's re-entry guard. */

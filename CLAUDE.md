@@ -147,10 +147,79 @@ is the authority on what the fight does. Nothing else is.
 
 | phase | turn order (myattackchoice) |
 |---|---|
-| 1 | 1 Stars, 11 tracking, 2 Flurry, 13 swordtunnel, 5 rotatingslash, 12 diagonal, 16 tracking16, 17 tracking17, 7 combination |
+| 1 | 1 Stars, 11 tracking, 2 Flurry, 13 swordtunnel, 5 rotatingslash |
 | 2 | 1 Stars, 2 Flurry, 13 swordtunnel, 15 vortex+tracking, 5 rotatingslash |
-| 3 | 1 Stars, 2 Flurry, 14 tracking14, 13 swordtunnel, 5 rotatingslash |
-| 4 | 5 rotatingslash, 9 roaring |
+| 3 | 1 Stars, 2 Flurry, 14 tracking14, 13 swordtunnel, 5 rotatingslash — **LOOPS** |
+| 4 | 5 rotatingslash *(skipped)*, **-1 charge-up**, 9 roaring → back to phase 3 |
+
+**FIVE TURNS A PHASE, NOT NINE.** ~~Phase 1 runs nine turns.~~ **WRONG —
+retracted.** The phase blocks are a run of plain `if (phase == N)` tests, and
+each phase's last turn reassigns `phase` and zeroes `phaseturn` INSIDE that
+run:
+
+```gml
+if (phaseturn == 5) { myattackchoice = 5; difficulty = 0;
+                      phase = 2; phaseturn = 0; }
+if (phaseturn == 6) { myattackchoice = 12; ... }   // phaseturn is 0 now
+```
+
+So turns 6-9 cannot fire — not on that call, and not on the next, by which
+time `phase` is 2. **Attacks 12 (diagonal), 16, 17 and 7 (combination) are
+UNREACHABLE**, exactly like ac 6 underboxattack. The only way in is
+`if (scr_debug() && overrideAttack > 0) phaseturn = overrideAttack`. They are
+debug content.
+
+This is the same mistake as the two retractions above, for the third time:
+**reading a table of branches instead of the control flow through them.** The
+branches all exist; the flow never reaches them.
+
+### Phase 4 is three turns and the middle one is empty
+
+```gml
+phase4turn++;                                    // turn/phaseturn do NOT
+if (phase4turn == 1 && rotatingslash3used) phase4turn = 2;   // increment here
+if (phase4turn == 1) { myattackchoice = 5;  difficulty = 2; }
+if (phase4turn == 2) { myattackchoice = -1; difficulty = 1; }
+if (phase4turn == 3) { myattackchoice = 9;  difficulty = 0;
+                       damagereduction = 0.4; haveusedroaring = true;
+                       phase = 3; }
+```
+
+- **`myattackchoice == -1` has an EMPTY branch** where every other choice
+  creates an `obj_growtangle`. No board, no bullets. It is the only choice with
+  no `scr_turntimer` override, so it keeps the default **90** from the
+  mnfight 1.5 → 2 transition, and it sets `chargeupcon = 1` — the Knight's
+  wind-up, under "The Knight's hands glow a strange color...".
+- **Turn 1 is skipped** whenever `rotatingslash3used` is set, which phase 3's
+  own turn 5 does. Both paths are reachable: the HP gate can trip mid-phase-3.
+- **ROARING sets `phase = 3`**, so the fight falls back into the phase-3 loop.
+
+### The gate and the ending are different events
+
+```gml
+// knight Step — at the END OF ANY TURN, not at a phase boundary:
+if (global.mnfight == 2 && global.turntimer <= 1 && setdownmessage == false) {
+    setdownmessage = true;
+    if (monsterhp <= maxmonsterhp * 0.8 && haveusedroaring == false && phase != 4)
+        phase = 4;
+
+// knight DRAW — nested inside the HURT test:
+if (state == 3 && hurttimer >= 0) {
+    if (haveusedroaring == true && end_cutscene_version == 0
+        && monsterhp <= maxmonsterhp * 0.8 && endcon != 1) { ... }
+```
+
+**THE FIGHT ENDS ON A HIT.** `state = 3` is assigned by `scr_damage_enemy`, so
+the outer test means the Knight is mid-hit. Drop it and the end fires on
+ROARING's own launch frame — `haveusedroaring` is set by that same selector
+line, and the HP gate is already satisfied because it is what opened phase 4 —
+so **ROARING would never play**. What really happens: ROARING resolves, the
+party gets one more turn, and the fight ends on the next hit that lands. That
+is what "The enemy suddenly let down its guard!" is telling you to do.
+
+`haveusedroaring == false` in the gate is what makes phase 4 one-shot: the
+fight loops back into phase 3 with HP still under the threshold, and without
+that term it would re-enter phase 4 forever.
 
 Dispatch parameters, from the knight's Step:
 

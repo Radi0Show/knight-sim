@@ -26,8 +26,13 @@ const EXPECTED = [
   ...FIGHT_TABLE[1].map((t) => ({ phase: 1, ...t })),
   ...FIGHT_TABLE[2].map((t) => ({ phase: 2, ...t })),
   ...FIGHT_TABLE[3].map((t) => ({ phase: 3, ...t })),
-  ...FIGHT_TABLE[4].map((t) => ({ phase: 4, ...t })),
 ];
+// PHASE 4 IS DELIBERATELY ABSENT, because it is not reached by playing turns.
+// The gate is `monsterhp <= maxhp * 0.8` at the end of ANY turn, so a party
+// that deals no damage loops phase 3 forever — which is what the real fight
+// does, and what the removed `turnsRun >= 15` fallback used to paper over.
+// Phase 4 gets its own scenario at the bottom, where the Knight's HP is
+// actually driven down and the gate has something to fire on.
 
 const MAX_FRAMES = 20000;
 /**
@@ -142,4 +147,89 @@ if (arenas.size < 4 || peakBullets < 20) {
 
 console.log(`→ all ${EXPECTED.length} turns in the selector's order, none over ${TURN_LIMIT} frames`);
 console.log(`→ ${arenas.size} distinct arena setups, peak ${peakBullets} bullets alive`);
+
+// ---------------------------------------------------------------------------
+// PHASE 4, which is reached by DAMAGE and not by counting turns.
+//
+// Four things the selector does here that a table cannot express, and that the
+// previous version of this suite got wrong in all four:
+//
+//   1. the gate fires at the end of ANY turn, not at a phase boundary
+//   2. `phase4turn == 1` is SKIPPED when `rotatingslash3used` is set, so a
+//      fight that finished a phase-3 loop opens on the CHARGE-UP
+//   3. the charge-up turn (`myattackchoice == -1`) puts NOTHING on screen —
+//      no arena, no bullets — so the "every turn spawns bullets" rule above
+//      genuinely does not apply to it
+//   4. ROARING sets `phase = 3`, so the fight falls back into the phase-3
+//      loop rather than ending or restarting
+// ---------------------------------------------------------------------------
+
+const g = createState({ seed: 12345, traceBulletSlots: 0 });
+buildPracticeScene(g, { seed: 12345 });
+
+const gateFailures = [];
+const seen = [];
+let prev = null;
+let gated = false;
+
+for (let f = 0; f < 30000 && seen.length < 24; f++) {
+  stepFrame(g, menuInput(g));
+  g.partyHp = freshParty();
+  g.gameOver = false;
+
+  // Drive the Knight to the gate once the fight is properly under way, which
+  // is what the party's own damage does over a real fight. Held one point
+  // ABOVE the threshold until then, so the gate cannot fire early and the
+  // test is measuring the gate rather than the starting HP.
+  if (!gated && seen.length >= 6) {
+    g.knight.hp = 5840;
+    gated = true;
+  } else if (!gated) {
+    g.knight.hp = 5841;
+  }
+
+  if (g.phase !== prev) {
+    seen.push(g.phase);
+    prev = g.phase;
+  }
+}
+
+const idx4 = seen.findIndex((t) => t.startsWith('phase 4'));
+if (idx4 < 0) {
+  gateFailures.push(`phase 4 never opened after HP hit 5840 (saw: ${seen.slice(-6).join(' | ')})`);
+} else {
+  // rotatingslash3used is false here — the gate trips during phase 1/2, long
+  // before phase 3's turn 5 — so phase 4 must open on the ROTATING SLASH.
+  if (!seen[idx4].endsWith('Rotating Slash')) {
+    gateFailures.push(`phase 4 opened on "${seen[idx4]}", wanted the Rotating Slash `
+      + '(rotatingslash3used is false when the gate trips this early)');
+  }
+  if (!seen[idx4 + 1]?.endsWith('Charge-up')) {
+    gateFailures.push(`phase 4 turn 2 was "${seen[idx4 + 1]}", wanted the Charge-up`);
+  }
+  if (!seen[idx4 + 2]?.endsWith('ROARING')) {
+    gateFailures.push(`phase 4 turn 3 was "${seen[idx4 + 2]}", wanted ROARING`);
+  }
+  // `phase = 3` inside the ROARING branch.
+  if (seen[idx4 + 3] && !seen[idx4 + 3].startsWith('phase 3')) {
+    gateFailures.push(`after ROARING the fight went to "${seen[idx4 + 3]}", wanted phase 3`);
+  }
+}
+
+// The gate is ONE-SHOT: `haveusedroaring == false` is part of it, so the loop
+// back into phase 3 must not re-enter phase 4 even though HP is still under
+// the threshold. Without that term the fight ends up in a ROARING loop.
+if (idx4 >= 0 && seen.slice(idx4 + 3).some((t) => t.startsWith('phase 4'))) {
+  gateFailures.push('phase 4 was entered TWICE — the haveusedroaring guard is not holding');
+}
+
+if (gateFailures.length) {
+  for (const f of gateFailures) console.log(`→ FAILURE  ${f}`);
+  console.log(`\n  turns seen: ${seen.join(' | ')}`);
+  process.exit(1);
+}
+
+console.log(`→ phase 4 opened on the HP gate at turn ${idx4 + 1}, ran `
+  + 'Rotating Slash → Charge-up → ROARING, then fell back to phase 3');
+console.log('→ the gate is one-shot: no second phase 4 despite HP staying under 5840');
 console.log('\nPASS  the playable scene runs the real fight order end to end');

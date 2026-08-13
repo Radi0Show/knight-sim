@@ -18,7 +18,7 @@ import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
-import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn } from './fight.js';
+import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
 import { createMenu, stepMenu, openMenu } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
@@ -240,6 +240,8 @@ const director = {
       e.spawnDelay = RTIMER_SPAWN;
       e.turnsRun += 1;
       clearTurn(state);
+      const prevPhase = e.phase;
+      const prevTurn = e.turn;
       const nx = nextTurn(e.phase, e.turn);
       e.phase = nx.phase;
       e.turn = nx.turn;
@@ -260,10 +262,39 @@ const director = {
       // attacks still reaches the finale rather than looping phase 3 forever.
       // ENDLESS skips phase 4 entirely and keeps looping phase 3, since
       // phase 4 is the run-ending sequence.
-      if (state.runMode !== 'endless'
-        && e.phase === 3 && e.turn === 0 && (phase4Reached(state) || e.turnsRun >= 15)) {
+      // `rotatingslash3used` is set by PHASE 3's TURN 5 and only that one. It
+      // decides whether phase 4 opens on the rotating slash or skips straight
+      // to the charge-up, so it has to be latched where that turn ends.
+      if (prevPhase === 3 && prevTurn === 4) state.knight.rotatingslash3used = true;
+
+      // THE PHASE-4 GATE FIRES AT THE END OF ANY TURN, from the knight's Step:
+      //
+      //     if (global.mnfight == 2 && global.turntimer <= 1
+      //         && setdownmessage == false) {
+      //         setdownmessage = true;
+      //         if (global.monsterhp[myself] <= (global.monstermaxhp[myself] * 0.8)
+      //             && haveusedroaring == false && phase != 4)
+      //             phase = 4;
+      //
+      // Not at a phase boundary — at EVERY turn's end. This used to test
+      // `e.phase === 3 && e.turn === 0`, so a party that burned the Knight to
+      // 5840 during phase 1 or 2 kept playing the rest of the script and only
+      // entered phase 4 when phase 3 next came round to its first turn. The
+      // whole point of an HP gate is that it can cut the script short.
+      //
+      // `haveusedroaring == false` is what keeps it one-shot: after ROARING
+      // the fight drops back into the phase-3 loop with HP still under the
+      // threshold, and without that term it would re-enter phase 4 forever.
+      //
+      // THE TURN-COUNT FALLBACK IS GONE. `e.turnsRun >= 15` forced the finale
+      // on a player who never attacked; the real fight simply loops phase 3
+      // until someone does enough damage, and inventing an ending is exactly
+      // what the project's rules forbid. ENDLESS still skips the gate, which
+      // is that mode's stated purpose rather than a claim about the fight.
+      if (state.runMode !== 'endless' && e.phase !== 4
+        && phase4Reached(state) && !state.knight.haveusedroaring) {
         e.phase = 4;
-        e.turn = 0;
+        e.turn = phase4Entry(state.knight.rotatingslash3used);
       }
       return;
     }
