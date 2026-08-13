@@ -57,6 +57,29 @@ import { gmlChoose, gmlRandomRange, gmlIrandomRange } from '../rng.js';
 
 import { scrBulletInherit } from '../bullets/regularbullet.js';
 
+/**
+ * The organism's own depth, which the dump does NOT contain.
+ *
+ * Every sibling this object creates is positioned in depth RELATIVE to it --
+ * `depth + 10` for the flame markers, `depth + 1` and `depth - 10` for the
+ * teeth -- but `depth` itself is set in the OBJECT DEFINITION, not in any
+ * event, so no grep of the code dump can find it (the same hole that hid
+ * obj_basicattack's sprite; see CLAUDE.md).
+ *
+ * It was simply absent here, so all three offsets evaluated to `undefined +
+ * 10` = **NaN**, and NaN in the renderer's depth comparator makes the sort
+ * comparison neither less nor greater -- the order of the box, its teeth and
+ * its flames became whatever the sort happened to leave them in.
+ *
+ * Falling back to 0 keeps the RELATIVE order the code actually states, which
+ * is the part the dump gives us. The absolute value is still unmeasured, so
+ * ordering against objects OUTSIDE this family is not yet trustworthy -- that
+ * needs the object-definition dump.
+ */
+function baseDepth(e) {
+  return e.depth ?? 0;
+}
+
 function box(state) {
   return state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
 }
@@ -93,7 +116,7 @@ export const splitGrowtangle = {
       m.image_yscale = 2;
       m.image_angle = i === 0 ? 180 : 0;
       m.image_blend = GRAY;
-      m.depth = e.depth + 10;
+      m.depth = baseDepth(e) + 10;
       return m;
     });
 
@@ -251,7 +274,7 @@ export const splitGrowtangle = {
           const topspeed = speedClass === 1 ? 4 : 2;
           b.top_speed = topspeed + gmlRandomRange(state.gmlRng, -0.2, 0.2);
           b.image_speed = 0.5;
-          b.depth = e.depth + 1;
+          b.depth = baseDepth(e) + 1;
           b.image_xscale = 2;
           b.image_yscale = 2;
           b.active = false;
@@ -287,7 +310,7 @@ export const splitGrowtangle = {
         for (let i = 0; i < e.count; i++) {
           const b = e.child_bullet[i];
           if (b && b.alive) {
-            b.depth = e.depth - 10;
+            b.depth = baseDepth(e) - 10;
             b.active = true;
             b.grazed = 0;
           }

@@ -40,8 +40,31 @@ const ldy = (len, deg) => -len * Math.sin((deg * Math.PI) / 180);
 
 const CHANGES = [-2, -1, 1, 2];
 
-/** Render-local PRNG. Never touches the sim's stream — see the header. */
+/**
+ * Render-local PRNG. Never touches the sim's stream — see the header.
+ *
+ * **RESEEDED FROM THE SIM FRAME, NOT ADVANCED PER DRAW.** The original rolls
+ * these four values in a Draw event, and a GameMaker Draw runs exactly once
+ * per game frame — 30Hz. This renderer draws once per requestAnimationFrame,
+ * so on any display at 60Hz or better the shake was re-rolling at least twice
+ * as often as the game shakes it. Same amplitude, double the rate, and the
+ * eye reads rate as INTENSITY: the box buzzed instead of trembling. Reported
+ * as "the fuzzy effect is more intense in the sim than the actual game",
+ * which is exactly right and is a timing bug, not an amplitude one.
+ *
+ * Seeding from `state.frame` makes the four values a pure function of the sim
+ * frame, so redrawing the same frame — a paused inspection, a slow monitor, a
+ * 120Hz one — always produces the identical picture.
+ */
 let shakeSeed = 0x2545f491;
+function seedShake(frame) {
+  // Any cheap avalanche; the point is that consecutive frames look unrelated.
+  let s = (frame + 1) * 0x9e3779b1;
+  s ^= s >>> 15;
+  s = Math.imul(s, 0x85ebca6b);
+  s ^= s >>> 13;
+  shakeSeed = (s >>> 0) || 1;
+}
 function shake() {
   shakeSeed ^= shakeSeed << 13;
   shakeSeed ^= shakeSeed >>> 17;
@@ -195,7 +218,7 @@ export function createSplitBox(sprites) {
    * @param ctx    the world-space context (already translated by the view)
    * @param e      the live obj_knight_split_growtangle entity
    */
-  function draw(ctx, e) {
+  function draw(ctx, e, simFrame = 0) {
     if (e !== lastOrganism) {
       lastOrganism = e;
       resetSource();
@@ -261,10 +284,14 @@ export function createSplitBox(sprites) {
       shearSource(angle, xoffset, yoffset, vertical);
     }
 
-    const jx = shake();
-    const jy = shake();
-    const jx2 = shake();
-    const jy2 = shake();
+    // `var _xx = (distance > 0) ? irandom_range(-1, 1) : 0;` -- FOUR values,
+    // rolled in that order, and ZERO while the box is whole. A whole box does
+    // not tremble; only a cut one does.
+    seedShake(simFrame);
+    const jx = distance > 0 ? shake() : 0;
+    const jy = distance > 0 ? shake() : 0;
+    const jx2 = distance > 0 ? shake() : 0;
+    const jy2 = distance > 0 ? shake() : 0;
 
     const tA = blend ? tinted(halfA, blend) : halfA;
     const tB = blend ? tinted(halfB, blend) : halfB;

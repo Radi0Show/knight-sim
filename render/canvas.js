@@ -443,7 +443,7 @@ export async function createRenderer(canvas) {
       if (name === 'obj_knight_split_growtangle') {
         // The cut box draws itself out of surfaces; obj_growtangle is parked
         // offscreen for the duration.
-        if (splitBox) splitBox.draw(ctx, e);
+        if (splitBox) splitBox.draw(ctx, e, state.frame);
         continue;
       }
 
