@@ -17,7 +17,7 @@
 import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
-import { gmlCreate } from '../rng.js';
+import { gmlCreate, gmlChoose } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
@@ -719,6 +719,21 @@ const director = {
     // is the one being talked to.
     if (!e.balloonDone) {
       e.balloonDone = true;
+      // `scr_randomtarget()` — the FIRST line of the talk block, and it
+      // CONSUMES: `mytarget = choose(0, 1, 2)`, one draw, then re-draws while
+      // the picked slot has `charcantarget == 0`. The sim skipped it, so from
+      // the first enemy phase onward its gmlRng stream ran one draw ahead of
+      // the game's — and the first place that showed was the first star's
+      // speed, 2px of drift per frame at whole-fight frame 145. The chapter-3
+      // tail sets mytarget = 4 with no further draws; only the choose()s
+      // touch the stream, so only they are reproduced.
+      if (state.gmlRng) {
+        let t = gmlChoose(state.gmlRng, [0, 1, 2]);
+        const anyUp = [0, 1, 2].some((c) => isUp(state, c));
+        if (anyUp) {
+          while (!isUp(state, t)) t = gmlChoose(state.gmlRng, [0, 1, 2]);
+        }
+      }
       advanceBalloon(state.dialogue, state);
     }
     if (state.dialogue.text) return;

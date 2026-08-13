@@ -34,7 +34,7 @@ import { swordTunnelManager } from '../attacks/sword-tunnel.js';
 import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { roaring2 } from '../attacks/roaring.js';
-import { gmlIrandom } from '../rng.js';
+import { gmlIrandom, gmlCreate } from '../rng.js';
 import { KNIGHT } from '../actors.js';
 
 /**
@@ -208,6 +208,29 @@ export function openArena(state, entry) {
  */
 const CONTROLLER_DAMAGE = KNIGHT_AT * 5;
 
+/**
+ * `scr_bulletspawner`, re-anchored — the RNG counterpart of the shuffle
+ * replay.
+ *
+ * The live stream BETWEEN launches is unmatchable: the game consumes draws in
+ * random-pitch sounds and other engine noise the sim has no business
+ * modelling (a scan put the first star's roll thousands of draws from the
+ * sim's position). The oracle patch reseeds inside scr_bulletspawner — the
+ * one gate every knight attack passes through — and this is the sim's half:
+ * same seed arithmetic, advanced once per SPAWNER CALL, which is once per
+ * launch except ac 15, whose branch calls it twice (type 154, then 151).
+ *
+ * DEVIATION, and reported as one: the real game's stream is continuous.
+ * "Mechanics one-to-one, RNG re-anchored per launch" is the claim, exactly
+ * as "shuffle order replayed" is. In free play (no oracle) the anchoring is
+ * invisible: the stream is random per playthrough either way.
+ */
+function reanchorRng(state) {
+  state.spawnn = state.spawnn ?? 0;
+  state.gmlRng = gmlCreate((state.seed + state.spawnn * 1000) >>> 0);
+  state.spawnn += 1;
+}
+
 export function launchAttack(state, entry) {
   const { ac, difficulty } = entry;
 
@@ -275,6 +298,8 @@ export function launchAttack(state, entry) {
   // anything is spawned.
   if (knight) knight.difficulty = difficulty;
 
+  reanchorRng(state);
+
   switch (ac) {
     case 1: {
       const cone = spawn(state, pointingCone, { ...CONE_POS });
@@ -330,6 +355,8 @@ export function launchAttack(state, entry) {
       // ac 15 is TWO controllers: the vortex, then tracking swords over it.
       const mg = spawn(state, swordVortexManager, { x: arena.x, y: arena.y });
       mg.damage = CONTROLLER_DAMAGE;
+      // The SECOND scr_bulletspawner call of the ac-15 branch (type 151).
+      reanchorRng(state);
       const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       tr.variant = 0;
       tr.damage = CONTROLLER_DAMAGE;
