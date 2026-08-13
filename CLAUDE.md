@@ -888,5 +888,270 @@ Fallback: any entity whose sprite is missing draws from its COLLISION MASK
 instead. A missing asset degrades to the exact shape the physics uses rather
 than vanishing.
 
-Not shipped: audio. CLAUDE.md's asset stance stands — the soundtrack is sold
-separately and stays out.
+### A sprite set on the OBJECT is invisible to every grep
+
+An object's default `sprite_index` lives in the OBJECT DEFINITION, not in any
+event, so an object whose events never assign one has art that no search of the
+code dump can find. Same failure as a numeric asset id, different hole.
+
+`obj_basicattack` is exactly that. Its Create sets `image_xscale`,
+`image_speed`, `damage` and `maxindex` and never a sprite, and
+`obj_heroparent` overrides the sprite for Susie, Ralsei and Noelle but NOT for
+Kris — so Kris's impact art is unreachable from the GML entirely.
+
+```bash
+OBJ_FILTER=attack UndertaleModCli load <game.ios> \
+    -s tools/patches/object_sprite.csx -o /tmp/x.ios   # -> /tmp/object_sprites.json
+```
+
+`obj_basicattack -> spr_attack_cut1`. Reach for this whenever a translated
+object draws "itself" and nothing in its events says what that is.
+
+### `tools/pack-sprites.mjs` REBUILDS, it does not add
+
+It deletes every PNG in `assets/sprites/` and copies back only what the names
+file lists. Running it with a two-name list to add two sprites deleted 745 of
+them; every suite stayed green because `sim/` does not read sprites, and the
+PNGs are gitignored so there was no `git checkout` back. It now refuses to
+shrink the pack by more than half without `--replace`.
+
+Not shipped: audio. CLAUDE.md's asset stance stands — the soundtrack and sound effects are specifically allowed by toby fox and Sebastian wolf.
+
+## The attack bar, and a grep that lied twice
+
+`obj_attackpress` has three events — Create, Draw, Other_11 — and its DRAW does
+the whole mechanic. Two searches for it came back empty first:
+
+- **`linex` / `linespeed` are set in Create and read nowhere.** They look
+  exactly like a sweeping-marker bar. Dead, like `splitbox` and `slice_delay`.
+- **`points[0..2]` looked assigned-nowhere too — and that was MY error.** I
+  grepped `gml_Object_obj_attackpress_*.gml`. They are set in `scr_boltcheck`,
+  a GLOBAL SCRIPT. **Absence is only meaningful from a whole-dump grep.**
+
+Bolts sweep toward a fixed line. `boltx += 1` per frame; a bolt scheduled for
+`boltframe` draws at `x + 80 + (boltframe - boltx) * boltspeed` with
+`boltspeed = 8`, so it is ON the line at `boltframe - boltx == 0`.
+
+```
+window   close < 15 && close > -5      early is forgiven, late is not
+p == 0   +150   CRITICAL, yellow burst
+p == 1   +120      p == 2   +110      p >= 3   +100 - p * 2
+```
+
+**The arrival times are NOT `30 + boltorder * boltgap`.** That is
+`my_method == 2`, and `my_method` is **1**, which builds the schedule randomly:
+
+```gml
+boltxoff = 0; lastbolt = -1;
+for (i = 0; i < bolttotal; i++) {
+    boltxoff += lastbolt;              // -1 FIRST, so bolt 0 lands on 29
+    boltframe[i] = 30 + boltxoff;
+    if (i < bolttotal - 1 && lastbolt != 0 && boltchar[i] != boltchar[i + 1])
+        lastbolt = choose(0, diff, diff * 1.5);   // a ZERO gap is reachable
+    else
+        lastbolt = choose(diff, diff * 1.5);
+}
+```
+
+and assigns each bolt to a RANDOM eligible character by rejection sampling.
+`boltgap` is read only by the dead branch — another `linex`.
+
+**THE DEFAULT IS ONE BUTTON.** `global.flag[13] == 0` routes every press
+through `scr_boltcheck_onebutton`, which scans ALL characters' bolts and raises
+`diff` from 10 to 12. It also has a DUALBOLT case: two bolts on the same frame
+are both scored by one press, reachable because the gap generator can emit 0.
+
+### `button1_p()` is EDGE-triggered, and a once-per-bar latch kills FIGHT dead
+
+Every fresh press gets a boltcheck. Modelling it as one check per character per
+BAR meant the first press — which always lands while the bolts are 30 frames
+out — consumed the only attempt, and **nothing could ever score**. FIGHT dealt
+zero damage and read as "not wired up" rather than as an input bug.
+
+`verify-fightbar` asserts BOTH directions, because they look alike and only one
+is a bug: a HELD button must score nothing when a bolt arrives later, and a
+fresh press on the line must score.
+
+## What your attacks are worth
+
+```gml
+damage = round(((global.battleat[myself] * points) / 20) - (monsterdf * 3));
+damage = ceil(damage * obj_knight_enemy.damagereduction);
+if (object_index == obj_herokris) {
+    if (global.hp[2] < 0 && global.hp[3] < 0) damage *= 2;
+    else if (global.hp[2] < 0 || global.hp[3] < 0) damage *= 1;
+    else damage = round(damage * 0.5);
+}
+```
+
+**THE SWOON SCALING IS KRIS ONLY** — that block is inside an
+`object_index == obj_herokris` test. Susie and Ralsei are neither halved when
+the party is healthy nor doubled when it is not. Applying it party-wide roughly
+doubles the party's output, because the healthy branch HALVES. It reads `< 0`
+strictly, so an ally at exactly 0 does not count as down.
+
+**RUDE BUSTER HAS NO `/ 2`**: `ceil(damage * (damagereduction + 0.65))`.
+
+`damagereduction` is the real "melee multiplier", with two values outside the
+ramp everyone quotes:
+
+| where | value |
+|---|---|
+| `obj_knight_enemy` Create | **0.04** — nearly immune before the fight proper |
+| Step, `damagereductiontimer == 1` | 0.2 |
+| each turn, `mnfight == 1.5` | `if (dr >= 0.2 && dr < 0.35) dr += 0.01` |
+| Other_10, `phase4turn == 3` | **0.4** |
+
+The per-turn guard is a RANGE, not a clamp: a value already outside
+[0.2, 0.35) is left alone.
+
+## WHO gets hit, and the number is WHITE
+
+`scr_damage`'s chapter-3 block is two rules stacked, and neither is guessable:
+
+**1. KRIS IS NEVER THE DEFAULT TARGET.** A hit aimed at slot 0 is redirected to
+Susie or Ralsei (`choose(1, 2)` when both stand). He only takes one when both
+are down, or when rule 2 picks him.
+
+**2. SOMEONE TAKES THE BRUNT.** With the ShadowMantle (armour 23) equipped a
+counter runs and **two hits in every three go to the wearer**:
+
+```gml
+damagecounter++;
+if (damagecounter < 3)  target = the mantle wearer;
+else { target = choose(0,1,2) walked past the fallen;
+       if (that one is not a wearer) damagecounter = 0; }
+```
+
+That is what makes the mantle a TANK item rather than a flat damage cut: it
+pulls fire onto the wearer, who then eats it at x0.33.
+
+**THE SWORD TUNNEL IS EXEMPT** (`myattackchoice != 13`), and `aoedamage` skips
+both rules.
+
+**Damage TAKEN is WHITE.** `dmgwriter.type = doomtype`, which is **-1** for an
+ordinary hit; obj_dmgwriter's Draw opens `draw_set_color(c_white)` and -1
+matches no type branch. The per-character tints (aqua/fuchsia/lime) are for
+damage you DEAL — `dm.type = global.char[caster] - 1`. A death is `doomtype 4`:
+red, with the digits swapped for the DOWN graphic.
+
+## Real font assets are NOT out of reach
+
+Extracting one is about forty lines of C# —
+`knight-research/tools/patches/extract_font.csx` writes the page PNG and the
+glyph table:
+
+```bash
+FNT_TARGET=fnt_mainbig UndertaleModCli load <game.ios> \
+    -s tools/patches/extract_font.csx -o /tmp/x.ios
+```
+
+`render/font.js` draws with it. Two traps: `shift` (the advance) and `w` (the
+inked width) are different numbers, and a space has `w = 0` but `shift = 9`, so
+a `w`-based layout deletes every space. The item menu uses
+`draw_text_transformed` with `xscale = min(1, 200 / string_width(s))` — long
+names are SQUEEZED, never clipped.
+
+## The item menu is not in the charbox
+
+`obj_battlecontroller`'s Draw, `global.bmenuno == 4`:
+
+```
+names      xx + 30 and xx + 260, at yy + 375 + i * 30      (375 / 405 / 435)
+cursor     spr_heart at (10 | 230, 385 | 415 | 445)
+page arrow spr_morearrow at (470, 445), bobbing sin(s_siner / 10) * 2
+desc       c_gray at (xx + 496, yy + 375), `#` breaks lines
+```
+
+**SIX SLOTS PER PAGE over two pages**, cursor a single 0..11 index from which
+page, row and column are derived. LEFT AND RIGHT DO THE SAME THING — with two
+columns a toggle is its own inverse — and up/down step by 2. Navigation is
+**clamped, not wrapped**: `down` refuses at `coord >= 10`, `up` at
+`coord <= 1`, and both refuse an empty slot.
+
+MAGIC's TP cost is drawn ONCE, under the description, as a percentage
+(`floor(cost / maxtension * 100) + "% TP"`, c_orange at 496/440) — not per row.
+Unaffordable spells are **c_gray**, not hidden.
+
+Names are the dump's, character for character — it is `Spincake`.
+
+### `tempitem` is why items come back when you cancel
+
+A 12x3 per-character snapshot of the bag. Choosing an item removes it from THAT
+character's list; `scr_nexthero` copies it forward; **`scr_prevhero` restores it
+from the previous character**, undoing the spend; `scr_endturn` commits to
+`global.item`. `global.temptension[]` does the same for TP, so cancel also
+refunds DEFEND's 40.
+
+Cancel is a STACK, one step per press: picker -> list -> button row
+(`bmenuno = 0`) -> previous character. Only the last calls `scr_prevhero`.
+
+### X is one button with two jobs
+
+`button2_h()` is the SLOW modifier in obj_heart's Step; `button2_p()` is CANCEL
+in obj_battlecontroller's. Same key. They never collide, because the menu is
+closed during the bullet phase and the soul is frozen while it is open.
+
+## `mmy` slides the charboxes off, and that is what makes room
+
+The item list (y 375-445) and the FIGHT bar (rows at 365/403/441) both collide
+with the charbox's portrait/HP strip at y 430-449, and `scr_charbox()` is
+called UNCONDITIONALLY — so at first glance the game draws both. It does not:
+`scr_charbox`'s else branch slides `mmy[c]` to **-170**, taking the strip up
+and off the band.
+
+## The turn's real buffers
+
+```
+rtimer == 12          the arena is up and EMPTY before the attack spawns
+timermax == 50        obj_attackpress holds after the last bolt resolves
+fadeamt += 0.08       13 more frames of black fade before it destroys itself
+```
+
+The board is created under `mnfight == 1.5` and the attack spawns 12 frames
+later under `mnfight == 2` — so the board is already GROWING while the arena is
+still empty. Doing both at launch puts the board and the bullets on one frame.
+
+## THE FIGHT HAS AN ENDING
+
+```gml
+if (haveusedroaring == true && end_cutscene_version == 0
+    && global.monsterhp[myself] <= (global.monstermaxhp[myself] * 0.8))
+```
+
+BOTH conditions, neither alone. `end_cutscene_version > 0` then makes
+obj_battlecontroller's Draw, obj_tensionbar's and obj_attackpress's all `exit`
+on their first line — the entire battle UI vanishes at once.
+
+**5840 appears in THREE independent places**: the phase-4 gate,
+obj_bgfountaintest's `battleprog` reaching exactly 1, and this. It is the
+fight's one real number.
+
+## The background is obj_bgfountaintest, and it is the health bar
+
+`obj_knight_enemy`'s Create destroys `obj_battleback` and puts it there.
+
+```gml
+battleprog = 1 - (((monsterhp - maxhp * 0.8) / maxhp) * 5);
+```
+
+0 at full HP, exactly 1 at 5840. It scales the fountain's alpha and doubles its
+scroll speed past 0.65, so **the background brightens and quickens as you
+damage the Knight** — the only running readout of a "???" enemy.
+
+## The party animate off obj_heroparent, and `faceaction` is the subtle half
+
+`state` is what they are DOING (0 idle, 1 attack, 2 spell, 4 item, 6 act);
+`faceaction` is what they are ABOUT to do, and it does nothing until state 0
+READS it. So choosing ITEM is a POSE held through everyone else's turn, not an
+animation. Everything advances at **0.5 a frame**; the idle bob is `siner / 5`.
+ACT has two clamps — the pose stops at `actframes` but the state runs to
+`actreturnframes`, giving a hold at the top of the swing.
+
+`hurt` gates every other state, so a character being hit stops mid-pose.
+
+The Knight's own reaction, from `scr_damage_enemy`: `shakex = 9`,
+`hurttimer = 30`, and — **only at damage >= 100** — `stronghurtanim`, which
+strobes him between his idle and `spr_roaringknight_ball_transition` FRAME 7.
+Below 100 there is no strobe, because the Draw's test reads
+`|| stronghurtanim == false` and takes the plain-idle branch.

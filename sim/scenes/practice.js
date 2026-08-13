@@ -1,117 +1,392 @@
-// Playable practice scene: the soul in the battle box, with the verified
-// attacks on a loop.
+// The playable scene: the soul in the battle box, running THE REAL FIGHT.
 //
-// Lives in sim/ (not tools/) because the browser build needs it and sim/ is
-// the only directory guaranteed DOM-free and filesystem-free.
+// The attack ORDER, the difficulties, the arena position and scale per attack,
+// the turn lengths and the invulnerability multiplier all come from
+// sim/scenes/fight.js, which reads them out of the knight's selector and Step.
+// Nothing here is arranged by hand.
 //
-// Every attack here is one that passes a row-exact oracle diff. Attacks are
-// scheduled from an explicit table rather than the original's controller,
-// which is turn-system machinery and out of scope (CLAUDE.md: dodge-only).
+// This replaces a loop of a single attack (Flurry), which was all the roster
+// supported at the time.
+//
+// STILL A SANDBOX, and the HUD says so, for reasons that are all turn-system
+// rather than bullet-behaviour: there is no ACT menu, no HP, and no party, so
+// phase 4 is entered on a turn count instead of the real HP < 80%, and a turn
+// ends when its clock runs out rather than when the party acts. The attacks
+// themselves are the verified ones.
 
 import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
-import { battlebox } from '../battlebox.js';
-import { splitGrowtangle } from '../attacks/split-growtangle.js';
+import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
+import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn } from './fight.js';
+import { createMenu, stepMenu, openMenu } from '../menu.js';
+import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
+import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
+import { endTurnItems } from '../menu.js';
+import { createHeroes, stepHeroes, heroAct, HERO_ATTACK } from '../heroes.js';
+import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
+import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
+import { rngNext } from '../rng.js';
+import {
+  fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
+  endCutsceneReached, startEndCutscene, DR_PHASE4,
+} from '../knight.js';
+import { scrTensionheal } from '../tension.js';
+import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
 
-const BOX = { x: 320, y: 170 };
-const SOUL_START = { x: 314, y: 162 };
 
-/** Seed the splitter with the bullet fields splitslash would have inherited. */
-function makeSplitter(state, opts) {
-  const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
-  const sg = spawn(state, splitGrowtangle, { x: gt.x, y: gt.y });
-  sg.damage = 206;
-  sg.grazepoints = 5;
-  sg.timepoints = 1;
-  sg.inv = 60;
-  sg.target = 0;
-  sg.grazed = 0;
-  sg.grazetimer = 0;
-  sg.element = 5;
-  sg.difficulty = 2;
-  sg.vertical = opts.vertical;
-  sg.diagonal = false;
-  sg.xoffset = 0;
-  sg.yoffset = 0;
-  sg.angle = 0;
-  sg.timer = 0;
-  sg.con = 1;
-  return sg;
-}
-
-// SANDBOX SCHEDULE — NOT the real fight.
-//
-// The fabricated "fountain wave" that used to live here has been deleted: I
-// invented it, and nothing like it exists in the Knight fight. See CLAUDE.md,
-// "THE REAL FIGHT".
-//
-// What remains is the box splitter, which IS faithfully translated and passes
-// a row-exact oracle diff — but is `underboxattack` (ac=6), which the fight's
-// selector never chooses. So this scene is an ENGINE SANDBOX, and it says so
-// in the HUD. It is not a practice tool for the real fight yet.
-//
-// The real phase-1 order, for when these are translated:
-//   1 Stars · 11 tracking · 2 Flurry · 13 swordtunnel · 5 rotatingslash
-//   12 diagonal · 16 tracking16 · 17 tracking17 · 7 combination
-// All dispatch through obj_dbulletcontroller by `type`; parameters are
-// tabulated in CLAUDE.md.
 export const IS_SANDBOX = true;
-export const SANDBOX_NOTE = 'SANDBOX — engine demo, not the real fight sequence';
+export const SANDBOX_NOTE =
+  'THE REAL FIGHT ORDER — verified attacks, real difficulties, real HP · phase 4 opens at 5840';
 
-const SCHEDULE = [
-  { at: 60, kind: 'split', vertical: false },
-  { at: 260, kind: 'split', vertical: true },
-];
-const LOOP_LENGTH = 460;
+// THE BUFFERS BETWEEN TURNS, all three from the dump. This was one invented
+// constant (`TURN_GAP = 45`) standing in for a sequence with real timings.
+//
+// `obj_knight_enemy`'s Step, once the bullet phase starts:
+//
+//     if (scr_isphase("bullets") && attacked == 0 && end_cutscene_version == 0)
+//     {
+//         rtimer += 1;
+//         if (rtimer == 12) { ...spawn the attack... }
+//     }
+//
+// So the arena is up and empty for **12 frames** before anything comes at you.
+// That beat is what makes the board's grow-in readable.
+const RTIMER_SPAWN = 12;
+
+// `obj_attackpress`'s Create: `timermax = 50`, and its Draw counts `posttimer`
+// up to it once every bolt is resolved (`goahead == 1`). Then `fade = 1` and
+// `fadeamt += 0.08` per frame until it passes 1 — 13 more frames — before the
+// object destroys itself and hands back to `global.mnfight = 1`.
+const ATTACKPRESS_HOLD = 50;
+const ATTACKPRESS_FADE = 13;
+
+/** The beat after a turn ends, before the panels rise. */
+const TURN_GAP = 20;
+
+/** How long bullets get to leave on their own before the sweep. */
+const DRAIN_FRAMES = 90;
 
 const director = {
-  name: 'practice_director',
+  name: 'fight_director',
 
   create(e) {
-    e.cycle = 0;
+    e.phase = 1;
+    e.turn = 0;
+    e.owner = null;
+    e.gap = TURN_GAP;
+    e.started = false;
+    e.menuShown = false;
+    e.soulHold = null;
+    e.bar = null;
+    e.barHold = 0;
+    e.spawnDelay = RTIMER_SPAWN;
+    e.turnsRun = 0;
+    e.elapsed = 0;
+    e.drain = 0;
   },
 
   endStep(e, state) {
-    const t = state.frame % LOOP_LENGTH;
-    if (state.frame > 0 && t === 0) e.cycle += 1;
+    // THE FIGHT IS LOST when all three are down. The real game goes to its
+    // Game Over screen; here the run simply stops and the HUD says so, which
+    // is the honest stand-in — the retry flow is turn-system machinery.
+    if (!state.gameOver && partyWiped(state)) {
+      state.gameOver = true;
+      state.menu.open = false;
+    }
+    if (state.gameOver) return;
 
-    for (const ev of SCHEDULE) {
-      if (t !== ev.at) continue;
-      if (ev.kind === 'split') {
-        const alreadySplitting = state.entities.some(
-          (x) => x.alive && x.type.name === 'obj_knight_split_growtangle',
-        );
-        if (!alreadySplitting) makeSplitter(state, { vertical: ev.vertical });
-      }
+    // The menu runs in sim/, not the renderer: it is state the player drives
+    // and it must be reproducible headlessly like everything else.
+    stepMenu(state, state.input ?? {});
+    // obj_heroparent's Step, for all three. Runs every frame including the
+    // bullet phase — the party keeps their pose while you dodge, which is how
+    // a chosen DEFEND stays visibly held for the whole enemy turn.
+    stepHeroes(state);
+    // obj_knight_enemy's reaction timers — hurt strobe, shake, block vfx.
+    stepKnightAnim(state);
+    // obj_dmgwriter's Draw, for every live number. It consumes randomness
+    // (`vspeed = -5 - random(2)`), so it draws from the sim's generator and a
+    // replayed seed replays the same arcs.
+    stepDmgNumbers(state, () => rngNext(state.rng));
+    stepAttackVfx(state);
+
+    // THE FIGHT'S END. `haveusedroaring && hp <= maxhp * 0.8` — both, and only
+    // then. `end_cutscene_version > 0` makes obj_battlecontroller's Draw, the
+    // tension bar's and obj_attackpress's all exit on their first line, so the
+    // whole battle UI goes at once.
+    if (endCutsceneReached(state)) {
+      startEndCutscene(state);
+      state.menu.open = false;
+      state.fightBar = null;
+      e.bar = null;
     }
 
-    // Housekeeping: a finished splitter would otherwise sit at con 0 forever
-    // and block the next one.
-    for (const x of state.entities) {
-      if (x.alive && x.type.name === 'obj_knight_split_growtangle' && x.con === 0 && x.split === false && x.timer > 5) {
-        x.alive = false;
-        const gt = state.entities.find((g) => g.alive && g.type.name === 'obj_growtangle');
-        if (gt) {
-          gt.x = gt.xstart;
-          gt.visible = true;
+    // THE BOARD AND THE SOUL ONLY EXIST DURING THE BULLET PHASE.
+    //
+    // `obj_battlecontroller`'s Alarm 11 destroys both together —
+    // `with (obj_heart) instance_destroy(); with (obj_growtangle)
+    // instance_destroy();` — and obj_knight_enemy's Step recreates the board
+    // per attack, at that attack's own coordinates:
+    //
+    //     if (!instance_exists(obj_growtangle))
+    //         instance_create(xview + 320 - 152, yview + 170, obj_growtangle);
+    //
+    // So during the command phase there is no arena at all: the party stand in
+    // front of the Knight with nothing between them. This build kept the box
+    // on screen the whole time, which made the menu look like it was floating
+    // over a live fight.
+    //
+    // Hidden rather than destroyed, because several translated attacks read the
+    // box's geometry in their Create and a genuinely absent one would need each
+    // of them re-checked. The visible behaviour is the same; the deviation is
+    // recorded here rather than left implicit.
+    state.boardVisible = !!e.started;
+    if (state.menu.open && state.soul) {
+      if (e.soulHold) {
+        state.soul.x = e.soulHold.x;
+        state.soul.y = e.soulHold.y;
+      } else {
+        e.soulHold = { x: state.soul.x, y: state.soul.y };
+      }
+    } else {
+      e.soulHold = null;
+    }
+
+    // The battle controller decrements global.turntimer every frame of the
+    // bullet phase. That object is not translated (turn system, out of scope),
+    // so the director stands in for exactly this one line — attacks read the
+    // clock to decide when to stop spawning and close out.
+    if (e.started && state.turntimer > 0) state.turntimer -= 1;
+
+    const entry = FIGHT_TABLE[e.phase][e.turn];
+    state.phase = `phase ${e.phase} · turn ${e.turn + 1} · ${entry.name}`;
+
+    if (e.started) {
+      e.elapsed += 1;
+
+      // WHEN IS A TURN OVER? Not "the manager died" — several managers never
+      // destroy themselves. Stars' controller just sets `init = 3` and sits
+      // there once the clock passes its endtimer, so waiting on it hangs the
+      // fight forever (it did, for 12,000 frames).
+      //
+      // The clock is the real signal, as it is in the game: attacks stop
+      // spawning on `turntimer`, and the turn ends once the last bullet they
+      // launched has cleared. A manager that DOES tear itself down early ends
+      // the turn early too.
+      const ownerAlive = e.owner && e.owner.alive;
+      const bulletsLeft = state.entities.some(
+        (x) => x.alive && x.isBullet && x.type.name !== 'obj_heart',
+      );
+      // THE CLOCK IS THE AUTHORITY, and waiting for the arena to empty is
+      // not a substitute for it. Requiring `!bulletsLeft` hung the Stars turn
+      // for 1,500 frames: 96 starchildren home in on the soul and simply hover
+      // there, so they never leave the screen and the turn could never end.
+      // In the game the battle controller ends the turn when `turntimer` runs
+      // out and sweeps whatever is still flying — that sweep is `clearTurn`.
+      //
+      // The DRAIN is the small piece of grace that costs nothing: once the
+      // clock is out, give bullets a moment to fly off on their own so the
+      // sweep is invisible in the common case, then end the turn regardless.
+      const timeUp = state.turntimer <= 0 || !ownerAlive;
+      if (timeUp) e.drain += 1;
+      const finished = timeUp && (!bulletsLeft || e.drain >= DRAIN_FRAMES);
+      if (!finished) return;
+
+      e.started = false;
+      e.gap = TURN_GAP;
+      e.spawnDelay = RTIMER_SPAWN;
+      e.turnsRun += 1;
+      clearTurn(state);
+      const nx = nextTurn(e.phase, e.turn);
+      e.phase = nx.phase;
+      e.turn = nx.turn;
+
+      // PHASE 4 IS ENTERED ON HP < 80%, and now that the Knight has real HP
+      // that is the trigger rather than a turn count.
+      //
+      // 5840 had been a spec number with no dump source. It has one now, from
+      // an unrelated place: obj_bgfountaintest computes
+      //
+      //     battleprog = 1 - (((monsterhp - maxhp * 0.8) / maxhp) * 5)
+      //
+      // which is 0 at full HP and exactly 1 at `maxhp * 0.8` = 5840. The
+      // background is fully lit at the instant phase 4 opens, which is not a
+      // coincidence — it is the same threshold.
+      //
+      // The turn-count fallback stays as a floor so a player who never
+      // attacks still reaches the finale rather than looping phase 3 forever.
+      if (e.phase === 3 && e.turn === 0 && (phase4Reached(state) || e.turnsRun >= 15)) {
+        e.phase = 4;
+        e.turn = 0;
+      }
+      return;
+    }
+
+    e.gap -= 1;
+    if (e.gap > 0) return;
+
+    // THE MENU COMES FIRST. A turn in the real fight is: each of the three
+    // party members picks from their button row, and only when the last one
+    // confirms does the enemy attack. The gap above is the beat before the
+    // panels rise.
+    if (!e.menuShown) {
+      e.menuShown = true;
+      // `for (__hiti...) global.hittarget[__hiti] = 0;` — scr_attackphase
+      // clears the stack so each turn's numbers start at the bottom again.
+      resetDmgStack(state);
+      openMenu(state);
+      return;
+    }
+    if (state.menu.open) return;
+
+    // `scr_endturn()` — COMMIT. The last character's snapshot becomes the real
+    // inventory and all three resync to it. Until this runs, everything spent
+    // this turn is still recoverable with cancel.
+    if (state.menu.needsCommit) {
+      endTurnItems(state);
+      state.menu.needsCommit = false;
+    }
+
+    // ---- RESOLUTION: the attack bar, before the enemy's turn ---------------
+    //
+    // Armed once for everyone who chose FIGHT. It runs to completion — every
+    // bolt hit or passed — and only then does the Knight attack, which is the
+    // real turn order (COMMAND, RESOLVE, ENEMY).
+    if (state.menu.fight.some(Boolean) && !e.bar) {
+      const order = [0, 1, 2].filter((c) => state.menu.fight[c] && isUp(state, c));
+      // The schedule is RANDOM, so the bar draws from the sim's generator —
+      // which also means a replayed seed replays the same bolt pattern.
+      if (order.length) e.bar = createFightBar(state.rng, order);
+    }
+    // `if (e.bar)`, NOT `if (e.bar && !e.bar.done)`. The narrower guard skips
+    // this whole block the moment the last bolt clears, so the scoring ran but
+    // the hold never advanced and `e.bar` was never nulled — a finished bar
+    // stayed on screen for the rest of the fight while the turn carried on
+    // behind it.
+    if (e.bar) {
+      // ONE BUTTON, edge-triggered. The bar is not per-character input: a
+      // single press scans every live bolt and scores the nearest, so the
+      // director hands it one boolean rather than three.
+      if (!e.bar.done) {
+        stepFightBar(e.bar, !!state.input?.confirm);
+        state.fightBar = e.bar;
+        if (!e.bar.done) return;
+      }
+
+      // SCORE IT ONCE. `attacked[i]` latches in obj_attackpress precisely so
+      // `event_user(1)` fires a single time per character; without an
+      // equivalent latch here the whole block ran on every frame of the hold
+      // below, and the Knight took the same hit sixty-three times.
+      if (!e.barScored) {
+        e.barScored = true;
+        // AND SWING. `event_user(1)` puts obj_heroparent into `state = 1` — the
+        // attack animation. That was never wired, so FIGHT dealt damage with
+        // the party standing still in their raised-weapon pose.
+        //
+        // `scr_tensionheal(round(points / 10))` is gated on damage being
+        // positive: a hit the Knight shrugs off pays no TP either.
+        for (let c = 0; c < 3; c++) {
+          const acc = e.bar.points[c];
+          if (acc <= 0) continue;
+          heroAct(state, c, HERO_ATTACK);
+          const dealt = fightDamage(state, c, acc);
+          if (dealt > 0) {
+            damageKnight(state, dealt);
+            scrTensionheal(state, fightTp(acc));
+          }
+          // The number pops off the Knight whether or not it did anything —
+          // `scr_damage_enemy` creates the writer BEFORE the `arg1 > 0` test,
+          // and a zero draws "MISS" instead of a digit.
+          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, c);
+          // obj_basicattack — the impact. `points == 150` is the critical, and
+          // it scales the same sprite up rather than using different art.
+          if (dealt > 0) {
+            spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, c, acc === 150,
+              () => rngNext(state.rng));
+          }
         }
       }
+
+      // The bar does not vanish the instant the last bolt clears: `posttimer`
+      // runs to `timermax` and then the black fade takes 13 more frames. That
+      // hold is where the attack animations actually play.
+      if ((e.barHold ?? 0) < ATTACKPRESS_HOLD + ATTACKPRESS_FADE) {
+        e.barHold = (e.barHold ?? 0) + 1;
+        return;
+      }
+      e.barHold = 0;
+      e.barScored = false;
+      e.bar = null;
+      state.fightBar = null;
+      state.menu.fight = [false, false, false];
+      // `damagereduction += 0.01` once per resolved turn, inside [0.2, 0.35).
+      advanceTurn(state);
+      return;
     }
 
-    state.phase = `cycle ${e.cycle}`;
+    // `rtimer` — the arena is up and EMPTY for 12 frames before the attack
+    // spawns. That beat is what makes the board's arrival readable, and it is
+    // the one inter-turn buffer the dump states outright.
+    //
+    // THE BOARD GROWS IN HERE, rather than blinking on. `obj_growtangle`'s
+    // Step already models it — `growcon 1` ramps `timer` 0 -> `maxtimer` (15)
+    // with the scale, the 180-degree spin and the alpha all derived from
+    // `timer / maxtimer`. It was only ever used at scene build; the turn loop
+    // hid and unhid a fully-grown box instead, which is why the arena
+    // appeared out of nowhere.
+    //
+    // Safe to animate here precisely BECAUSE the arena is empty: CLAUDE.md
+    // warns that mid-grow collision runs against a rotating fractional-scale
+    // mask that this project has never pinned against an oracle, and during
+    // these 12 frames there is nothing to collide with.
+    if (e.spawnDelay > 0) {
+      if (e.spawnDelay === RTIMER_SPAWN) {
+        const upcoming = FIGHT_TABLE[e.phase][e.turn];
+        openArena(state, upcoming);
+        const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
+        if (gt) gt.arenaOpened = upcoming.ac;
+      }
+      e.spawnDelay -= 1;
+      state.boardVisible = true;
+      return;
+    }
+
+    e.menuShown = false;
+    const entryNow = FIGHT_TABLE[e.phase][e.turn];
+    // `Other_10`, `phase4turn == 3`: `haveusedroaring = true` alongside
+    // `myattackchoice = 9` and `damagereduction = 0.4`. It is one half of the
+    // end condition, so it has to be set where Roaring actually launches.
+    if (entryNow?.name?.toLowerCase().includes('roaring')) {
+      state.knight.haveusedroaring = true;
+      state.knight.damagereduction = DR_PHASE4;
+    }
+    e.owner = launchAttack(state, entryNow);
+    e.started = true;
+    e.elapsed = 0;
+    e.drain = 0;
   },
 };
 
 export function buildPracticeScene(state, { seed = 12345 } = {}) {
+  state.menu = createMenu();
   state.hp = 0;
   state.invTimer = -1;
   state.phase = 'practice';
   state.view = { x: 0, y: 0 };
   state.flag22 = 0;
   state.gmlRng = gmlCreate(seed);
+  state.turntimer = 0;
+  state.invc = 1;
 
-  spawn(state, battlebox, { x: BOX.x, y: BOX.y });
+  // Visual only — see sim/actors.js. None of these can touch bullet state.
+  // Every position is measured from traces/flurry2.csv.
+  spawn(state, knightActor, { x: KNIGHT.x, y: KNIGHT.ystart });
+  PARTY.forEach((p, i) => {
+    spawn(state, partyActor, { x: p.x, y: p.y, sprite_index: p.sprite, depth: p.depth, slot: i });
+  });
+
+  settleBox(spawn(state, battlebox, { x: BOX.x, y: BOX.y }));
   state.soul = spawn(state, soul, { ...SOUL_START });
   spawn(state, director);
   return state;

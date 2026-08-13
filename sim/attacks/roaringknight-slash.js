@@ -17,6 +17,7 @@
 // GML truthiness note: `if (!alarm[0])` is true for alarm values <= 0.5 —
 // armed (>0) is false, fired/idle (-1) is true. Translated explicitly.
 
+import { scrDamageAll, scrDamageSingle } from '../damage.js';
 import { destroy } from '../entity.js';
 import { scrHeartclamp } from '../heartclamp.js';
 import { HEART_MASK, masksOverlap } from '../masks.js';
@@ -89,6 +90,11 @@ export const roaringknightSlash = {
     e.destroyonhit = false;
 
     e.isBullet = true;
+    // The graze box needs a mask to test against, and this object's own hit
+    // check uses SLASH_MASK explicitly rather than going through the sprite
+    // registry — so without this the 640px wedge you dodge for the whole of
+    // rotating slash paid no TP at all.
+    e.mask = SLASH_MASK;
     e.xscale = 1;
     e.image_angle = 0; // real spawners set image_angle = direction
   },
@@ -124,14 +130,16 @@ export const roaringknightSlash = {
       // tester scenario; translate when the fight controller lands.
     }
     if (e.active === 1 || e.active === true) {
-      // target != 3 -> scr_damage(); target == 3 -> scr_damage_all().
-      // Dodge-only translation of scr_damage_all's observable effect:
-      // gated on global.inv < 0, resets it to invc*30 (invc = 1 here).
-      // Party hp[] bookkeeping is out of scope (hardcoded HP per CLAUDE.md).
+      // target != 3 -> scr_damage(); target == 3 -> scr_damage_all(). Both
+      // now take HP off the party (sim/damage.js) rather than only resetting
+      // the invulnerability timer — 206 to one character, or 75 to all three
+      // when the slash is an AoE.
       if (e.target === 3) {
-        if (state.invTimer < 0) {
-          state.invTimer = state.invc * 30;
-        }
+        scrDamageAll(state, e.damage, { flurrySoftened: state.flurrySoftened === true });
+      } else {
+        scrDamageSingle(state, e.damage, e.target ?? 0, {
+          flurrySoftened: state.flurrySoftened === true,
+        });
       }
       if (e.destroyonhit === 1 || e.destroyonhit === true) {
         destroy(e);

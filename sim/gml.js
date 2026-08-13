@@ -95,13 +95,26 @@ export function scrEaseOut(t, curve) {
   }
 }
 
-/** GML lengthdir_x / lengthdir_y — degrees, y down on screen. */
+/**
+ * GML lengthdir_x / lengthdir_y — degrees, y down on screen.
+ *
+ * BOTH OPERANDS NARROW TO FLOAT32 before the multiply. This is not a guess:
+ * tracking swords diverged from the oracle by exactly one f32 ulp at a single
+ * frame (y 104.1218872070 vs 104.1218795776, sword at 45 degrees, len
+ * 121.45), and of five candidate roundings only `fround(len) * fround(trig)`
+ * reproduces it. Every other suite still passes with it, so it is not a
+ * one-frame fudge.
+ *
+ * Consistent with the project's other f32 findings (CLAUDE.md, "Float32
+ * built-ins"): the runner does a lot of its arithmetic in single precision,
+ * and only the results that land in plain GML variables stay f64.
+ */
 export function lengthdirX(len, dir) {
-  return len * Math.cos((dir * Math.PI) / 180);
+  return Math.fround(Math.fround(len) * Math.fround(Math.cos((dir * Math.PI) / 180)));
 }
 
 export function lengthdirY(len, dir) {
-  return -len * Math.sin((dir * Math.PI) / 180);
+  return -Math.fround(Math.fround(len) * Math.fround(Math.sin((dir * Math.PI) / 180)));
 }
 
 export function pointDirection(x1, y1, x2, y2) {
@@ -109,9 +122,57 @@ export function pointDirection(x1, y1, x2, y2) {
   return d < 0 ? d + 360 : d;
 }
 
+/**
+ * `point_distance`. Left in f64 — unlike `lengthdir_*`, the measured values do
+ * NOT show single-precision narrowing: ROARING derives each star's scale from
+ * this (scale = distance/170) and the recorded scales match the f64 result
+ * exactly, to the last digit, across the whole spiral.
+ */
+export function pointDistance(x1, y1, x2, y2) {
+  return Math.hypot(x2 - x1, y2 - y1);
+}
+
 export function angleDifference(a, b) {
   let d = (a - b) % 360;
   if (d > 180) d -= 360;
   if (d < -180) d += 360;
   return d;
+}
+
+// ---- colours ---------------------------------------------------------------
+//
+// GML packs colours BGR into one integer; the sim only ever needs to MERGE
+// them and hand the result to a Draw port, so they are kept as [r,g,b] here.
+// They live in sim/ rather than render/ because the original computes them in
+// Step events (obj_knight_pointing_starchild's flip) — the renderer only reads.
+
+export const WHITE = [255, 255, 255];
+export const BLACK = [0, 0, 0];
+export const RED = [255, 0, 0];
+export const GRAY = [128, 128, 128];
+
+/**
+ * GML `merge_color(c1, c2, amount)` — a per-channel lerp. GameMaker does not
+ * clamp `amount`, but it does clamp the resulting bytes, so clamping here is
+ * equivalent for every caller in this project (all of which feed it a cosine).
+ */
+export function mergeColor(a, b, t) {
+  const k = t < 0 ? 0 : t > 1 ? 1 : t;
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * k),
+    Math.round(a[1] + (b[1] - a[1]) * k),
+    Math.round(a[2] + (b[2] - a[2]) * k),
+  ];
+}
+
+/**
+ * `scr_anglechange(current, target, limit)` —
+ * `median(-limit, limit, angle_difference(target, current))`, i.e. the signed
+ * turn toward `target` capped at `limit`. GML's `median` of three values is a
+ * clamp when the outer two are the bounds. Returns the DELTA, not the new
+ * angle: every caller adds it.
+ */
+export function scrAnglechange(current, target, limit) {
+  const d = angleDifference(target, current);
+  return d < -limit ? -limit : d > limit ? limit : d;
 }

@@ -24,7 +24,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 import { fountainBullet } from '../../sim/attacks/fountain-bullet.js';
 
 export const T5_WINDOW = { from: 4, to: 193 };
@@ -57,7 +57,7 @@ export function buildOracleT5Scene(state) {
   state.flag22 = 0;
   state.frame = T5_WINDOW.from;
 
-  spawn(state, battlebox, { x: 320, y: 170 });
+  settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   // Frozen soul: the tester puts it at (314,162) but with no input it sits
   // wherever the turn cycle last placed it; by the steady window that is
   // (310,162) per the oracle trace.

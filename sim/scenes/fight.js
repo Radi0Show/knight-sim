@@ -1,0 +1,341 @@
+// THE FIGHT'S REAL ATTACK ORDER, and the dispatch that launches each one.
+//
+// Everything here is read out of the game rather than arranged: the turn table
+// comes from `obj_knight_enemy`'s Other_10 (the SELECTOR — see CLAUDE.md, "THE
+// REAL FIGHT"), and the per-attack setup below comes from the knight's Step,
+// which is what actually positions the arena and starts the clock.
+//
+// Nothing in this file invents a schedule. The previous playable scene looped
+// one attack because the roster was incomplete; this replaces that.
+//
+// WHAT IS STILL A STAND-IN, stated plainly because the rule is that nothing
+// invented ships unlabelled:
+//
+//   * The TURN SYSTEM is not modelled (dodge-only). A turn here ends when the
+//     turn clock runs out or the attack tears itself down, not when the party
+//     acts. Phase 4 is entered on a turn count instead of the real HP < 80%,
+//     since HP is out of scope.
+//   * The cone's spawn point for Stars is MEASURED from the recording rather
+//     than computed — obj_dbulletcontroller's type-98 branch that creates it
+//     is not translated, only the star spawner it drives.
+//   * Between-turn cleanup stands in for the battle controller's end-of-turn
+//     bullet sweep, which is turn-system machinery.
+
+import { spawn } from '../entity.js';
+import { soul } from '../soul.js';
+import { SOUL_START } from '../actors.js';
+import { boxsplitterAttack } from '../attacks/boxsplitter-attack.js';
+import { pointingCone } from '../attacks/pointing-cone.js';
+import { starsController } from '../attacks/stars-controller.js';
+import { spawnRotatingSlash } from '../attacks/rotating-slash.js';
+import { swordTunnelManager } from '../attacks/sword-tunnel.js';
+import { swordVortexManager } from '../attacks/sword-vortex.js';
+import { trackingSwordsManager } from '../attacks/tracking-swords.js';
+import { roaring2 } from '../attacks/roaring.js';
+import { gmlIrandom } from '../rng.js';
+import { KNIGHT } from '../actors.js';
+
+/**
+ * The selector's table. Five turns per phase; phase 3 loops. Difficulties are
+ * the bolded column in CLAUDE.md and are the main thing that changes between
+ * phases — the roster is only seven attacks.
+ */
+export const FIGHT_TABLE = {
+  1: [
+    { ac: 1, difficulty: 0, name: 'Stars' },
+    { ac: 11, difficulty: 0, name: 'Tracking Swords' },
+    { ac: 2, difficulty: 0, name: 'Flurry' },
+    { ac: 13, difficulty: 0, name: 'Sword Tunnel' },
+    { ac: 5, difficulty: 0, name: 'Rotating Slash' },
+  ],
+  2: [
+    { ac: 1, difficulty: 1, name: 'Stars' },
+    { ac: 2, difficulty: 1, name: 'Flurry' },
+    { ac: 13, difficulty: 3, name: 'Sword Tunnel' },
+    { ac: 15, difficulty: 0, name: 'Sword Vortex' },
+    { ac: 5, difficulty: 1, name: 'Rotating Slash' },
+  ],
+  3: [
+    { ac: 1, difficulty: 2, name: 'Stars' },
+    { ac: 2, difficulty: 3, name: 'Flurry' },
+    { ac: 14, difficulty: 0, name: 'Tracking Swords' },
+    { ac: 13, difficulty: 4, name: 'Sword Tunnel' },
+    { ac: 5, difficulty: 2, name: 'Rotating Slash' },
+  ],
+  4: [
+    { ac: 5, difficulty: 3, name: 'Rotating Slash' },
+    { ac: 9, difficulty: 0, name: 'ROARING' },
+  ],
+};
+
+/**
+ * `scr_turntimer(...)` per attack, from the knight's Step. The `else` arm is
+ * 240, which is what Stars, Rotating Slash and Roaring all get — their own
+ * controllers then extend it (Stars adds 30, and another 60 at difficulty 2).
+ */
+function turnLength(ac, difficulty) {
+  // TYPES 104 AND 107 SET `global.turntimer = 999999` in the controller,
+  // overriding whatever `scr_turntimer` just asked for. Both attacks run far
+  // longer than a normal turn and end it themselves — rotating slash by
+  // destroying itself on Alarm_3, Roaring by setting the clock to -1 at
+  // roaring_timer 375. Using the knight's 240 here cut Roaring off mid-spiral
+  // and then relaunched it.
+  if (ac === 5 || ac === 9) return 999999;
+  if (ac === 2) return 350;
+  if (ac === 11) return difficulty === 0 ? 292 : 300;
+  if (ac === 13) return difficulty === 3 ? 360 : 330;
+  if (ac === 14 || ac === 15 || ac === 12) return 300;
+  return 240;
+}
+
+/** `global.invc` per attack — the multiplier on invulnerability after a hit. */
+function invcFor(ac) {
+  if (ac === 1 || ac === 5 || ac === 9) return 1;
+  if (ac === 13) return 0.14;
+  return 0.4;
+}
+
+/**
+ * Where the arena goes, straight out of the knight's Step. Only three attacks
+ * move or resize it; everything else uses the default.
+ */
+function arenaFor(ac) {
+  if (ac === 11) return { x: 320, y: 190, xscale: 2, yscale: 2 };
+  if (ac === 13) return { x: 300, y: 190, xscale: 3, yscale: 2 };
+  if (ac === 1) return { x: 320, y: 170, xscale: 2.25, yscale: 1.75 };
+  return { x: 320, y: 170, xscale: 2, yscale: 2 };
+}
+
+/** MEASURED from traces/stars2.csv. See the header note. */
+const CONE_POS = { x: 425, y: 78.56589 };
+
+/**
+ * Launch one turn. Returns the object that owns it, so the director can tell
+ * when the attack has torn itself down.
+ */
+/**
+ * Place the arena for a turn and START ITS GROW-IN.
+ *
+ * Split out of `launchAttack` because the two happen at DIFFERENT TIMES in the
+ * original: `obj_knight_enemy`'s Step creates the growtangle under
+ * `mnfight == 1.5`, and the attack itself spawns 12 frames later, on
+ * `rtimer == 12` under `mnfight == 2`. So the board is already opening while
+ * the arena is still empty, and the attack arrives into a finished box.
+ *
+ * Doing both at launch made the board appear and the bullets arrive on the
+ * same frame; doing the grow twice — once here and once from the director's
+ * rtimer window — restarted it halfway and the board visibly stuttered.
+ */
+export function openArena(state, entry) {
+  const arena = arenaFor(entry.ac);
+  const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
+  if (!gt) return;
+  gt.x = state.view.x + arena.x;
+  gt.y = state.view.y + arena.y;
+  gt.xstart = gt.x;
+  gt.ystart = gt.y;
+  gt.maxxscale = arena.xscale;
+  gt.maxyscale = arena.yscale;
+  gt.growcon = 1;
+  gt.timer = 0;
+  gt.image_xscale = 0;
+  gt.image_yscale = 0;
+  gt.image_angle = 180;
+  gt.visible = true;
+}
+
+export function launchAttack(state, entry) {
+  const { ac, difficulty } = entry;
+
+  const arena = arenaFor(ac);
+  const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
+  // The arena was placed and started growing at the top of the rtimer window
+  // (see openArena). Re-running the grow here would restart it 12 frames in.
+  if (gt && gt.arenaOpened !== ac) {
+    gt.x = state.view.x + arena.x;
+    gt.y = state.view.y + arena.y;
+    gt.xstart = gt.x;
+    gt.ystart = gt.y;
+    // RESTART THE GROW-IN rather than snapping to size. obj_growtangle opens
+    // over 15 frames at the top of a turn (sim/battlebox.js); setting the
+    // drawn scale directly skipped that entirely.
+    //
+    // One scale now — see battlebox.js. The walls follow the drawing, so an
+    // attack that resizes the arena resizes what the soul can reach.
+    gt.maxxscale = arena.xscale;
+    gt.maxyscale = arena.yscale;
+    gt.growcon = 1;
+    gt.timer = 0;
+    gt.image_xscale = 0;
+    gt.image_yscale = 0;
+    gt.image_angle = 180;
+    gt.visible = true;
+  }
+  if (gt) gt.arenaOpened = null;
+
+  // scr_moveheart() drops the soul in the arena; ac 13 is the one attack that
+  // overrides where, putting it left of centre so the corridor sweeps past.
+  if (state.soul) {
+    if (ac === 13) {
+      state.soul.x = (gt ? gt.x : 300) - 40;
+      state.soul.y = (gt ? gt.y : 190) - 8;
+    } else {
+      state.soul.x = (gt ? gt.x : 320) - 10;
+      state.soul.y = (gt ? gt.y : 170) - 10;
+    }
+    state.soul.boundaryup = 0;
+  }
+
+  // `obj_knight_enemy.myattackchoice == 2 && (difficulty == 1 || 3)` — Flurry
+  // at those two difficulties takes a further third off the damage, inside
+  // scr_damage's HP write. Set here because it is a property of the TURN.
+  state.flurrySoftened = ac === 2 && (difficulty === 1 || difficulty === 3);
+
+  state.invc = invcFor(ac);
+  state.turntimer = turnLength(ac, difficulty);
+
+  const knight = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_enemy');
+  const kx = knight ? knight.x : KNIGHT.x;
+  const ky = knight ? knight.y : KNIGHT.ystart;
+
+  // The knight carries the turn's difficulty, and at least one attack reads it
+  // off HIM rather than off its own manager — obj_sword_tunnel_manager's Create
+  // takes `finishtimermax` from `obj_knight_enemy.difficulty`. Set it before
+  // anything is spawned.
+  if (knight) knight.difficulty = difficulty;
+
+  switch (ac) {
+    case 1: {
+      const cone = spawn(state, pointingCone, { ...CONE_POS });
+      cone.difficulty = difficulty;
+      cone.con = 1;
+      // The controller's own init: difficulty 2 holds the stars far longer.
+      cone.endtimer = difficulty >= 2 ? 210 : 120;
+      const dc = spawn(state, starsController, { ...CONE_POS });
+      dc.difficulty = difficulty;
+      dc.endtimer = cone.endtimer;
+      if (difficulty >= 2) state.turntimer += 60;
+      return dc;
+    }
+
+    case 2: {
+      // type 99 creates this AT THE KNIGHT and then hides him — from here on
+      // the manager is the visible knight.
+      const mg = spawn(state, boxsplitterAttack, { x: kx, y: ky });
+      mg.difficulty = difficulty;
+      if (knight) knight.image_alpha = 0;
+      return mg;
+    }
+
+    case 5:
+      return spawnRotatingSlash(state, kx, ky, { difficulty });
+
+    case 9: {
+      const r = spawn(state, roaring2, { x: state.view.x + 320, y: state.view.y + 88 });
+      r.rand_angle = gmlIrandom(state.gmlRng, 360);
+      return r;
+    }
+
+    case 11:
+    case 14: {
+      const mg = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
+      mg.variant = difficulty;
+      mg.damage = 1;
+      trackingSwordsManager.init(mg, state);
+      return mg;
+    }
+
+    case 13: {
+      const mg = spawn(state, swordTunnelManager, { x: arena.x, y: state.view.y });
+      mg.timer = -40 + gmlIrandom(state.gmlRng, 10);
+      mg.difficulty = difficulty;
+      mg.knightDifficulty = difficulty;
+      mg.damage = 1;
+      swordTunnelManager.init(mg, state);
+      return mg;
+    }
+
+    case 15: {
+      // ac 15 is TWO controllers: the vortex, then tracking swords over it.
+      const mg = spawn(state, swordVortexManager, { x: arena.x, y: arena.y });
+      mg.damage = 10;
+      const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
+      tr.variant = 0;
+      tr.damage = 1;
+      trackingSwordsManager.init(tr, state);
+      return mg;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * What SURVIVES a turn — everything else is swept.
+ *
+ * This used to be the other way round, a list of names to remove, and it was
+ * wrong the moment it was written: it said `obj_knight_tracking_sword` and
+ * `obj_knight_tracking_sword_manager`, while the actual types are
+ * `obj_tracking_sword1` and `obj_tracking_swords_manager`. Nothing matched, so
+ * tracking swords outlived their turn and flew around during Flurry.
+ *
+ * A keep-list cannot fail that way. Getting a name wrong here removes
+ * something visible immediately, instead of silently leaking a bullet into the
+ * next attack — and a newly translated attack is swept correctly without
+ * anyone remembering to register it.
+ */
+const SURVIVES_TURN = new Set([
+  'obj_heart',
+  'obj_growtangle',
+  'obj_knight_enemy',
+  'actor_party',
+  'fight_director',
+  'practice_director',
+]);
+
+/**
+ * THE END-OF-TURN SWEEP, and it is a stand-in — see the header. The real game
+ * clears leftover bullets through the battle controller when the turn ends,
+ * which is turn-system machinery this project does not model. It only ever
+ * runs BETWEEN turns, so nothing live during an attack is touched.
+ */
+export function clearTurn(state) {
+  for (const e of state.entities) {
+    if (e.alive && !SURVIVES_TURN.has(e.type.name)) e.alive = false;
+  }
+
+  // ROARING DESTROYS THE SOUL. Its finale cuts the screen — and obj_heart with
+  // it — which in the real game is the end of the fight, not the end of a turn.
+  // Since this harness loops, the soul has to come back; that is stand-in
+  // machinery, like the rest of the turn system (see the header).
+  if (!state.soul || !state.soul.alive) {
+    state.soul = spawn(state, soul, { ...SOUL_START });
+  }
+  state.view.x = 0;
+  state.view.y = 0;
+  const knight = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_enemy');
+  if (knight) {
+    // Attacks hide him in two different ways and both have to be undone:
+    // Flurry's manager sets image_alpha = 0 (it becomes the visible knight),
+    // and the Stars cone sets visible = false (it draws itself as the pointing
+    // pose). obj_knight_pointing_cone's CleanUp restores this in the original.
+    knight.image_alpha = 1;
+    knight.visible = true;
+  }
+}
+
+/** Walks FIGHT_TABLE. `turn` is 0-based within the phase. */
+export function nextTurn(phase, turn) {
+  const list = FIGHT_TABLE[phase];
+  if (turn + 1 < list.length) return { phase, turn: turn + 1 };
+  // Phase 3 loops from its first turn; 1 and 2 advance.
+  if (phase === 3) return { phase: 3, turn: 0 };
+  // PHASE 4 RESTARTS THE FIGHT. In the real game it ends with the knight's
+  // defeat, which needs HP — out of scope here. This used to return the last
+  // turn, which meant ROARING relaunched itself forever the moment it
+  // finished. Looping the whole fight is the harness's choice and is labelled
+  // in the HUD; repeating one attack was just a bug.
+  if (phase === 4) return { phase: 1, turn: 0 };
+  return { phase: phase + 1, turn: 0 };
+}

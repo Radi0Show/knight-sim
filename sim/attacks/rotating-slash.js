@@ -19,9 +19,26 @@
 // obj_roaringknight_slash (attack 1) and, via quickslash_big, the
 // split_growtangle organism (attack 3).
 //
+// THE SPIRAL FINISHER (difficulty 2 only) is translated. After the six cuts,
+// `slashes_done` forks the attack:
+//
+//   difficulty 2 + turn_type "full"   ->  do_final: aim_type 0 -> 1 -> 2 in one
+//                                         frame, and the attack changes shape
+//   anything else                     ->  state "return", alarm[3] = 22, done
+//
+// At aim_type 2 there is NO AIM PHASE any more. Cooldown goes straight back to
+// slash, so the knight fires every ~3 frames while `aim_direction` advances by
+// an accelerating `speed_gain` (16 -> 24 over eight slashes, then flat) for 28
+// slashes, teleporting around the box between shots. He also stops aiming at
+// the player: `aim_x/aim_y` are pinned to the box centre once, at the handoff,
+// and every one of the 28 slashes spawns there.
+//
+// Alarm_3 is one line, `instance_destroy()`, 22 frames after the last slash.
+//
 // NOT translated (cosmetic, and none of it touches frame state): the knight's
-// sprite/lerp movement, obj_knight_circle, particle bursts, obj_afterimage
-// debris, sounds, and the colour ramps (r/g/b, line_width).
+// sprite/lerp movement, particle bursts, obj_afterimage debris, sounds, and the
+// colour ramps (r/g/b, line_width). obj_knight_circle IS translated now — the
+// aim bloom, sim/fx.js + render/draw/knight-circle.js.
 //
 // SHUFFLE CAVEAT: ds_list_shuffle consumes 16 draws per element but its
 // algorithm is unsolved (see CLAUDE.md). This uses our own Fisher-Yates over
@@ -29,8 +46,11 @@
 // reshuffles every playthrough, so order is not a fidelity property; the
 // oracle diff fixes the order on both sides to pin the mechanics.
 
-import { spawn } from '../entity.js';
+import { scrLerpvar } from '../lerpvar.js';
+import { spawn, destroy } from '../entity.js';
 import { roaringknightSlash } from './roaringknight-slash.js';
+import { knightCircle } from '../fx.js';
+import { cue, cueLoop, cueStop } from '../audio.js';
 import { scrApproach } from '../gml.js';
 import { gmlChoose, gmlIrandom, gmlU32 } from '../rng.js';
 
@@ -62,10 +82,33 @@ export const rotatingSlash = {
     e.active = 1;
     e.updateimageangle = 0;
 
+    // Create line 3. Without it the engine's default image_speed of 1 walks
+    // (and wraps) this object's frames every step — the same loop that made
+    // the Stars cone flick through its point animation.
+    e.image_speed = 0;
+    // MEASURED from traces/rotating_d2.csv — the object's default sprite is in
+    // its GameMaker definition, not the GML, so the recording is the only
+    // place it is written down. THIS object is the visible knight during the
+    // attack, which is why it looked like there was no animation at all: it
+    // had no sprite to draw.
+    e.sprite_index = 'spr_roaringknight_attack_ol';
+    e.image_index = 0;
+    // Scale 2, measured — the knight is drawn at 2x everywhere. Left at
+    // GameMaker's default 1 this drew a half-size knight beside the real one.
+    e.image_xscale = 2;
+    e.image_yscale = 2;
+
     e.difficulty = 2;
     e.slash_number = 1;
     e.rotation = 16;
     e.rotation_base = 16;
+    // Marker colour, ramped grey -> red through each aim (Draw reads r/g/b).
+    e.r = 0;
+    e.g = 0;
+    e.b = 0;
+    e.line_width = 4;
+    e.line2 = -1;
+    e.line3 = -1;
     e.rotation_change = 1;
     e.rotation_goal = 2;
     e.timer = 0;
@@ -119,9 +162,27 @@ export const rotatingSlash = {
     }
   },
 
+  alarm: {
+    /** Alarm_3: `instance_destroy()`. */
+    3(e) {
+      destroy(e);
+    },
+  },
+
   step(e, state) {
-    if (e.done) return;
+    // The decrement is ABOVE the `done` guard deliberately. There is no `done`
+    // in the original — the object keeps running its Step, doing nothing,
+    // until Alarm_3 destroys it, and `local_turntimer` keeps counting down the
+    // whole time. Guarding it too left the value one high from the frame the
+    // finale ended, which the recording catches at frame 342.
     e.local_turntimer -= 1;
+    if (e.done) return;
+
+    // `if (image_index >= 5 && aim_type != 2) { image_index = 5; image_speed = 0; }`
+    if (e.image_index >= 5 && e.aim_type !== 2) {
+      e.image_index = 5;
+      e.image_speed = 0;
+    }
 
     if (e.state === 'intro') {
       e.timer += 1;
@@ -134,7 +195,18 @@ export const rotatingSlash = {
     if (e.state === 'aim') {
       e.timer += 1;
       if (e.timer === 1) {
+        // `snd_stop` then `snd_loop` — the aim's rising whine, restarted at the
+        // top of every cycle so it cannot stack.
+        cueStop(state, 'snd_knight_rotatingslash_line');
+        cueLoop(state, 'snd_knight_rotatingslash_line');
         e.rotation = e.rotation_base;
+        // THE TELEGRAPH RESETS TO GREY at the top of every aim, then charges
+        // toward RED — see the else arm below. The markers are drawn as a
+        // gradient in this colour with a BLACK marker over it, so what the
+        // player reads is a black slash line that reddens as the cut nears.
+        e.r = 128;
+        e.g = 128;
+        e.b = 128;
         e.spin = state.spinSequence
       ? state.spinSequence[state.spinIndex++]
       : gmlChoose(state.gmlRng, [-1, 1]);
@@ -142,6 +214,26 @@ export const rotatingSlash = {
         e.movebox_y += 30 + gmlIrandom(state.gmlRng, 60);
         if (e.movebox_x > 80) e.movebox_x -= 80;
         if (e.movebox_y > 120) e.movebox_y -= 120;
+
+        // THE POSE, hand-stepped rather than free-running. He resets to frame
+        // 1 as the aim begins; the spiral swaps to a different sprite instead.
+        if (e.aim_type !== 2) {
+          e.image_index = 1;
+        } else {
+          e.sprite_index = 'spr_roaringknight_flurry_prepare';
+          e.image_index = 0;
+        }
+      }
+
+      // Halfway through the aim he advances one frame, and on the last frame
+      // of it `image_speed` becomes 0.5 so the wind-up plays itself out. The
+      // clamp below stops it at 5 — this is the whole animation, and none of
+      // it comes from image_speed being left at its default.
+      if (e.timer === Math.floor((e.slash_base + e.slash_offset) * 0.5) && e.aim_type !== 2) {
+        e.image_index += 1;
+      }
+      if (e.timer === e.slash_base + e.slash_offset && e.aim_type !== 2) {
+        e.image_speed = 0.5;
       }
 
       // Order matters: the aim spins BEFORE the frame-1 lock-on below, and
@@ -153,6 +245,21 @@ export const rotatingSlash = {
         const heart = state.soul;
         e.aim_x = heart.x + 10;
         e.aim_y = heart.y + 10;
+      }
+
+      // `if (timer == 1) instance_create(aim_x, aim_y, obj_knight_circle)` —
+      // the bloom that marks where the fan is about to come from. Outside the
+      // `aim_type == 0` guard above: it fires on every aim, including the
+      // spiral's, where aim_x/aim_y are the box centre rather than the soul.
+      if (e.timer === 1) {
+        spawn(state, knightCircle, { x: e.aim_x, y: e.aim_y });
+      } else {
+        // The ELSE of the `timer == 1` fork: every other frame of the aim ramps
+        // the marker colour toward pure red at 64/7 a frame, so it arrives in
+        // about 15 — roughly the length of the aim.
+        e.r = scrApproach(e.r, 255, 9.142857142857142);
+        e.g = scrApproach(e.g, 0, 9.142857142857142);
+        e.b = scrApproach(e.b, 0, 9.142857142857142);
       }
 
       if (e.timer === e.slash_base + 6 + e.slash_offset) {
@@ -170,6 +277,9 @@ export const rotatingSlash = {
             (360 / (e.slash_number * 2)) * a + e.random_offset + e.aim_direction,
           );
         }
+        // The volley: one cut and one burst, on the frame the fan is built.
+        cue(state, 'snd_knight_cut');
+        cue(state, 'snd_explosion_firework');
         if (state.fixedSlashOrder === true && state.angleLists) {
           // Replay the oracle's shuffled order (see SHUFFLE CAVEAT).
           const rec = state.angleLists[state.angleIndex++];
@@ -185,7 +295,10 @@ export const rotatingSlash = {
         s.image_xscale = 2;
         s.xscale = 2;
         s.image_angle = s.direction;
-        s.visible = false;
+        // NOT mirroring the original's `visible = false`. The slash is drawn
+        // by its own Draw event in the game, so hiding the instance costs
+        // nothing there; here it meant rotating slash had a hitbox and no
+        // sprite. Same call made for the roaring stars.
         s.width = s.width * 2;
         s.aoe = true;
       }
@@ -216,13 +329,62 @@ export const rotatingSlash = {
           e.local_turntimer = 99999;
         }
 
+        // ONCE THE SIX CUTS ARE DONE the attack forks, and only one arm of the
+        // fork is the spiral. Everything except a difficulty-2 "full" turn
+        // simply winds down here — that `return` is what the suite used to
+        // diverge on at frame 282, when this branch was missing and every
+        // difficulty fell through into another aim cycle.
+        if (e.slashes_done) {
+          if (e.difficulty === 2 && e.turn_type === 'full') {
+            if (e.do_final) {
+              // He vanishes and reappears for the finisher.
+              cue(state, 'snd_knight_puff');
+              cue(state, 'snd_knight_teleport', 0.5);
+              // The handoff into the spiral. Everything gets faster: the aim
+              // is 24 frames instead of easing toward 15, cooldown drops to 2,
+              // and the knight stops aiming at the soul — `aim_x/aim_y` are
+              // pinned to the box centre and stay there for the rest of the
+              // attack.
+              e.rotation_base = 18;
+              e.rotation_change = 0.5;
+              e.line_width = 4;
+              e.slash_number = 1;
+              e.slash_base = 24;
+              e.cooldown_time = 2;
+              e.slash_timer = 2;
+              e.aim_type = scrApproach(e.aim_type, 2, 1);
+              e.do_final = false;
+              const b = boxEdges(state);
+              e.aim_x = (b[2] + b[0]) / 2;
+              e.aim_y = (b[1] + b[3]) / 2;
+            }
+          } else {
+            e.state = 'return';
+            e.timer = 0;
+            e.done = true;
+            e.alarm[3] = 22;
+            return;
+          }
+        }
+
         if (e.aim_type < 2) {
           e.state = 'aim';
           e.timer = 0;
+          // 0 -> 1 -> 2 IN ONE FRAME. do_final above bumps aim_type to 1, and
+          // this immediately bumps it again, so the recording never shows a 1:
+          // frame 227 reads 0 and frame 228 reads 2, in state "aim".
+          if (e.aim_type === 1) {
+            e.line2 = 0;
+            e.alarm[1] = 4;
+            e.aim_type = scrApproach(e.aim_type, 2, 1);
+          }
           return;
         }
 
-        // aim_type 2 is the finale: fire continuously, accelerating the spin.
+        // THE SPIRAL. No aim phase at all any more — cooldown goes straight
+        // back to slash, so the knight fires every ~3 frames while
+        // `aim_direction` advances by an accelerating `speed_gain` each time.
+        // 16 -> 24 over eight slashes, then flat, for 28 slashes total.
         e.state = 'slash';
         e.timer = 0;
         e.aim_direction += e.speed_gain * e.spin;
@@ -231,14 +393,60 @@ export const rotatingSlash = {
         if (e.final_counter === 28) {
           e.state = 'return';
           e.done = true;
+          // Alarm_3 is one line, `instance_destroy()`. 22 frames after the
+          // 28th slash the attack object goes away — measured at frame 363 in
+          // the difficulty-2 recording, where the instance simply stops
+          // appearing.
+          e.alarm[3] = 22;
+        } else {
+          // He teleports around the box between shots. The two irandom draws
+          // are replayed by the scene; the wrap and the lerp targets are not.
+          const rec = state.finalMoveTable ? state.finalMoveTable[state.finalMoveIndex++] : null;
+          e.movebox_x += rec ? rec.mx : 20 + gmlIrandom(state.gmlRng, 40);
+          e.movebox_y += rec ? rec.my : 30 + gmlIrandom(state.gmlRng, 60);
+          e.sprite_index = 'spr_roaringknight_flurry';
+          e.image_speed = 1;
+          if (e.movebox_x > 80) e.movebox_x -= 80;
+          if (e.movebox_y > 120) e.movebox_y -= 120;
+          const b = boxEdges(state);
+          const dur = e.slash_base + e.slash_offset - 8;
+          scrLerpvar(state, spawn, e, 'x', e.x, b[0] - 20 + e.movebox_x, dur, 1);
+          scrLerpvar(state, spawn, e, 'y', e.y, b[1] - 20 + e.movebox_y, dur, 1);
         }
       }
     }
   },
 };
 
+/**
+ * `scr_get_box`, index for index — and the indices are NOT in the order the
+ * names suggest: **0 is the RIGHT edge and 2 is the LEFT**, because the
+ * original computes 0 as `x + sprite_width * 0.5`. 1 is top, 3 is bottom.
+ *
+ * Kept in the source's own numbering rather than renamed to left/right, so a
+ * call site can be read straight against the GML without re-deriving it.
+ * `sprite_width` is the sprite's width times image_xscale, as everywhere else.
+ */
+function boxEdges(state) {
+  const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
+  if (!gt) return [0, 0, 0, 0];
+  const hw = (gt.spriteWidth ?? 75 * gt.image_xscale) * 0.5;
+  const hh = (gt.spriteHeight ?? 75 * gt.image_yscale) * 0.5;
+  return [gt.x + hw, gt.y - hh, gt.x - hw, gt.y + hh];
+}
+
 /** obj_dbulletcontroller `type = 104`. */
 export function spawnRotatingSlash(state, x, y, { difficulty = 0 } = {}) {
+  // obj_dbulletcontroller type 104 does `with (creatorid) image_alpha = 0`
+  // before creating this — THIS object becomes the visible knight, exactly as
+  // Flurry's manager does. Without it the real knight stands there idling
+  // while a second one performs the attack. The recording has his alpha at 0
+  // from frame 13 to frame 363, which is this object's whole lifetime.
+  const knight = state.entities.find(
+    (k) => k.alive && k.type.name === 'obj_knight_enemy',
+  );
+  if (knight) knight.image_alpha = 0;
+
   const e = spawn(state, rotatingSlash, { x, y });
   e.difficulty = difficulty;
   rotatingSlash.init(e);

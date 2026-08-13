@@ -20,6 +20,7 @@ export const splitBullet = {
   name: 'obj_roaringknight_split_bullet',
 
   create(e, state) {
+    e.sprite_index = 'spr_roaringknight_tooth';
     regularbulletCreate(e, state); // event_inherited()
     e.element = 5;
     e.speed_mult = 0;

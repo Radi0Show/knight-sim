@@ -1,0 +1,91 @@
+# Publish the playable build to GitHub Pages on every push to main.
+#
+# THERE IS NO BUILD STEP, deliberately. The whole thing is static ES modules
+# with no absolute paths anywhere — every asset is fetched relative to
+# `import.meta.url` — so it runs unchanged from a project-site subpath like
+# `user.github.io/knight-sim/`. Adding a bundler here would buy nothing and
+# introduce a way for the deployed build to differ from the one that passes
+# the suites.
+#
+# WHAT SHIPS is only what the browser needs. `tools/`, `docs/`, `notes/` and
+# CLAUDE.md stay in the repo but out of the deploy — not because they are
+# secret, but because a playtester downloading the page should not also be
+# pulling the oracle recipe.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A deploy in progress is not worth cancelling — but a queued one is stale the
+# moment a newer commit lands.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # THE SUITES GATE THE DEPLOY. 35 of them run headless in a few seconds and
+    # they are the only thing standing between a bad push and every playtester
+    # loading it. A deploy that skips them is how testers end up reporting a
+    # bug you already had a passing test for.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run verify
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -r web sim render input assets _site/
+          # SFX ship; MUSIC does not. The sound effects are permitted, the
+          # soundtrack is sold separately — so this removes anything that
+          # looks like a track even though .gitignore should already have
+          # kept it out of the checkout. Two independent guards, because the
+          # cost of getting this wrong is a public upload you cannot recall.
+          rm -f _site/assets/audio/mus_* _site/assets/audio/bgm* \
+                _site/assets/audio/*.ogg 2>/dev/null || true
+          echo "audio shipping: $(ls _site/assets/audio 2>/dev/null | wc -l) files"
+          # A REDIRECT, not a copy. `web/index.html` loads `./main.js`, so
+          # copying it to the root would look right and 404 — and rewriting
+          # the path is a fragile thing to do in CI where nobody sees it fail.
+          # A redirect keeps exactly one copy of the page and cannot drift.
+          cat > _site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>Roaring Knight Simulator</title>
+          <meta http-equiv="refresh" content="0; url=./web/">
+          <p><a href="./web/">Open the simulator</a></p>
+          HTML
+          sed -i 's/^          //' _site/index.html
+          # Stamp the commit so a bug report can say which build it came from.
+          echo "${GITHUB_SHA::7}" > _site/BUILD
+          du -sh _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

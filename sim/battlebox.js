@@ -1,3 +1,6 @@
+import { mergeColor } from './gml.js';
+import { spawn } from './entity.js';
+import { afterimage } from './fx.js';
 // The battle box — obj_growtangle at steady state.
 //
 // obj_growtangle's parent object is obj_battlesolid, so the box itself is
@@ -13,21 +16,149 @@
 
 import { BATTLEBG_MASK } from './masks.js';
 
+/**
+ * Put a box straight into its settled state.
+ *
+ * The original creates a NEW obj_growtangle for every turn, so it grows in
+ * once per attack. The playable scenes create one box and reuse it, which meant
+ * it grew at scene build AND again when the first attack launched — the board
+ * visibly "starting twice". Scenes call this after spawning so the only
+ * grow-in a player sees is the one the attack triggers.
+ */
+export function settleBox(gt) {
+  gt.growcon = 2;
+  gt.timer = gt.maxtimer;
+  gt.image_xscale = gt.maxxscale;
+  gt.image_yscale = gt.maxyscale;
+  gt.image_angle = gt.target_angle;
+  gt.image_alpha = 1;
+  return gt;
+}
+
 export const battlebox = {
   name: 'obj_growtangle',
 
   create(e) {
     // Defaults from obj_growtangle Create, post-grow values.
-    if (e.xscale === undefined) e.xscale = 2; // maxxscale
-    if (e.yscale === undefined) e.yscale = 2; // maxyscale
+    // ONE SCALE, `image_xscale`/`image_yscale`, exactly as the original has it.
+    //
+    // There used to be a second pair, `xscale`/`yscale`, that the wall
+    // collision read while the renderer read the built-ins. Nothing kept them
+    // in step, and ROARING is where that broke in the worst way: the attack
+    // expands the arena to 17x by tweening `image_xscale`, so the box VANISHED
+    // off the edges of the screen while an invisible wall at the old size went
+    // on restricting the soul through a full-screen attack.
+    if (e.maxxscale === undefined) e.maxxscale = 2;
+    if (e.maxyscale === undefined) e.maxyscale = 2;
     e.isSolid = true; // parent: obj_battlesolid
     e.mask = BATTLEBG_MASK;
+
+    // THE ARENA IS GREEN, for the whole fight. `obj_growtangle`'s Create sets
+    // `image_blend = merge_color(c_green, c_lime, 0.5)`, and its Draw uses it on
+    // an UNDER-LAYER:
+    //
+    //     draw_sprite_ext(sprite_index, 1, ..., image_blend, image_alpha);
+    //     ...
+    //     draw_self();
+    //
+    // Frame 1 tinted green first, then the ordinary frame on top. So
+    // spr_battlebg_0's two frames are not an animation at all — they are two
+    // layers of one border, and the second one is the green glow. (This is the
+    // sprite whose frame count was blamed for the board "flickering"; the real
+    // cause was image_speed, but the two frames were never an animation either
+    // way.)
+    //
+    // c_green is RGB(0,128,0) and c_lime is RGB(0,255,0) — GameMaker packs
+    // colours BGR, so both have a zero red and blue channel.
+    e.image_blend = mergeColor([0, 128, 0], [0, 255, 0], 0.5);
     e.keep = 0;
     e.megakeep = 0;
     // GML built-ins: creation position. The slash's box jitter re-bases off
     // these every frame (x = xstart + choose(...)), it does not accumulate.
     e.xstart = e.x;
     e.ystart = e.y;
+
+    // THE GROW-IN. obj_growtangle Create starts the box at zero size and its
+    // Step opens it over 15 frames while spinning half a turn — this is how
+    // the arena arrives at the top of every attack, and it was never modelled,
+    // so the box simply appeared at full size.
+    // obj_growtangle Create: `image_speed = 0`. spr_battlebg_0 has TWO frames
+    // and the engine's default image_speed is 1, so without this the box
+    // alternated between them every frame — the battle board's edges visibly
+    // flickering for the whole fight.
+    e.image_speed = 0;
+    e.image_index = 0;
+
+    e.growcon = 1;
+    e.timer = 0;
+    e.maxtimer = 15;
+    e.target_angle = 0;
+    e.growscale = 2;
+    e.image_xscale = 0;
+    e.image_yscale = 0;
+    e.image_angle = 180;
+    e.image_alpha = 0.3;
+  },
+
+  /**
+   * obj_growtangle Step's growth block. growcon 1 opens, 3 closes (ROARING's
+   * ending uses 3), 2 is settled.
+   *
+   *   sizer       = timer / maxtimer
+   *   image_scale = maxscale * sizer
+   *   image_angle = 180 + 180 * sizer + target_angle
+   *   image_alpha = 0.5 + sizer * 0.5
+   *
+   * THE WALLS FOLLOW THE DRAWING, because in the original there is only one
+   * scale. An earlier version kept collision on a separate `xscale`/`yscale`
+   * pair to avoid the grow-in's rotating fractional-scale collision, which
+   * CLAUDE.md's T3 note flags as unreproduced by this engine's floor-sampling.
+   * That trade was wrong: it let the drawn box and the wall disagree, and
+   * ROARING — which expands the arena to 17x by tweening image_xscale — then
+   * played out with the box off the edges of the screen and an INVISIBLE WALL
+   * at the old size still penning the soul in, through a full-screen attack.
+   *
+   * The T3 caveat still stands for the 15 grow-in frames: collision there is
+   * against a rotating, fractional-scale mask and is not oracle-verified. The
+   * soul is centred and still for those frames, so nothing depends on it.
+   */
+  step(e, state) {
+    const growing =
+      (e.timer < e.maxtimer && e.growcon === 1) || (e.timer > 0 && e.growcon === 3);
+    if (!growing) return;
+
+    if (e.growcon === 1) e.timer += 1;
+    if (e.growcon === 3) e.timer -= 1;
+
+    const sizer = e.timer / e.maxtimer;
+    e.image_xscale = e.maxxscale * sizer;
+    e.image_yscale = e.maxyscale * sizer;
+    e.image_angle = 180 + 180 * sizer + e.target_angle;
+    e.image_alpha = 0.5 + sizer * 0.5;
+
+    // One afterimage of the box per growth frame. Its alpha is
+    // `(1 - image_alpha) + 0.1` — the INVERSE of the box's own, so the echo is
+    // strongest while the box is faint and has almost gone by the time it is
+    // solid. Its scale is `sizer * growscale`, not the box's image_xscale, so
+    // it stays square while the box takes its 2.25 x 1.75 shape. Both were
+    // invented here before and read as a flicker.
+    if (e.visible !== false) {
+      const d = spawn(state, afterimage, { x: e.x, y: e.y });
+      d.sprite_index = e.sprite_index ?? 'spr_battlebg_0';
+      const sc = sizer * e.growscale;
+      d.image_xscale = sc;
+      d.image_yscale = sc;
+      d.image_angle = e.image_angle;
+      d.image_alpha = 1 - e.image_alpha + 0.1;
+      d.image_speed = 0;
+      d.depth = e.depth - 1;
+    }
+
+    if (e.timer >= e.maxtimer && e.growcon === 1) {
+      e.growcon = 2;
+      e.image_angle = e.target_angle; // snap off the 360 the ramp lands on
+    }
+    if (e.timer <= 0 && e.growcon === 3) e.growcon = 4;
   },
 
   // obj_growtangle End Step: while the box is MOVING (path_speed or speed
@@ -39,10 +170,10 @@ export const battlebox = {
       const heart = state.soul;
       if (heart && heart.alive) {
         if (e.path_speed !== 0 || e.speed !== 0 || e.megakeep === 1) {
-          const lborder = e.x - (e.mask.w * e.xscale) / 2;
-          const rborder = e.x + (e.mask.w * e.xscale) / 2;
-          const uborder = e.y - (e.mask.h * e.yscale) / 2;
-          const dborder = e.y + (e.mask.h * e.yscale) / 2;
+          const lborder = e.x - (e.mask.w * e.image_xscale) / 2;
+          const rborder = e.x + (e.mask.w * e.image_xscale) / 2;
+          const uborder = e.y - (e.mask.h * e.image_yscale) / 2;
+          const dborder = e.y + (e.mask.h * e.image_yscale) / 2;
           if (heart.x < lborder + 5) heart.x = lborder + 5;
           if (heart.x > rborder - 22) heart.x = rborder - 22;
           if (heart.y < uborder + 5) heart.y = uborder + 5;

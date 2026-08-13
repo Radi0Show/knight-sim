@@ -23,7 +23,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 import { rotatingSlash } from '../../sim/attacks/rotating-slash.js';
 import { gmlCreate } from '../../sim/rng.js';
 import { real, int } from '../../sim/trace.js';
@@ -91,7 +91,7 @@ export function buildOracleT7Scene(state) {
   state.angleLists = ANGLE_LISTS.map((a) => [...a]);
   state.angleIndex = 0;
 
-  spawn(state, battlebox, { x: 320, y: 170 });
+  settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 314, y: 162 });
   state.soul.canmove = 0; // frozen, as in the oracle run
   spawn(state, spawner);

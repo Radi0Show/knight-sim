@@ -4,8 +4,20 @@
     {
       "name": "knight-sim",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8177"],
+      "runtimeArgs": [
+        "tools/devserver.py",
+        "8177"
+      ],
       "port": 8177
+    },
+    {
+      "name": "knight-dev",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "tools/devserver.py",
+        "8179"
+      ],
+      "port": 8179
     }
   ]
 }

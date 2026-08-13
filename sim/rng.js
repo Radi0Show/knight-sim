@@ -139,3 +139,8 @@ export function gmlIrandomRange(r, lo, hi) {
 export function gmlChoose(r, values) {
   return values[gmlU32(r) % values.length];
 }
+
+/** randomsign() — `(irandom(1) * 2) - 1`, so TWO draws, not one. */
+export function gmlRandomsign(r) {
+  return gmlIrandom(r, 1) * 2 - 1;
+}

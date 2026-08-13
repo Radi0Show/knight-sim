@@ -5,8 +5,29 @@
 // falls back to its COLLISION MASK, so a missing asset degrades to a shape
 // that is still exactly what the physics uses rather than disappearing.
 
-import { HEART_MASK, BATTLEBG_MASK, TOOTH_MASK, FOUNTAIN_MASK } from '../sim/masks.js';
+import { HEART_MASK, BATTLEBG_MASK, TOOTH_MASK, FOUNTAIN_MASK, SPRITE_MASKS } from '../sim/masks.js';
 import { loadSprites, SPRITE_FOR } from './sprites.js';
+import { drawPointingCone } from './draw/pointing-cone.js';
+import { drawPointingStar } from './draw/pointing-star.js';
+import { drawPointingStarchild } from './draw/pointing-starchild.js';
+import { drawRoaring, drawScreenPiece, resetScreenCut } from './draw/roaring.js';
+import { drawRoaringknightSlash } from './draw/slash.js';
+import { drawGrowtangle, tinted } from './draw/gm.js';
+import { drawSplitCut } from './draw/splitcut.js';
+import { drawMenu } from './menu.js';
+import { drawTensionBar } from './tensionbar.js';
+import { drawGraze } from './graze.js';
+import { drawFightBar } from './fightbar.js';
+import { drawBackground } from './background.js';
+import { drawDmgNumbers, drawAttackVfx } from './dmgnumbers.js';
+import {
+  drawSwordTunnelSword, drawTrackingSword, drawTrackingSwordsManager,
+  drawSplitslashStrike,
+} from './draw/swords.js';
+import { drawKnightCircle } from './draw/knight-circle.js';
+import { drawRotatingSlashTelegraph } from './draw/rotating-slash.js';
+import { createSplitBox } from './splitbox.js';
+import { scrEaseOut, clamp01, lerp } from '../sim/gml.js';
 
 const VIEW_W = 640;
 const VIEW_H = 480;
@@ -20,6 +41,15 @@ const COLORS = {
   slash: '#ff4444',
 };
 
+/**
+ * Fallback shapes, by OBJECT name. These four predate the sprite pack.
+ *
+ * The fallback below now also consults SPRITE_MASKS by SPRITE name, which is
+ * the more useful key: a bullet whose sprite is missing from the pack still
+ * draws the exact shape it collides with. `spr_pxwhite2` — the tracking
+ * swords' damage bar — is the case that forced it: 1x2 pixels, not worth
+ * shipping as a PNG, and invisible without this.
+ */
 const MASK_FOR = {
   obj_heart: HEART_MASK,
   obj_growtangle: BATTLEBG_MASK,
@@ -73,15 +103,253 @@ export async function createRenderer(canvas) {
    * Draw with GameMaker's convention: position is the instance origin, scale
    * about that origin, image_angle counter-clockwise in degrees.
    */
-  function blit(img, ox, oy, x, y, sx, sy, angleDeg, alpha) {
+  function blit(img, ox, oy, x, y, sx, sy, angleDeg, alpha, blend) {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(x, y);
     if (angleDeg) ctx.rotate((-angleDeg * Math.PI) / 180);
     ctx.scale(sx, sy);
-    ctx.drawImage(img, -ox, -oy);
+    // `draw_self()` uses the instance's own image_blend, and GameMaker
+    // MULTIPLIES by it. Ignoring it here left the battle box's border white for
+    // the whole fight when obj_growtangle's Create dyes it green, and left the
+    // tracking swords white when their Step reddens them as they charge.
+    ctx.drawImage(blend ? tinted(img, blend) : img, -ox, -oy);
     ctx.restore();
   }
+
+  const splitBox = createSplitBox(sprites);
+
+  /**
+   * PER-OBJECT DRAW EVENTS.
+   *
+   * The game's look lives in Draw events that composite layers, scroll
+   * textures and mask them against primitives — none of which a generic
+   * sprite blit can express. Each entry here is one ported Draw event; it
+   * returns true if it has drawn the object entirely, false to let the normal
+   * sprite draw still happen after it (GML's `draw_self()`).
+   */
+  // ROARING'S SCREEN CUT IS A ONE-SHOT, and the practice loop replays the
+  // attack — so the snapshot has to be dropped when the turn that took it is
+  // over, or the second run flings the FIRST run's photograph apart. Keyed off
+  // the controller disappearing, which is the only signal the renderer has.
+  let roaringWasAlive = false;
+
+  const roaringOwnsIt = (state) =>
+    state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2' && !x.stop);
+
+  const DRAW_EVENTS = {
+    obj_knight_pointing_cone: drawPointingCone,
+    obj_knight_pointing_star: drawPointingStar,
+    obj_knight_roaring2: drawRoaring,
+    obj_marker_screenpiece: drawScreenPiece,
+
+    // The slash the fight throws most: rotating slash spawns a fan of these
+    // every cycle in every phase, and Roaring throws one at the cut. It was
+    // rendering as a plain line — see render/draw/slash.js.
+    obj_roaringknight_slash: drawRoaringknightSlash,
+
+    obj_sword_tunnel_sword: drawSwordTunnelSword,
+    obj_tracking_sword1: drawTrackingSword,
+    obj_tracking_swords_manager: drawTrackingSwordsManager,
+
+    /**
+     * `obj_tracking_sword_slash`'s entire Draw event is `timer++; if (timer ==
+     * 3) instance_destroy();` — no sprite draw at all. It reaches the screen
+     * only through its manager's additive, box-clipped surface, so the generic
+     * blit must not draw it as well. (The timer and destroy are in the sim's
+     * endStep, where Draw sits.)
+     */
+    obj_tracking_sword_slash: () => true,
+    obj_roaringknight_splitslash: drawSplitslashStrike,
+    obj_knight_split_growtangle_effect: drawSplitCut,
+
+    // The arena's green under-layer. See drawGrowtangle — the board is green
+    // for the whole fight and this had been drawing only the top layer.
+    // The board is drawn only during the bullet phase — see the note in
+    // sim/scenes/practice.js. `boardVisible` is undefined in scenes that never
+    // set it (the oracle scenes), and those must keep drawing it.
+    obj_growtangle: (ctx, e, state, deps) => {
+      // RETURN TRUE, not undefined. A DRAW_EVENTS entry that returns falsy
+      // falls through to the generic blit, so an early `return` suppressed
+      // the custom draw and let the DEFAULT one draw the board anyway —
+      // the box stayed on screen through the whole command phase.
+      if (state.boardVisible === false) return true;
+      drawGrowtangle(ctx, e, deps.sprites, SPRITE_FOR.obj_growtangle);
+      return true;
+    },
+
+    /**
+     * DRAWN BY THE ROAR, NOT BY THEMSELVES.
+     *
+     * obj_knight_roaring_star, obj_particle_generic, obj_afterimage and
+     * obj_afterimage_grow have no Draw event at all in the original — every one
+     * of them reaches the screen only through obj_knight_roaring2's `with`
+     * blocks, composited into its star surface. Letting the generic sprite blit
+     * draw them too puts a second, un-graded copy outside the vortex.
+     *
+     * The starchild does have its own Draw, but the roar draws it as well and
+     * with different numbers (a fixed 45/60 fade rather than the child's own
+     * lifetime), so during Roaring the roar's copy is the one that counts.
+     */
+    obj_knight_roaring_star: (ctx, e, state) => roaringOwnsIt(state),
+    obj_particle_generic: (ctx, e, state) => roaringOwnsIt(state),
+    obj_afterimage: (ctx, e, state) => roaringOwnsIt(state),
+    obj_afterimage_grow: (ctx, e, state) => roaringOwnsIt(state),
+    obj_knight_pointing_starchild(ctx, e, state, deps) {
+      if (roaringOwnsIt(state)) return true;
+      return drawPointingStarchild(ctx, e, state, deps);
+    },
+    obj_knight_circle: drawKnightCircle,
+    obj_knight_rotating_slash: drawRotatingSlashTelegraph,
+
+    /**
+     * obj_knight_enemy's Draw opens with
+     * `if (i_ex(obj_knight_swordtunnelanim)) exit;` — during Sword Tunnel the
+     * anim object IS the knight, so he must not draw himself as well.
+     *
+     * Expressed here rather than as `visible = false` in sim/ because that is
+     * where the original expresses it: a Draw-event early exit, not a state
+     * change. The cone does the opposite and really does set visible.
+     */
+    obj_knight_enemy(ctx, e, state) {
+      return state.entities.some(
+        (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
+      );
+    },
+  };
+
+  // One reusable offscreen buffer for the compositing the Draw ports need.
+  let scratchCanvas = null;
+  function scratch(w, h) {
+    if (!scratchCanvas) scratchCanvas = document.createElement('canvas');
+    if (scratchCanvas.width !== w || scratchCanvas.height !== h) {
+      scratchCanvas.width = w;
+      scratchCanvas.height = h;
+    }
+    return scratchCanvas;
+  }
+  /** The arena's screen rect, for Draw ports that clip to the battle box. */
+  function boxRect(state) {
+    const gt = state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
+    if (!gt) return null;
+    const w = 75 * gt.image_xscale;
+    const h = 75 * gt.image_yscale;
+    return { x: gt.x - w / 2, y: gt.y - h / 2, w, h };
+  }
+
+  const drawDeps = { sprites, VIEW_W, VIEW_H, scratch, boxRect };
+
+  /**
+   * THE SECOND TELEGRAPH LAYER, from obj_roaringknight_boxsplitter_attack's
+   * Draw: a 142x142 surface centred on the box, into which every pending
+   * splitslash draws a SHORTER bar (`clamp01(timer/30) * 90`, not the
+   * screen-wide `ease*180` the slash draws for itself), masked with two
+   * counter-scrolling copies of spr_knight_bullet_flow and blitted additively.
+   *
+   * This is the layer that actually reads as "a cut is coming HERE": it is
+   * clipped to the arena and it has the flowing texture. Drawing only the
+   * long bar — as this renderer first did — gets the geometry right and the
+   * character wrong.
+   */
+  const hellSurface = (() => {
+    const c = document.createElement('canvas');
+    c.width = 142;
+    c.height = 142;
+    return c;
+  })();
+
+  function drawHellSurface(state) {
+    const px = sprites.get('spr_pxwhite10_center');
+    const flow = sprites.get('spr_knight_bullet_flow');
+    if (!px || !px.frames.length) return;
+
+    const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
+    const pending = state.entities.filter(
+      (x) => x.alive && x.type.name === 'obj_roaringknight_splitslash' && !x.slash,
+    );
+    if (!gt || !pending.length) return;
+
+    const g = hellSurface.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, 142, 142);
+
+    for (const e of pending) {
+      const ease = scrEaseOut(clamp01(e.timer / 30), 3);
+      const spin = (ease * 15 - 15) * e.flip;
+      const size = lerp(4, 0, ease);
+      const length = clamp01(e.timer / 30) * 90;
+
+      g.save();
+      g.translate(71 + e.xoffset, 71 + e.yoffset);
+      g.rotate((-(spin + e.image_angle + e.angleoffset) * Math.PI) / 180);
+      g.scale(length, size);
+      g.drawImage(tintedPixel, -px.meta.ox, -px.meta.oy);
+      g.restore();
+
+      // bm_dest_alpha: the flow texture shows only where the bar already is.
+      if (flow && flow.frames.length) {
+        g.save();
+        g.globalCompositeOperation = 'source-atop';
+        const f = flow.frames[2 % flow.frames.length];
+        g.scale(0.25, 0.25);
+        g.drawImage(f, e.timer / 0.25, e.timer / 0.25);
+        g.drawImage(f, (-e.timer + 40) / 0.25, (-e.timer + 40) / 0.25);
+        g.restore();
+      }
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(hellSurface, gt.x - 71, gt.y - 71);
+    ctx.restore();
+  }
+
+  /**
+   * obj_roaringknight_splitslash's OWN telegraph — the long red bar that spins
+   * into place over the 30 frames before a cut. Additive, drawn at the box's
+   * position plus this slash's own offsets, so it shows EXACTLY where the cut
+   * will land. Separate from, and drawn alongside, the surface layer above.
+   */
+  function drawTelegraph(e, state) {
+    const px = sprites.get('spr_pxwhite10_center');
+    if (!px || !px.frames.length) return;
+
+    const gt =
+      state.entities.find((x) => x.alive && x.type.name === 'obj_knight_split_growtangle') ??
+      state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
+    if (!gt) return;
+
+    const ease = scrEaseOut(clamp01(e.timer / 30), 3);
+    const spin = (ease * 15 - 15) * e.flip;
+    const size = lerp(4, 0, ease);
+    const length = ease * 180;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(gt.x + e.xoffset, gt.y + e.yoffset);
+    ctx.rotate((-(spin + e.image_angle + e.angleoffset) * Math.PI) / 180);
+    ctx.scale(length, size);
+    // merge_color(c_black, c_red, 0.5)
+    ctx.globalAlpha = 1;
+    ctx.filter = 'none';
+    ctx.drawImage(tintedPixel, -px.meta.ox, -px.meta.oy);
+    ctx.restore();
+  }
+
+  // The telegraph's bar is one 10x10 sprite tinted dark red; bake it once.
+  const tintedPixel = (() => {
+    const px = sprites.get('spr_pxwhite10_center');
+    const c = document.createElement('canvas');
+    c.width = px ? px.meta.w : 10;
+    c.height = px ? px.meta.h : 10;
+    const g = c.getContext('2d');
+    if (px && px.frames.length) g.drawImage(px.frames[0], 0, 0);
+    else g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = '#800000'; // merge_color(c_black, c_red, 0.5)
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
+  })();
 
   function drawEntity(e, name) {
     const sx = e.image_xscale ?? e.xscale ?? 1;
@@ -89,10 +357,15 @@ export async function createRenderer(canvas) {
     const ang = e.image_angle ?? 0;
     const alpha = e.image_alpha ?? 1;
 
-    const entry = sprites.get(e.sprite ?? SPRITE_FOR[name]);
+    const entry = sprites.get(e.sprite_index ?? e.sprite ?? SPRITE_FOR[name]);
     if (entry && entry.frames.length) {
       const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
-      blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y, sx, sy, ang, alpha);
+      // `renderX/renderY` let an object draw somewhere other than its own
+      // position, which is what a GML Draw event does freely. ROARING needs it:
+      // its instance is parked off screen while the knight is drawn centre.
+      const dx = e.renderX ?? e.x;
+      const dy = e.renderY ?? e.y;
+      blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, dx, dy, sx, sy, ang, alpha, e.image_blend);
       return true;
     }
 
@@ -101,20 +374,72 @@ export async function createRenderer(canvas) {
       blit(baked[name], mask.originX, mask.originY, e.x, e.y, sx, sy, ang, alpha);
       return true;
     }
+
+    // Then by sprite name, baked on first use. This is what makes bullets with
+    // no PNG visible rather than silently absent — and what you see is exactly
+    // the shape the collision test uses.
+    const sm = SPRITE_MASKS[e.sprite_index];
+    if (sm) {
+      const key = `sprite:${e.sprite_index}`;
+      if (!baked[key]) baked[key] = bakeMask(sm, COLORS.fallback);
+      blit(baked[key], sm.originX, sm.originY, e.x, e.y, sx, sy, ang, alpha);
+      return true;
+    }
     return false;
   }
 
   function draw(state) {
+    {
+      const roaringNow = state.entities.some(
+        (e) => e.alive && e.type.name === 'obj_knight_roaring2',
+      );
+      if (roaringWasAlive && !roaringNow) resetScreenCut();
+      roaringWasAlive = roaringNow;
+    }
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
+    // obj_bgfountaintest, at depth 150000 — behind absolutely everything.
+    // obj_knight_enemy's Create destroys obj_battleback and puts this in its
+    // place, so the fight is played against the dark fountain and not the flat
+    // black this drew before. See render/background.js: its brightness and
+    // speed are read off the Knight's HP.
+    drawBackground(ctx, state, sprites);
+
     ctx.save();
+
+    // SCREEN SHAKE IS ALREADY IN state.view. obj_shake (sim/shake.js) moves
+    // the camera itself, verified against the recording, so the renderer just
+    // honours the view like it does for everything else.
+    //
+    // There used to be an extra jitter here, derived from a `state.shake`
+    // magnitude and flipped by `state.frame % 2`. Both it and its only caller
+    // were invented, and a ±3px whole-screen wobble alternating EVERY FRAME is
+    // what the battle board "flickering" was.
     ctx.translate(-state.view.x, -state.view.y);
 
-    for (const e of state.entities) {
-      if (!e.alive || e === state.soul) continue;
-      if (e.visible === false) continue;
+    // Deeper depth draws first, matching GameMaker's painter order.
+    const ordered = state.entities
+      .filter((e) => e.alive && e !== state.soul && e.visible !== false)
+      .sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0) || a.seq - b.seq);
+
+    for (const e of ordered) {
       const name = e.type.name;
+
+      const custom = DRAW_EVENTS[name];
+      if (custom && custom(ctx, e, state, drawDeps)) continue;
+
+      if (name === 'obj_knight_split_growtangle') {
+        // The cut box draws itself out of surfaces; obj_growtangle is parked
+        // offscreen for the duration.
+        if (splitBox) splitBox.draw(ctx, e);
+        continue;
+      }
+
+      if (name === 'obj_roaringknight_splitslash' && !e.slash) {
+        drawTelegraph(e, state);
+        continue;
+      }
 
       if (name === 'obj_roaringknight_slash') {
         // Drawn in the original as a tapering wedge built from triangles, not
@@ -136,11 +461,20 @@ export async function createRenderer(canvas) {
       drawEntity(e, name);
     }
 
+    // The boxsplitter's surface telegraph sits above the arena, below the soul.
+    drawHellSurface(state);
+
     // Soul last so a bullet never hides it.
     const soul = state.soul;
     if (soul && soul.alive) {
       const iFrames = state.invTimer > 0;
-      const hidden = iFrames && Math.floor(state.frame / 2) % 2 === 0;
+      // The soul is DESTROYED with the board, not just idle — Alarm 11 does
+      // `with (obj_heart) instance_destroy(); with (obj_growtangle)
+      // instance_destroy();` in one block. The soul has its own draw path here
+      // rather than going through DRAW_EVENTS, so suppressing it there was not
+      // enough and a lone heart hung in the air over the command menu.
+      const hidden = state.boardVisible === false
+        || (iFrames && Math.floor(state.frame / 2) % 2 === 0);
       if (!hidden) {
         const entry = sprites.get('spr_dodgeheart');
         if (entry && entry.frames.length) {
@@ -155,8 +489,34 @@ export async function createRenderer(canvas) {
       }
     }
 
+    drawGraze(ctx, state, sprites);
+
     ctx.restore();
+
+    // THE CHARBOX ROW, last and in screen space — the party panels sit over
+    // everything, including a full-screen attack.
+    drawTensionBar(ctx, state, sprites);
+    // Damage numbers go OVER the arena and UNDER the menu band — they are at
+    // the enemy's depth, and the band is drawn on top of everything.
+    // The impact lands UNDER the number — the number is thrown up out of it.
+    drawAttackVfx(ctx, state, sprites);
+    drawDmgNumbers(ctx, state, sprites);
+    drawMenu(ctx, state, sprites);
+    // The FIGHT bar sits where the menu was — the menu is closed while it runs.
+    drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);
   }
 
-  return { draw, VIEW_W, VIEW_H, spriteCount: sprites.size };
+  // Frame counts for the sim's animation phase. sim/ must not read the
+  // filesystem, so the renderer — which has the manifest anyway — hands them
+  // over. Without this, image_speed does nothing and everything sits on frame 0.
+  const spriteFrames = {};
+  const spriteRate = {};
+  for (const [name, entry] of sprites) {
+    spriteFrames[name] = entry.frames.length;
+    const m = entry.meta;
+    spriteRate[name] =
+      m.playbacktype === 'FramesPerSecond' ? (m.playback ?? 30) / 30 : (m.playback ?? 1);
+  }
+
+  return { draw, VIEW_W, VIEW_H, spriteCount: sprites.size, spriteFrames, spriteRate };
 }

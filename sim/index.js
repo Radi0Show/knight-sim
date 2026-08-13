@@ -7,6 +7,8 @@
 
 import { runPhase, runAlarms, reap } from './entity.js';
 import { traceRow } from './trace.js';
+import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK } from './masks.js';
+import { stepGraze } from './tension.js';
 
 export { createState } from './state.js';
 export { spawn, destroy, ALARM_COUNT } from './entity.js';
@@ -27,7 +29,7 @@ export { FPS, MS_PER_FRAME, drain } from './clock.js';
  * And a bullet hit registers in the heart's Collision event (which just does
  * `with (other) event_user(5)`) — after the move, before the clamp.
  */
-export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'endStep'];
+export const PHASES = ['animation', 'beginStep', 'alarm', 'step', 'motion', 'collision', 'endStep'];
 
 /**
  * GameMaker's built-in motion, applied between the Step event and Collision
@@ -57,7 +59,30 @@ export const PHASES = ['beginStep', 'alarm', 'step', 'motion', 'collision', 'end
 function runMotion(state) {
   state.eventPhase = 'motion';
   for (const e of state.entities) {
-    if (!e.alive || !e.builtinMotion) continue;
+    if (!e.alive) continue;
+
+    // COMPONENT MOTION. GameMaker's real state is hspeed/vspeed; speed and
+    // direction are derived views of them. Most translated objects set
+    // speed/direction, but obj_diagonal_bullet assigns hspeed and vspeed
+    // directly, and routing that through speed*cos(direction) would move it by
+    // -4.999999... instead of exactly -5 every frame.
+    //
+    // So entities that opt in move by their components, and speed/direction
+    // are computed FROM them for anything that reads those (and for the
+    // trace) — which is the direction GameMaker itself derives.
+    if (e.componentMotion) {
+      if (!e.hspeed && !e.vspeed) continue;
+      state.counters.motionSteps += 1;
+      e.x = e.x + e.hspeed;
+      e.y = e.y + e.vspeed;
+      e.speed = Math.sqrt(e.hspeed * e.hspeed + e.vspeed * e.vspeed);
+      let dir = (Math.atan2(-e.vspeed, e.hspeed) * 180) / Math.PI;
+      if (dir < 0) dir += 360;
+      e.direction = dir;
+      continue;
+    }
+
+    if (!e.builtinMotion) continue;
 
     if (e.friction) {
       if (e.speed > 0) {
@@ -95,26 +120,115 @@ function runMotion(state) {
 }
 
 /**
- * The heart's Collision_obj_collidebullet event, generalised: for each live
- * bullet whose mask is still on, an overlap with the soul's mask fires the
- * bullet's User Event 5 (`other15`). Bullets opt in via isBullet + a mask.
+ * Does this bullet overlap the graze box?
+ *
+ * Uses the SAME rotated-mask test as the hit check, against a solid 50x50 mask
+ * for the box. The first version compared axis-aligned bounding boxes and it
+ * did not work: the tracking swords' slash is a 900x1 bar drawn at 45 degrees,
+ * and an unrotated bbox for it is a horizontal strip 1800 wide and 2 tall — it
+ * missed the soul entirely, so the whole attack paid no TP. Inflating the bbox
+ * to the rotated extent would have been worse than useless in the other
+ * direction: that bar's rotated AABB is a 1800px diamond that would "graze"
+ * from most of the screen.
+ *
+ * Long thin rotated bullets are most of this fight, so the graze needs the real
+ * shape, not a cheap approximation of it.
  */
+function grazes(e, gx, gy) {
+  const mask = e.mask ?? SPRITE_MASKS[e.sprite_index] ?? null;
+  if (!mask) return false;
+  return masksOverlap(
+    GRAZE_MASK, gx, gy,
+    mask, e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
+  );
+}
+
 function runCollisions(state) {
   state.eventPhase = 'collision';
   const heart = state.soul;
   if (!heart || !heart.alive) return;
 
+  // THE GRAZE runs before the hit test, as obj_grazebox's collision event does
+  // — it is gated on `global.inv < 0` and so cannot pay out on a frame the
+  // player is already invulnerable from a hit taken earlier.
+  stepGraze(state, grazes);
+
   for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
     if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
+    // A type may override the test (rotated-rect probes, swept lines, the
+    // splitslash's scr_precise_hit). Otherwise fall back to GameMaker's
+    // default: `mask_index = -1`, collide with my own sprite.
+    //
+    // THAT FALLBACK IS NEW, and its absence was a silent hole. This used to be
+    // `if (collides) {...}` with no else, so a bullet type that never defined
+    // one was skipped entirely — no check, no hit, no complaint. Three attacks
+    // in the real fight could not damage the player at all: the tracking
+    // swords' slash, the starchildren, and the vortex swords.
     const collides = b.type.collides;
+    let hit;
     if (collides) {
       state.counters.collisionChecks += 1;
-      if (collides(b, heart, state)) {
-        state.counters.collisionHits += 1;
-        b.type.other15(b, state);
+      hit = collides(b, heart, state);
+    } else {
+      hit = spriteMaskHit(b, heart);
+      if (hit === null) {
+        // No override AND no registered mask: this bullet cannot ever hit.
+        // Counted rather than ignored so a verifier can assert on it.
+        state.counters.unmaskedBullets += 1;
+        continue;
       }
+      state.counters.collisionChecks += 1;
     }
+    if (hit) {
+      state.counters.collisionHits += 1;
+      b.type.other15(b, state);
+    }
+  }
+}
+
+/**
+ * Sprite animation. GameMaker advances image_index by image_speed once per
+ * step, wrapping at the frame count — the engine does it, not the object, so
+ * no translated Create/Step ever assigns it frame by frame.
+ *
+ * IT RUNS AT THE START OF THE FRAME, before Begin Step — measured, not
+ * assumed. `obj_knight_rotating_slash` sets `image_speed = 0.5` in its Step on
+ * one frame and the recording does not move `image_index` until the NEXT one;
+ * advancing after the Step made it move a frame early. With the advance first,
+ * image_index is exact against traces/rotating_d2.csv for 200 frames, and the
+ * Animation End path that destroys obj_roaringknight_splitslash still passes.
+ *
+ * It lives in sim/ rather than render/ because it is real instance state: the
+ * Animation End event fires from it (obj_roaringknight_splitslash destroys
+ * itself that way), and a renderer that invented its own frame counter would
+ * drift from the object's own `image_index` reads.
+ *
+ * `frameCount` comes from the scene/renderer via `state.spriteFrames`, a plain
+ * name -> count map. sim/ must not read the filesystem, so it never loads the
+ * manifest itself; with no map, animation simply does not advance and the
+ * renderer falls back to frame 0.
+ */
+function runAnimation(state) {
+  for (const e of state.entities) {
+    if (!e.alive || !e.image_speed) continue;
+
+    // ADVANCE EVEN WITHOUT A FRAME COUNT. `spriteFrames` comes from the sprite
+    // manifest, which only the browser loads — so headless runs used to freeze
+    // every animation, and any Step logic keyed off `image_index` (rotating
+    // slash clamps it at 5) could never fire in a verifier. The count is only
+    // needed to WRAP; advancing is not conditional on it.
+    const n = state.spriteFrames?.[e.sprite_index] ?? 0;
+    // GameMaker multiplies image_speed by the SPRITE's own playback rate; a
+    // sprite authored at 6 fps in a 30 fps room advances 0.2 per step at
+    // image_speed 1. `state.spriteRate` carries that, defaulting to 1.
+    const rate = state.spriteRate?.[e.sprite_index] ?? 1;
+    let idx = (e.image_index ?? 0) + e.image_speed * rate;
+    if (n > 1 && idx >= n) {
+      idx -= n;
+      e.animationEnded = true;
+    }
+    e.image_index = idx;
   }
 }
 
@@ -127,6 +241,25 @@ function runCollisions(state) {
 export function stepFrame(state, input) {
   state.input = input;
 
+  // GameMaker latches xprevious/yprevious at the TOP of every frame, before any
+  // event runs, so during a Step they hold where the instance was last frame.
+  // obj_sword_tunnel_sword's Draw builds its motion trail by lerping between
+  // them and the current position — a corridor sword with no xprevious draws
+  // ten stacked copies of itself instead of a streak.
+  for (const e of state.entities) {
+    if (!e.alive) continue;
+    e.xprevious = e.x;
+    e.yprevious = e.y;
+  }
+
+  // `i_ex(obj_knight_roaring2)` — HoldBreath's bump to soul speed 6 is gated
+  // on Roaring being on screen, so the flag has to track the object's life
+  // rather than being set once when the attack launches.
+  state.roaringActive = state.entities.some(
+    (e) => e.alive && e.type.name === 'obj_knight_roaring2',
+  );
+
+  runAnimation(state);
   runPhase(state, 'beginStep');
   runAlarms(state);
   runPhase(state, 'step');

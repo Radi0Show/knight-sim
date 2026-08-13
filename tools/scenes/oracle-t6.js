@@ -15,7 +15,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 import { splitGrowtangle } from '../../sim/attacks/split-growtangle.js';
 import { gmlCreate } from '../../sim/rng.js';
 import { real, int } from '../../sim/trace.js';
@@ -67,7 +67,7 @@ export function buildOracleT6Scene(state) {
   state.damageEnabled = false;
   state.splitter = null;
 
-  spawn(state, battlebox, { x: 320, y: 170 });
+  settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 318, y: 162 });
   spawn(state, splitSpawner);
 

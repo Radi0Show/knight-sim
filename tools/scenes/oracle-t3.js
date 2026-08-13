@@ -24,7 +24,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 
 // Window bounds:
 //   from 4        — after the grow-in stall (see above)
@@ -46,7 +46,7 @@ export function buildOracleT3Scene(state) {
   state.frame = T3_WINDOW.from;
 
   // Creation order matches the tester: box before heart.
-  spawn(state, battlebox, { x: 320, y: 170 });
+  settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 318, y: 162 });
   return state;
 }

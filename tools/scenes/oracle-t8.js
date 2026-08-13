@@ -22,7 +22,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 import { pointingCone } from '../../sim/attacks/pointing-cone.js';
 import { gmlCreate } from '../../sim/rng.js';
 import { real } from '../../sim/trace.js';
@@ -58,7 +58,7 @@ export function buildOracleT8Scene(state) {
   // oracle pins turntimer at 999 throughout the recorded window.
   state.turntimer = 999;
 
-  spawn(state, battlebox, { x: 320, y: 170 });
+  settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 314, y: 162 });
   state.soul.canmove = 0;
   spawn(state, spawner);

@@ -13,6 +13,7 @@
 // party hp[] bookkeeping is out of scope per CLAUDE.md.
 
 import { destroy } from '../entity.js';
+import { scrDamageAll } from '../damage.js';
 
 export function scrBulletInit(e) {
   e.grazed = 0;
@@ -74,10 +75,16 @@ export function collidebulletOther15(e, state) {
   if (!state.damageEnabled) return;
 
   if (e.active === 1 || e.active === true) {
-    // target != 3 -> scr_damage(); target == 3 -> scr_damage_all().
-    // Identical observable at this altitude: inv gate and reset.
+    // THE KNIGHT'S BULLETS HIT THE WHOLE PARTY. `scr_damage_all` loops all
+    // three and then sets the shared invulnerability, which is why one contact
+    // takes three chunks out of the bars rather than one.
+    //
+    // This used to reset `invTimer` and stop — the hit registered, the timer
+    // ran, and nobody lost any HP. The bars the menu draws were decorative.
     if (state.invTimer < 0) {
-      state.invTimer = state.invc * 30;
+      scrDamageAll(state, e.damage ?? 1, {
+        flurrySoftened: state.flurrySoftened === true,
+      });
     }
     if (e.destroyonhit === 1 || e.destroyonhit === true) {
       destroy(e);

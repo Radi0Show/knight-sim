@@ -14,6 +14,10 @@ oracle/
 # bundling sprites (free, non-commercial). 96 sprites / 271 frames / ~1.1 MB,
 # only what the fight code references.
 !assets/sprites/*.png
+# The battle UI draws item and ACT names with a REAL font asset (fnt_mainbig),
+# not the digit-only sprite fonts. Same posture as the sprites: extracted from
+# the player own copy, free and non-commercial.
+!assets/fonts/*.png
 *.wav
 *.ogg
 *.mp3
@@ -28,3 +32,17 @@ node_modules/
 
 # macOS
 .DS_Store
+
+# AUDIO NOW SHIPS. The earlier stance here was that the soundtrack is sold
+# separately so nothing audio could go in the repo; CLAUDE.md now records that
+# the sound effects are specifically permitted by Toby Fox and Sebastian Wolf,
+# so the SFX travel with the build like the sprites do.
+#
+# STILL EXCLUDED, and the distinction is the whole point: these are the short
+# SFX extracted from audiogroup1, NOT music. Nothing from the soundtrack goes
+# in — no `mus_*`, no `bgm`, no full tracks.
+!assets/audio/*.wav
+!assets/audio/index.json
+assets/audio/*.ogg
+assets/audio/mus_*
+assets/audio/bgm*

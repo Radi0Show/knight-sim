@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the fight looked or behaved wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Press `B` in the game first.** It copies a *replay token* to your
+        clipboard — a short string that reproduces your exact run, frame for
+        frame, on any machine.
+
+        With the token I can replay what you saw without guessing, so you only
+        have to tell me what looked wrong, not how to get there.
+
+  - type: textarea
+    id: token
+    attributes:
+      label: Replay token
+      description: Press B in the game, then paste here. It starts with `K1.`
+      placeholder: K1.9.fight.-.0.420.MgESJx...
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong?
+      description: |
+        What you expected, and what happened instead. "The knight's sprite
+        vanished when the box split" is plenty — the token has the rest.
+    validations:
+      required: true
+
+  - type: input
+    id: when
+    attributes:
+      label: Roughly when? (optional)
+      description: A frame number from the HUD, or "just before the tunnel ended".
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of thing is it?
+      options:
+        - Looks wrong (sprite, colour, effect, position)
+        - Behaves wrong (damage, timing, hitbox, menu)
+        - Sound
+        - Crash or freeze
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: build
+    attributes:
+      label: Build (optional)
+      description: The 7 characters at `<site>/BUILD`, if you can grab it.

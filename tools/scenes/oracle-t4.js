@@ -18,7 +18,7 @@
 
 import { spawn } from '../../sim/entity.js';
 import { soul } from '../../sim/soul.js';
-import { battlebox } from '../../sim/battlebox.js';
+import { battlebox, settleBox } from '../../sim/battlebox.js';
 import { roaringknightSlash } from '../../sim/attacks/roaringknight-slash.js';
 import { real } from '../../sim/trace.js';
 
@@ -55,7 +55,7 @@ export function buildOracleT4Scene(state) {
   state.frame = T4_WINDOW.from;
   state.chooseTable = CHOOSE_TABLE;
 
-  const gt = spawn(state, battlebox, { x: 320, y: 170 });
+  const gt = settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 318, y: 162 });
   spawn(state, slashSpawner);
 

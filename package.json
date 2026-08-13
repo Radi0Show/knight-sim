@@ -12,6 +12,7 @@
     "trace": "node tools/run-trace.mjs",
     "diff": "node tools/diff-trace.mjs",
     "serve": "python3 -m http.server 8177",
-    "gen-masks": "node tools/gen-masks.mjs"
+    "gen-masks": "node tools/gen-masks.mjs",
+    "replay": "node tools/replay.mjs"
   }
 }

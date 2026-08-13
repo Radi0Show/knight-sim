@@ -13,6 +13,7 @@
 // color == 1 — IS translated, including its position at the END of Step. That
 // placement matters: the new speed does not take effect until the next frame.
 
+import { soulSpeed } from './spells.js';
 import { placeMeetingSolid } from './collision.js';
 
 // obj_heart's VISIBLE sprite is spr_dodgeheart, 20x20, origin (0,0) — so
@@ -59,6 +60,17 @@ export const soul = {
     let bky = 0;
     let bkxy = 0;
     e.jelly = 2;
+
+    // HOLDBREATH is the one thing in this fight that changes soul speed, and
+    // it is applied from obj_knight_enemy's Step, not from obj_heart's:
+    //
+    //     if (holdbreathcount > 0 && i_ex(obj_heart))              wspeed = 5;
+    //     if (holdbreathcount > 0 && i_ex(obj_knight_roaring2) ...) wspeed = 6;
+    //
+    // Reassigned every frame by the knight, so it is a live property of the
+    // fight rather than a one-off write — which matters because the Roaring
+    // bump comes and goes with the attack while the base 5 persists.
+    e.wspeed = soulSpeed(state);
 
     if (input.left) press_l = 1;
     if (input.right) press_r = 1;

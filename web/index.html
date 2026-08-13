@@ -12,12 +12,36 @@
   canvas {
     background: #000; border: 1px solid #333;
     image-rendering: pixelated;
-    width: min(96vw, 1280px); height: auto; aspect-ratio: 4 / 3;
+    /* FIT THE VIEWPORT ON BOTH AXES. Sizing on width alone made the canvas
+       922px tall in a 720px window: the flex centring then pushed its top off
+       screen and the game's top ~65 rows were simply not visible. That is
+       where the Stars cone sits (y 78) and where the knight stands, so it read
+       as "the battle box is too high" and "the stars never appear".
+       The height term subtracts the HUD line and border. */
+    width: min(96vw, 1280px);
+    /* max() floor: if 100vh resolves to 0 (it can, mid-layout), the height
+       term goes negative and the canvas collapses to its border. */
+    max-width: max(320px, calc((100vh - 80px) * 1.3333));
+    height: auto; aspect-ratio: 4 / 3;
   }
   #hud { margin-top: 10px; opacity: .75; text-align: center; }
+  #picker { margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+  #picker select {
+    background: #1b1b1b; color: #ddd; border: 1px solid #444; padding: 3px 6px;
+    font: inherit;
+  }
+  #picker select:disabled { opacity: .4; }
 </style>
 </head>
 <body>
+  <div id="picker">
+    <select id="mode" title="Full fight, or one attack on repeat">
+      <option value="fight">Full fight — real order</option>
+      <option value="practice">Practice one attack</option>
+    </select>
+    <select id="attack" title="Which attack to practise"></select>
+    <select id="difficulty" title="Difficulty as the fight uses it"></select>
+  </div>
   <canvas id="game" width="640" height="480"></canvas>
   <div id="hud">loading…</div>
   <script type="module" src="./main.js"></script>

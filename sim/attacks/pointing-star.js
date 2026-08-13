@@ -18,21 +18,29 @@
 // flips every live star at once inside its `turntimer <= endtimer` branch —
 // that is the "fire" moment. See pointing-cone.js.
 //
-// NOT translated: obj_knight_pointing_starchild (148-line tracking bullet that
-// homes on obj_heart_follower). The burst is modelled as a count so the star's
-// own lifecycle can be verified; the children are a separate unit of work.
-// Also not translated: sprite animation, afterimages, sounds.
+// The burst now spawns real obj_knight_pointing_starchild instances
+// (sim/attacks/pointing-starchild.js) with the per-difficulty speeds, angles
+// and difficulty assignments. Not translated: sprite animation, afterimages,
+// sounds.
 
-import { destroy } from '../entity.js';
+import { spawn, destroy } from '../entity.js';
+import { cue } from '../audio.js';
 import { clamp01 } from '../gml.js';
-import { HEART_MASK, masksOverlap, STAR_MASK } from '../masks.js';
+import { STAR_MASK, scrPreciseHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
+import { pointingStarchild } from './pointing-starchild.js';
 
 export const pointingStar = {
   name: 'obj_knight_pointing_star',
 
   create(e, state) {
     scrBulletInit(e);
+    // MEASURED from the recording's sprite column. This was never assigned, so
+    // the stars had no sprite and the renderer drew nothing for them — the
+    // "stars sprites are not shown" report. The object's default sprite comes
+    // from its GameMaker definition, which the GML dump does not contain, so
+    // the trace is the only place it is written down.
+    e.sprite_index = 'spr_knight_bullet_star';
     e.growspeed = 0.02;
     e.image_xscale = 0;
     e.image_yscale = 0;
@@ -61,16 +69,41 @@ export const pointingStar = {
     e.speed = 0;
     e.direction = 0;
     e.image_angle = 0;
-    e.maskOff = true; // mask_index only becomes the star mask at con 2
+    // `mask_index = spr_knight_bullet_star_mask` — CREATE line 19. The star is
+    // dangerous from the moment it is fired.
+    //
+    // This used to set `maskOff = true` here, on the reading that the mask
+    // only arrives at con 2 because the Step assigns it there too. The Step's
+    // assignment is redundant; the Create already did it. The consequence was
+    // that every star crossing the arena during the charge passed straight
+    // through the soul, and the attack only became dangerous once the cone
+    // released them — 0 hits at con 0 against 15 after, with the soul parked
+    // directly on them.
+    e.maskOff = false;
     e.burst = 0; // starchildren that WOULD have spawned
   },
 
   step(e, state) {
-    // Offscreen cull, from the top of the original Step.
+    // Offscreen cull, from the top of the original Step:
+    //
+    //   x < camerax() - sprite_width / 2 ||
+    //   y < cameray() - sprite_height / 2 ||
+    //   y > cameray() + 480 + sprite_height / 2
+    //
+    // THE MARGIN IS NOT A CONSTANT. GameMaker's `sprite_width` is the sprite's
+    // width TIMES `image_xscale`, and these stars grow by `growspeed` every
+    // frame, so the cull box widens as they age. An earlier version of this
+    // translation hardcoded 12 and 18 — measured from one early frame — which
+    // killed a long-lived star roughly 30 frames too soon and made the live
+    // population diverge at f120.
+    //
+    // spr_knight_bullet_star / _easy are both 64x64.
+    const halfW = (64 * Math.abs(e.image_xscale)) / 2;
+    const halfH = (64 * Math.abs(e.image_yscale)) / 2;
     if (
-      e.x < state.view.x - 12 ||
-      e.y < state.view.y - 18 ||
-      e.y > state.view.y + 480 + 18
+      e.x < state.view.x - halfW ||
+      e.y < state.view.y - halfH ||
+      e.y > state.view.y + 480 + halfH
     ) {
       destroy(e);
       return;
@@ -88,7 +121,7 @@ export const pointingStar = {
       e.friction = 0.5;
       e.con += 1;
     } else if (e.con === 2) {
-      e.maskOff = false; // mask_index = spr_knight_bullet_star_mask
+      e.maskOff = false; // the Step re-assigns the same mask at con 2
       if (e.speed === 0) {
         // Friction has braked it to a stop; now it falls BACKWARDS along its
         // original heading and accelerates away.
@@ -100,6 +133,9 @@ export const pointingStar = {
       if (e.timer >= 40) {
         e.timer = 0;
         e.con += 1;
+        // The star going off. `playSound` is false for the ones the controller
+        // bursts in bulk, so a wave does not fire fifteen copies at once.
+        if (e.playSound) cue(state, 'snd_explosion_firework');
       }
       e.growstart = e.image_xscale;
     } else if (e.con === 3) {
@@ -108,8 +144,63 @@ export const pointingStar = {
       e.image_yscale = e.growstart + clamp01(e.timer / 2);
 
       if (e.timer === 3) {
-        // Burst: six starchildren in a fan. The children are not translated;
-        // record the count so the star's lifecycle stays verifiable.
+        // THE BURST. Six children, always — the original computes
+        // `var _count = 6; if (difficulty == 2) _count = 2;` and then loops
+        // `for (i = 0; i < 6; i++)`. `_count` is never read. ORIGINAL BUG,
+        // left as written.
+        let angle = 90;
+        if (e.difficulty === 2) angle += e.side;
+
+        for (let i = 0; i < 6; i++) {
+          const d = spawn(state, pointingStarchild, { x: e.x, y: e.y });
+          d.image_angle = angle;
+          d.direction = angle;
+
+          // scr_childbullet copies damage/grazepoints/timepoints/inv/target
+          // — but NOT difficulty, which is why it is assigned explicitly below.
+          d.damage = e.damage;
+          d.grazepoints = e.grazepoints;
+
+          if (e.difficulty === 0 && i % 2 === 1) {
+            // Half the shards at difficulty 0 are slow and short-lived: the
+            // fight's "three of six travel and last shorter".
+            d.speed = 1;
+            d.lifetime = 30;
+          } else {
+            d.speed = 4;
+          }
+
+          d.image_xscale = e.image_xscale * 0.5;
+          d.image_yscale = e.image_yscale * 0.5;
+          d.deceleration = 0.15;
+
+          if (e.difficulty === 2 && i % 3 > 0) {
+            // Four of six become inert trail shards.
+            d.difficulty = -1;
+            d.lifetime = 30;
+            d.speed = 2;
+            if (i === 1 || i === 4) {
+              d.speed /= 3;
+              d.minspeed /= 3;
+              d.deceleration /= 3;
+            } else {
+              d.speed *= 2 / 3;
+              d.minspeed *= 2 / 3;
+              d.deceleration *= 2 / 3;
+            }
+            d.sprite_index = 'spr_knight_starchild_trail';
+          } else {
+            // i = 0 and 3 at difficulty 2: these are the ones that home.
+            d.difficulty = e.difficulty;
+          }
+
+          // At difficulty 2 the steps are 180 and 0, which collapses all six
+          // onto TWO headings — the fight's "each star only explodes into two
+          // shards".
+          if (i === 1 || i === 4) angle += e.difficulty === 2 ? 180 : 48;
+          else angle += e.difficulty === 2 ? 0 : 66;
+        }
+
         e.burst = 6;
         e.active = false;
       }
@@ -119,11 +210,17 @@ export const pointingStar = {
     }
   },
 
+  /**
+   * `scr_precise_hit(3)` — a 3px probe at the soul's CENTRE against the star's
+   * mask, not a mask-vs-mask overlap.
+   *
+   * This used to be `masksOverlap(HEART_MASK, ...)`, which requires the soul's
+   * heart SHAPE to overlap the star's, and is far stricter than what the game
+   * does: stars visibly passing through the soul without registering. The
+   * probe ignores the heart's outline entirely.
+   */
   collides(e, heart) {
-    return masksOverlap(
-      HEART_MASK, heart.x, heart.y,
-      STAR_MASK, e.x, e.y, e.image_xscale, e.image_yscale, e.image_angle,
-    );
+    return scrPreciseHit(heart, e, STAR_MASK, 3);
   },
 
   other15: collidebulletOther15,

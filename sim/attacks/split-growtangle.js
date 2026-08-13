@@ -16,6 +16,12 @@
 // End Step clamps the soul into the widened box and ROUNDS its position —
 // which is why soul coordinates stay integral all through the attack.
 //
+// THE FLAMES IN THE GAP are two obj_markers created in Create, NOT anything the
+// Draw event does — which is why reading only the Draw event misses them. They
+// carry `spr_rk_split_flame_big` at double scale, face opposite ways, animate at
+// image_speed 0.5, and are re-placed onto the two cut faces every Step. They are
+// what makes the split read as CUT rather than as two rectangles moving apart.
+//
 // While distance > 0 the main box is parked at x = -9999 so it stops
 // colliding; it returns to xstart when the split closes. That is the
 // original's mechanism, not a hack.
@@ -26,10 +32,26 @@
 // DEAD CODE — nothing in the dump calls event_user(2) or event_user(3).
 
 import { spawn } from '../entity.js';
+import { splitGrowtangleEffect } from '../fx.js';
+import { cue } from '../audio.js';
+
+/**
+ * obj_marker carrying `spr_rk_split_flame_big` — the burning cut face.
+ *
+ * A bare sprite carrier: no Step of its own, positioned and rotated entirely by
+ * obj_knight_split_growtangle. It animates (image_speed 0.5, six frames) and is
+ * destroyed with the organism in its CleanUp.
+ */
+export const splitFlameMarker = {
+  name: 'obj_marker_splitflame',
+  create(e) {
+    e.image_speed = 0.5;
+  },
+};
 import { splitBullet } from './split-bullet.js';
 import {
   scrEaseIn, scrEaseOut, scrMovetowards, inverselerp, sign,
-  lengthdirX, lengthdirY,
+  lengthdirX, lengthdirY, WHITE, GRAY,
 } from '../gml.js';
 import { gmlChoose, gmlRandomRange, gmlIrandomRange } from '../rng.js';
 
@@ -62,6 +84,34 @@ export const splitGrowtangle = {
     const gt = box(state);
     e.image_xscale = gt ? gt.xscale : 2;
     e.image_yscale = gt ? gt.yscale : 2;
+    // THE FLAMES IN THE GAP. Two obj_markers carrying `spr_rk_split_flame_big`,
+    // created facing OPPOSITE ways (image_angle 180 and 0) at double scale and
+    // animating at image_speed 0.5. They are repositioned every frame onto the
+    // two cut faces, so what the player sees is the severed edges of the arena
+    // burning at each other across the gap — the effect that makes the split
+    // look cut rather than merely moved apart.
+    //
+    // `c_gray` is a MULTIPLY, so the flame art is drawn at half brightness.
+    e.markers = [0, 1].map((i) => {
+      const m = spawn(state, splitFlameMarker, {
+        x: e.x + (i === 0 ? 2 : 0),
+        y: e.y + (i === 0 ? -1 : 2),
+      });
+      m.sprite_index = 'spr_rk_split_flame_big';
+      m.image_speed = 0.5;
+      m.image_xscale = 2;
+      m.image_yscale = 2;
+      m.image_angle = i === 0 ? 180 : 0;
+      m.image_blend = GRAY;
+      m.depth = e.depth + 10;
+      return m;
+    });
+
+    // `image_blend = obj_growtangle.image_blend;` — the FIRST line of Create.
+    // The cut box keeps the arena's green; every `draw_surface_ext` of a half
+    // passes it. Without it the box turns white the moment it splits, which is
+    // the one frame the player is most likely to be looking at it.
+    e.image_blend = gt ? gt.image_blend : WHITE;
     e.con = 0;
     e.timer = 0;
     e.distance = 0;
@@ -112,6 +162,23 @@ export const splitGrowtangle = {
     e.old_distance = e.distance;
 
     if (e.con === 1) {
+      // THE CUT EFFECT, on the first frame of the split — the screen-tear and
+      // flash (sim/fx.js). It carries the cut's geometry so it can slide the
+      // halves along the right normal.
+      if (e.timer <= 1 && !e.effectSpawned) {
+        e.effectSpawned = true;
+        const fx = spawn(state, splitGrowtangleEffect, { x: e.x, y: e.y });
+        fx.angle = e.angle;
+        fx.diagonal = e.diagonal;
+        fx.xoffset = e.xoffset;
+        fx.yoffset = e.yoffset;
+        fx.vertical = e.vertical;
+        fx.image_xscale = e.image_xscale;
+        fx.image_yscale = e.image_yscale;
+        fx.image_blend = e.image_blend;
+        fx.sprite_index = e.sprite_index;
+      }
+
       if (e.timer >= e.split_wait + e.split_delay) {
         if (e.disable_on_close) {
           for (const b of state.entities) {
@@ -120,6 +187,10 @@ export const splitGrowtangle = {
           e.child_bullet = [];
           e.count = 0;
         }
+
+        // THE BOX BREAKING. `snd_play_x(snd_knight_boxbreak, 1, 1.1)` fires on
+        // the frame the arena actually parts, before the teeth are placed.
+        cue(state, 'snd_knight_boxbreak', 1.1);
 
         eventUser0(e); // -> con 2, timer 0
 
@@ -132,6 +203,12 @@ export const splitGrowtangle = {
           e.heart_x = heart.x + 10 < e.x + e.xoffset ? -1 : 1;
           e.heart_y = heart.y + 10 < e.y + e.yoffset ? -1 : 1;
         }
+
+        // TWO fires when the cut was delayed by a hit — the low one is the
+        // extra. `split_delay` is set to 5 by splitslash's Other_15, so a
+        // player who just got cut hears a doubled report.
+        if (e.split_delay > 0) cue(state, 'snd_chargeshot_fire', 0.5);
+        cue(state, 'snd_chargeshot_fire');
 
         e.split_delay = 0;
 
@@ -260,6 +337,44 @@ export const splitGrowtangle = {
           if (e.split_wait > 5) e.split_wait -= 1;
           if (e.split_hold > 30) e.split_hold -= 2;
         }
+        // The box SLAMMING SHUT — outside the if/else, so it plays on every
+        // close regardless of which timing branch tightened.
+        cue(state, 'snd_locker');
+      }
+    }
+
+    // THE FLAMES RIDE THE CUT FACES. Straight from the Step, immediately
+    // before the box is parked: each marker is placed on the inner edge of its
+    // half and turned to face across the gap, so they stay pinned to the
+    // severed edges however far apart the halves travel.
+    //
+    // The +2/-1/+3 offsets are the original's and are not symmetric — marker 0
+    // sits one pixel back, marker 1 three forward.
+    if (e.markers && e.markers.length === 2) {
+      const [m0, m1] = e.markers;
+      const d = Math.round(e.distance);
+      if (e.diagonal) {
+        m0.image_angle = e.vertical ? -45 : 225;
+        m1.image_angle = e.vertical ? 135 : 45;
+        const sq = Math.SQRT1_2 * d;
+        m0.x = e.x - sq - 1 + e.xoffset;
+        m1.x = e.x + sq + 3 + e.xoffset;
+        m0.y = e.y - sq - 1 + e.yoffset;
+        m1.y = e.y + sq + 3 + e.yoffset;
+      } else if (e.vertical) {
+        m0.image_angle = -90;
+        m1.image_angle = 90;
+        m0.x = e.x - d - 1 + e.xoffset;
+        m1.x = e.x + d + 3 + e.xoffset;
+        m0.y = e.y - 1 + e.yoffset;
+        m1.y = e.y + 3 + e.yoffset;
+      } else {
+        m0.image_angle = 180;
+        m1.image_angle = 0;
+        m0.y = e.y - d - 1 + e.yoffset;
+        m1.y = e.y + d + 3 + e.yoffset;
+        m0.x = e.x - 1 + e.xoffset;
+        m1.x = e.x + 3 + e.xoffset;
       }
     }
 

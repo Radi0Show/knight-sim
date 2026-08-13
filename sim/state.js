@@ -10,6 +10,12 @@
 // The consequence to respect: never hold a reference to state across frames
 // expecting a snapshot. If you need one, serialise it.
 
+import { freshParty } from './damage.js';
+import { freshInventory } from './items.js';
+import { createHeroes } from './heroes.js';
+import { createDmgNumbers } from './dmgnumbers.js';
+import { createAttackVfx } from './attackvfx.js';
+import { createKnight } from './knight.js';
 import { createRng, gmlCreate } from './rng.js';
 
 export function createState({ seed, traceBulletSlots = 0 } = {}) {
@@ -49,6 +55,28 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     // contact is still detected and counted, but no inv reset and no
     // destroy-on-hit — exactly what the patched game does.
     damageEnabled: true,
+    /** Party HP, and the loadout the damage chain reads. See sim/damage.js. */
+    partyHp: freshParty(),
+    loadout: { shadowMantle: true },
+    /** `global.charaction[]` — 10 is DEFEND, which the menu sets. */
+    charaction: [0, 0, 0],
+    gameOver: false,
+    /** The Knight — HP 7300, and the outgoing multipliers. */
+    knight: createKnight(),
+    /** The live attack bar, for the renderer. Null between turns. */
+    fightBar: null,
+    /** obj_heroparent's per-character animation state. */
+    heroes: createHeroes(),
+    /** obj_dmgwriter — the floating damage numbers. */
+    dmg: createDmgNumbers(),
+    /** obj_basicattack — the impact sprites on a FIGHT hit. */
+    attackVfx: createAttackVfx(),
+    /** TP. `global.tension` / `global.maxtension` — see sim/tension.js. */
+    tension: 0,
+    /** The fight's twelve slots — see sim/items.js. */
+    inventory: freshInventory(),
+    grazeTimer: 0,
+    grazeCount: 0,
 
     // Recorded choose() outcomes for RNG replay. Superseded by gmlRng for
     // new work, kept for the T4 slash scene.
@@ -81,7 +109,8 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     // these so "the check ran and resolved negative" is distinguishable from
     // "the check never ran".
     counters: {
-      collisionChecks: 0, // bullet-vs-heart tests actually evaluated
+      collisionChecks: 0,
+      unmaskedBullets: 0, // bullet-vs-heart tests actually evaluated
       collisionHits: 0, // other15 dispatches
       motionSteps: 0, // built-in motion applications
       alarmFires: 0, // alarm handlers invoked
