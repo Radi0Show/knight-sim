@@ -179,6 +179,28 @@ const director = {
     // `arenaOpen` is set where the board's life actually changes — when
     // openArena runs, and cleared when the turn ends — so it cannot lag.
     state.boardVisible = !!e.arenaOpen;
+
+    // THE BOARD'S WALLS LIVE AND DIE WITH THE BOARD.
+    //
+    // `obj_growtangle`'s parent is `obj_battlesolid`, so the box IS the wall —
+    // and the Knight only creates it in his `mnfight == 1.5` setup, after the
+    // party has finished acting. During the party's menu there is no board at
+    // all, and the soul is not enclosed by anything.
+    //
+    // This scene spawns one board at build and keeps it for the whole fight,
+    // which is fine for drawing but was walling the soul in during a phase
+    // where the real one is free: the whole-fight diff is exact to frame 15
+    // and then the oracle's soul travels on through 378, 382, 386 while the
+    // sim's stops dead at 374 — the wall rest position for a box at (320,170)
+    // scale 2.
+    //
+    // Clearing `isSolid` rather than destroying the instance keeps openArena's
+    // lookup and the grow-in animation intact; the collision phase filters on
+    // `alive && isSolid && mask`, so a board that is not open is not a wall.
+    const gtSolid = state.entities.find(
+      (x) => x.alive && x.type.name === 'obj_growtangle',
+    );
+    if (gtSolid) gtSolid.isSolid = !!e.arenaOpen;
     if (state.menu.open && state.soul) {
       if (e.soulHold) {
         state.soul.x = e.soulHold.x;
