@@ -16,6 +16,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { freshParty } from '../sim/damage.js';
 
 const argv = process.argv.slice(2);
 const token = argv.find((a) => a.startsWith('K1.'));
@@ -64,9 +65,35 @@ if (shIdx >= 0) {
 
 buildPracticeScene(state, { seed: state.seed });
 
+// KEEP THE PARTY ALIVE — and say plainly what that costs.
+//
+// A scripted input does not dodge, so the party wipes within a turn or two and
+// the fight stops; the recording then flatlines and the degeneracy guard
+// (rightly) refuses it. verify-fight-order.mjs already faces this and resolves
+// it the same way, "refusing to let a survival question decide a turn-order
+// question".
+//
+// THE COST: hp0/hp1/hp2 are pinned at maximum, so THIS RUN DOES NOT VERIFY
+// PARTY HP BOOKKEEPING — not the Shadow Mantle's two-hits-in-three targeting,
+// not Kris never being the default target, not the swoon scaling. Damage still
+// fires and still resets `inv_timer`, so the damage PATH is exercised; only
+// the resulting HP is not checked.
+//
+// That is why this is a flag and not the default: a survivable hand-authored
+// run, which keeps the hp columns honest, is the other half of the picture and
+// is tracked separately. Reporting a --keep-alive run as whole-fight
+// verification without this caveat would overstate it exactly the way the
+// one-turn recording did.
+const keepAlive = argv.includes('--keep-alive');
+if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verified');
+
 const rows = [traceHeader(state)];
 for (let f = 0; f < replay.frames; f++) {
   stepFrame(state, replay.inputAt(f));
+  if (keepAlive) {
+    state.partyHp = freshParty();
+    state.gameOver = false;
+  }
   rows.push(traceRow(state));
 }
 writeFileSync(out, `${rows.join('\n')}\n`);
