@@ -132,6 +132,20 @@ const director = {
     }
     if (state.gameOver) return;
 
+    // THE DYING BAR, fading over the start of the enemy phase. The object
+    // outlives the turn handoff by 13 frames (`fadeamt += 0.08` past 1), and
+    // its Draw keeps running whole — boltx counts on through the fade. Stepped
+    // here, outside the turn machinery, because the turn has already moved on.
+    if (e.fadingBar) {
+      stepFightBar(e.fadingBar, !!state.input?.confirm);
+      e.fadingBar.fadeamt = (e.fadingBar.fadeamt ?? 0) + 0.08;
+      state.fightBar = e.fadingBar;
+      if (e.fadingBar.fadeamt > 1) {
+        e.fadingBar = null;
+        state.fightBar = null;
+      }
+    }
+
     // The menu runs in sim/, not the renderer: it is state the player drives
     // and it must be reproducible headlessly like everything else.
     stepMenu(state, state.input ?? {});
@@ -462,6 +476,9 @@ const director = {
         e.bar = createFightBar(state.rng, order, true, rec);
       }
       e.resolved = [false, false, false];
+      // Swings whose damage has not landed yet — see the finishattacktimer
+      // block below.
+      e.pendingSwing = [];
     }
 
     // `maxdelay` — 0 with no spells or items, otherwise 25 + 15 per caster.
@@ -509,12 +526,19 @@ const director = {
     if (state.pendingItem) state.pendingItem = [];
 
     if (e.bar) {
-      if (!e.bar.done) {
-        // ONE BUTTON, edge-triggered. A single press scans every live bolt and
-        // scores the nearest, so the director hands it one boolean.
-        stepFightBar(e.bar, !!state.input?.confirm);
-        state.fightBar = e.bar;
-      }
+      // STEPPED EVERY FRAME THE OBJECT EXISTS, done or not. obj_attackpress
+      // has no such gate: `boltx += 1`, the pressbuffer decrements, imagetimer
+      // and the burstbolt Steps all keep running straight through the
+      // post-bolt hold, and a press after the last bolt still calls
+      // scr_boltcheck_onebutton — it finds nothing alive and only flashes the
+      // window. Freezing the bar at `done` held `boltx` at its last value,
+      // which the whole-fight diff caught at frame 38: oracle 31, sim stuck
+      // on 30 for the rest of the hold.
+      //
+      // ONE BUTTON, edge-triggered. A single press scans every live bolt and
+      // scores the nearest, so the director hands it one boolean.
+      stepFightBar(e.bar, !!state.input?.confirm);
+      state.fightBar = e.bar;
 
       // EACH CHARACTER SWINGS AS THEIR OWN BOLT CLEARS, not all together at
       // the end. obj_attackpress fires `event_user(1)` per character the frame
@@ -527,33 +551,56 @@ const director = {
       // the whole party at once made three characters swing on one frame with
       // one shared animation length, when their attack sprites are 6, 6 and 4
       // frames and their bolts land at different times.
+      // THE SWING STARTS NOW; THE DAMAGE LANDS ELEVEN FRAMES LATER.
+      //
+      // obj_heroparent, state 1, first frame (`attacked == 0`):
+      //
+      //     attacked = 1;
+      //     finishattacktimer = 11;
+      //
+      // and the damage block lives in its Other_10, gated on that timer
+      // counting OUT — `if (finishattacktimer > 0) { finishattacktimer--;
+      // if (finishattacktimer == 0) { ...scr_damage_enemy, the writer, the
+      // TP... } }`. So the pipeline is: bolts exhausted -> event_user(1) ->
+      // state 1 -> eleven frames of swing -> the hit lands, all of it at once.
+      //
+      // This used to resolve EVERYTHING on the latch frame, and the fresh
+      // whole-fight recording caught it as the FIRST divergence of the run:
+      // frame 25, sim tension 47 / knight 7288 while the oracle held 40 /
+      // 7300 — and then landed the identical +7 TP and -12 HP at frame 36,
+      // eleven frames later. The player's report was the same fact from the
+      // outside: "after you attack it feels like it is incorrect".
       for (let c = 0; c < 3; c++) {
         if (!e.bar.attacked[c] || e.resolved[c]) continue;
         e.resolved[c] = true;
         const acc = e.bar.points[c];
         heroAct(state, c, HERO_ATTACK);
-        if (acc <= 0) {
-          // A missed bolt still writes a number — `scr_damage_enemy` creates
-          // the writer before the `arg1 > 0` test, and a zero draws MISS.
-          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, c);
-          continue;
-        }
-        // `if (points == 150) { snd_stop(snd_criticalswing);
-        //                        snd_play(snd_criticalswing); }`
-        // obj_heroparent's state 1. A critical sounds different, which is the
-        // only feedback that the bar was perfect rather than merely good.
+        // `if (points == 150) { snd_stop(snd_criticalswing); snd_play(...); }`
+        // — obj_heroparent's FIRST state-1 frame, i.e. the swing's start, not
+        // its connect. The sound leads the damage by the same eleven frames.
         if (acc === 150) {
           cueStop(state, 'snd_criticalswing');
           cue(state, 'snd_criticalswing');
         }
-        const dealt = fightDamage(state, c, acc);
+        e.pendingSwing.push({ at: state.frame + 11, c, points: acc, done: false });
+      }
+      for (const s of e.pendingSwing) {
+        if (s.done || state.frame < s.at) continue;
+        s.done = true;
+        if (s.points <= 0) {
+          // A missed bolt still writes a number — `scr_damage_enemy` creates
+          // the writer before the `arg1 > 0` test, and a zero draws MISS.
+          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, s.c);
+          continue;
+        }
+        const dealt = fightDamage(state, s.c, s.points);
         if (dealt > 0) {
           damageKnight(state, dealt);
-          scrTensionheal(state, fightTp(acc));
-          spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, c, acc === 150,
+          scrTensionheal(state, fightTp(s.points));
+          spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, s.c, s.points === 150,
             () => rngNext(state.rng));
         }
-        spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, c);
+        spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, s.c);
       }
 
       if (!e.bar.done) return;
@@ -585,27 +632,41 @@ const director = {
       //
       // `state == 1` is tested specifically, so a character mid-ITEM or
       // mid-SPELL is left alone; only the attack pose is cut.
-      e.barHold = (e.barHold ?? 0) + 1;
-      if (e.barHold === ATTACKPRESS_HOLD) {
-        for (const h of state.heroes ?? []) {
-          if (h.state === HERO_ATTACK) h.state = HERO_IDLE;
-          h.attacked = false;
-          h.itemed = false;
-        }
-        // `fade = 1` — the bar paints a black rectangle over itself for the
-        // next 13 frames rather than vanishing. See render/fightbar.js.
-        e.bar.fade = true;
-        e.bar.fadeamt = 0;
+      // `posttimer > timermax`, counted by the bar itself — see stepFightBar.
+      if (!e.bar.holdDone) return;
+
+      // `posttimer > timermax` — and the SAME block that starts the fade also
+      // sets `global.mnfight = 1; global.myfight = -1;`. THE TURN ADVANCES
+      // THE MOMENT THE FADE STARTS, not thirteen frames later when the object
+      // dies: the enemy-talk phase begins UNDER the black fade, which is why
+      // the flavour text is already up as the bar dissolves.
+      //
+      // Waiting out the fade too put the sim a fixed 13 frames behind at
+      // every turn boundary — the whole-fight diff caught it at frame 88,
+      // where the oracle's `turn` and its DR ramp both moved while the sim
+      // was still fading. The dying bar is handed to `e.fadingBar`, which the
+      // top of endStep keeps stepping (boltx counts through the fade — the
+      // increment is inside `if (active)` with nothing else gating it) while
+      // the turn machinery moves on below.
+      for (const h of state.heroes ?? []) {
+        if (h.state === HERO_ATTACK) h.state = HERO_IDLE;
+        h.attacked = false;
+        h.itemed = false;
       }
-      if (e.bar.fade) e.bar.fadeamt = (e.bar.fadeamt ?? 0) + 0.08;
-      if (e.barHold < ATTACKPRESS_HOLD + ATTACKPRESS_FADE) {
-        return;
-      }
+      // `fade = 1` — the bar paints a black rectangle over itself for the
+      // next 13 frames rather than vanishing. See render/fightbar.js.
+      e.bar.fade = true;
+      e.bar.fadeamt = 0;
+      e.fadingBar = e.bar;
       e.barHold = 0;
       e.bar = null;
-      state.fightBar = null;
       state.menu.fight = [false, false, false];
       e.maxdelay = undefined;
+      // `global.mnfight = 1` is assigned HERE, in the bar's Draw — but the
+      // knight's enemy-talk branch reads it in his STEP, which runs next
+      // frame. Returning gives the handoff that one-frame lag: the next call
+      // finds `e.bar` empty and falls through to the enemy phase, which is
+      // where the oracle's turn column moves.
       return;
     }
     e.maxdelay = undefined;

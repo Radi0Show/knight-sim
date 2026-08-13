@@ -263,7 +263,20 @@ export function boltCheck(bar, char) {
  * against the position the player is looking at, not the next one.
  */
 export function stepFightBar(bar, press = false, perChar = [false, false, false]) {
-  if (!bar.active || bar.done) return;
+  // `active` is the ONLY gate. The Draw's whole interior — the scoring, the
+  // event_user(1) latches, and the per-frame maintenance (`boltx += 1`, the
+  // pressbuffer decrements, imagetimer, the burstbolt Steps) — lives inside
+  // `if (active == 1)` and NOTHING in it tests for completion; `goahead`
+  // merely adds the posttimer path alongside. So `boltx` keeps counting all
+  // the way through the post-bolt hold and the fade, a press after the last
+  // bolt still calls the boltcheck (which finds nothing alive and only
+  // flashes the window), and the bursts keep expanding.
+  //
+  // Returning on `done` as well froze all of that at the last bolt. The
+  // whole-fight diff caught it as `bar` (boltx) sticking at one value from
+  // the frame the final character's bolts cleared, while the oracle's kept
+  // climbing for the remaining 63 frames of the hold.
+  if (!bar.active) return;
 
   for (const b of bar.bolts) {
     if (b.alive && b.frame - bar.boltx < -5) b.alive = false;
@@ -317,6 +330,22 @@ export function stepFightBar(bar, press = false, perChar = [false, false, false]
   bar.afterimages = bar.afterimages.filter((a) => a.alpha > 0);
 
   if (bar.attacked.every((a, i) => a || !bar.havechar[i])) bar.done = true;
+
+  // `goahead` / `posttimer`, LITERALLY — the Draw's own end-of-bar clock:
+  //
+  //     goahead = 0;
+  //     if (attacked[0] == 1 || havechar[0] == 0) if (...) if (...) goahead = 1;
+  //     if (goahead == 1) { posttimer += 1; ... }
+  //     ...
+  //     if (posttimer > timermax) { fade = 1; ...; global.mnfight = 1; }
+  //
+  // The caller used to re-derive this with its own `barHold` counter, and its
+  // arithmetic sat two frames off the oracle at every turn boundary. The
+  // original's counter is right by definition; translate it, do not model it.
+  if (bar.done) bar.posttimer = (bar.posttimer ?? 0) + 1;
+  // `timermax = 50`, from the Create. True from the frame `posttimer` first
+  // exceeds it — the frame the fade starts and the turn hands off.
+  bar.holdDone = (bar.posttimer ?? 0) > 50;
 }
 
 /** Screen x of a bolt. `x + 80 + (frame - boltx) * boltspeed`. */
