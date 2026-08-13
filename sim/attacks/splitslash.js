@@ -47,7 +47,7 @@
 import { spawn, destroy } from '../entity.js';
 import { scrDamageMaxhp } from '../damage.js';
 import { clamp01, lerp, lengthdirX, lengthdirY, scrEaseOut, sign } from '../gml.js';
-import { scrBulletInit } from '../bullets/regularbullet.js';
+import { scrBulletInit, scrBulletInherit } from '../bullets/regularbullet.js';
 import { QUICKSLASH_SHAPE, scrPreciseHitRotatedRect } from '../masks.js';
 import { splitGrowtangle } from './split-growtangle.js';
 import { gmlChoose, gmlRandom, gmlRandomRange, gmlRandomsign } from '../rng.js';
@@ -160,6 +160,15 @@ export const splitslash = {
       if (!splitter) {
         const gt = box(state);
         splitter = spawn(state, splitGrowtangle, { x: gt ? gt.x : e.x, y: gt ? gt.y : e.y });
+        // The slash's own `damage = 206` reaches the teeth ONLY through here:
+        // splitslash -> split_growtangle -> split_bullet, one inherit per hop.
+        // Without this call the organism kept `scr_bullet_init`'s placeholder
+        // 10 and passed it down, and 10 against the party's DF resolves to 1.
+        //
+        // ORDER MATTERS: the original inherits FIRST and then overwrites
+        // grazepoints, so the 5 wins over the slash's 10. Swapping these two
+        // lines silently changes the graze economy.
+        scrBulletInherit(e, splitter);
         splitter.grazepoints = 5;
         const mg = manager(state);
         if (mg) {

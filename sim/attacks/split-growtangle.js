@@ -55,17 +55,7 @@ import {
 } from '../gml.js';
 import { gmlChoose, gmlRandomRange, gmlIrandomRange } from '../rng.js';
 
-/** scr_bullet_inherit(target) — copies the CALLER's bullet fields. */
-function scrBulletInherit(self, target) {
-  if (self.damage !== -1) target.damage = self.damage;
-  if (self.grazepoints !== -1) target.grazepoints = self.grazepoints;
-  if (self.timepoints !== -1) target.timepoints = self.timepoints;
-  if (self.inv !== -1) target.inv = self.inv;
-  if (self.target !== -1) target.target = self.target;
-  if (self.grazed !== -1) target.grazed = 0;
-  if (self.grazetimer !== -1) target.grazetimer = 0;
-  target.element = self.element;
-}
+import { scrBulletInherit } from '../bullets/regularbullet.js';
 
 function box(state) {
   return state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');

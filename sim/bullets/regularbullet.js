@@ -29,6 +29,32 @@ export function scrBulletInit(e) {
   e.updateimageangle = 0;
 }
 
+/**
+ * `scr_bullet_inherit(target)` — copies the CALLER's bullet fields down.
+ *
+ * This is how damage actually reaches a bullet. `scr_bullet_init` gives every
+ * bullet a placeholder `damage = 10`, and 10 is small enough that the party's
+ * defence eats almost all of it: `scr_damage_calculation` subtracts 1 per
+ * point of DF below maxhp/8, so 10 against 9 DF lands as **1**. A bullet that
+ * never inherits therefore does not look broken — it looks weak, which is the
+ * quietest possible failure and exactly how Flurry's teeth shipped wrong.
+ *
+ * The `obj_dbulletcontroller` branch of the original also copies `creatorid`
+ * and `creator`; no caller in this fight is a dbulletcontroller, so it is
+ * omitted rather than guessed at.
+ */
+export function scrBulletInherit(self, target) {
+  if (!target) return;
+  if (self.damage !== -1) target.damage = self.damage;
+  if (self.grazepoints !== -1) target.grazepoints = self.grazepoints;
+  if (self.timepoints !== -1) target.timepoints = self.timepoints;
+  if (self.inv !== -1) target.inv = self.inv;
+  if (self.target !== -1) target.target = self.target;
+  if (self.grazed !== -1) target.grazed = 0;
+  if (self.grazetimer !== -1) target.grazetimer = 0;
+  target.element = self.element;
+}
+
 export function regularbulletCreate(e, state) {
   scrBulletInit(e);
   e.spin = 0;
