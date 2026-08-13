@@ -111,7 +111,7 @@ const CASES = [
     name: 'a short oracle is a note, and the shared prefix still diffs',
     edit: (rows) => { rows.length = 600; },
     expectCode: 0,
-    expect: [/row count: oracle 600, sim 1200/, /600 shared frames byte-exact/],
+    expect: [/600 sim frame\(s\) have no oracle counterpart/, /600 shared frames byte-exact/],
   },
   {
     // BOTH OF THESE ARE REGRESSION CASES for bugs the first real recording

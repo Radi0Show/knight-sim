@@ -25,6 +25,7 @@
 import {
   createKnight, fightDamage, spellDamage, krisMult, advanceTurn, damageKnight,
   KNIGHT_MAXHP, KNIGHT_AT, KNIGHT_DF, DR_BASE, DR_CAP, DR_PER_TURN,
+  DR_OPENING, stepKnightAnim,
   PHASE4_GATE, endCutsceneReached, startEndCutscene,
 } from '../sim/knight.js';
 import { PARTY, statFor } from '../sim/damage.js';
@@ -44,9 +45,38 @@ eq(KNIGHT_DF, 0, 'knight df');
 // default loadout is retuned, and a real regression hides in the churn.
 // The equipped build is checked separately, at the bottom.
 const BARE = { gear: [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
-const mk = (hp = [160, 190, 140]) => ({
-  partyHp: hp.slice(), knight: createKnight(), loadout: BARE,
-});
+/**
+ * A Knight IN THE FIGHT PROPER, which is what every damage figure below is
+ * measured at.
+ *
+ * `createKnight()` now starts at the Create value `damagereduction = 0.04` —
+ * the opening near-immunity — and the Knight's first Step raises it to 0.2.
+ * Every expectation here is a dr-0.2 number, so the fixture has to take that
+ * step; without it `fightDamage` reports the one-frame opening and a perfect
+ * three-bolt turn comes out at 13 instead of 56.
+ *
+ * Stepping rather than assigning 0.2 directly is deliberate: it exercises the
+ * transition, so a regression that stops incrementing `damagereductiontimer`
+ * (which is exactly what was wrong before — the field existed and nothing ever
+ * touched it) fails here rather than passing quietly.
+ */
+const mk = (hp = [160, 190, 140]) => {
+  const st = { partyHp: hp.slice(), knight: createKnight(), loadout: BARE };
+  stepKnightAnim(st);
+  return st;
+};
+
+// The opening frame itself, asserted so the 0.04 is not merely a comment.
+{
+  const fresh = { partyHp: [160, 190, 140], knight: createKnight(), loadout: BARE };
+  eq(fresh.knight.damagereduction, DR_OPENING, 'the Create value is the 0.04 opening');
+  // round(18 * 150 / 20) = 135 -> ceil(135 * 0.04) = 6, against 27 at dr 0.2.
+  eq(fightDamage(fresh, 1, 150), 6, 'Susie critical during the opening immunity');
+  stepKnightAnim(fresh);
+  eq(fresh.knight.damagereduction, 0.2, 'the first Step raises it to 0.2');
+  stepKnightAnim(fresh);
+  eq(fresh.knight.damagereduction, 0.2, 'and it fires exactly once, not per step');
+}
 
 // ── The FIGHT formula, computed by hand from the GML ─────────────────────
 // Kris at 14, a critical (150), dr 0.2, healthy party:

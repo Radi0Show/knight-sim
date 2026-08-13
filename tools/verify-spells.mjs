@@ -21,7 +21,7 @@ import { createState } from '../sim/index.js';
 import { stepMenu, openMenu, createMenu, listRows, BUTTONS } from '../sim/menu.js';
 import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford } from '../sim/spells.js';
 import { freshInventory } from '../sim/items.js';
-import { KNIGHT_MAXHP } from '../sim/knight.js';
+import { KNIGHT_MAXHP, stepKnightAnim } from '../sim/knight.js';
 import { stepRudeBuster, rudeBusterBusy } from '../sim/rudebuster.js';
 import { dmgColor } from '../sim/dmgnumbers.js';
 
@@ -34,6 +34,12 @@ const BARE = { gear: [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weap
 
 function fresh(charturn = 1) {
   const st = createState({ seed: 1 });
+  // ADVANCE THE KNIGHT OUT OF HIS OPENING FRAME. `createKnight()` starts at
+  // the Create value `damagereduction = 0.04` and his first Step raises it to
+  // 0.2; every damage figure in this suite is a dr-0.2 number, so without this
+  // the unpressed Rude Buster reads 72 rather than 89. Same fixture step as
+  // verify-knight's `mk()`.
+  stepKnightAnim(st);
   st.loadout = BARE;
   st.menu = createMenu();
   st.inventory = freshInventory();

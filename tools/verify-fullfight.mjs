@@ -109,15 +109,35 @@ function compare(oracle, sim, context) {
     };
   }
 
-  const rows = Math.min(oracle.rows.length, sim.rows.length);
-  if (rows === 0) return { fatal: 'no rows' };
+  // ALIGN ON THE `frame` COLUMN, NOT THE ROW INDEX.
+  //
+  // The sim's first row is frame 1 and the oracle's is frame 0 — the sim
+  // increments its counter before writing, the oracle after — so comparing
+  // row-for-row silently compares every column against the WRONG FRAME. The
+  // first real recording showed it as `inv_timer` being exactly 1 lower on
+  // every row, which reads like a fault in the inv clock and is nothing of
+  // the sort.
+  //
+  // Joining on the frame number makes the two sides' numbering an explicit
+  // fact rather than an assumption, and it costs nothing. A frame present on
+  // one side only is dropped from the comparison and counted, so a real gap
+  // still surfaces instead of shifting everything after it.
+  const oByFrame = new Map(oracle.rows.map((r) => [r[0], r]));
+  const shared = sim.rows.filter((r) => oByFrame.has(r[0]));
+  const simOnly = sim.rows.length - shared.length;
+  oracle = { ...oracle, rows: shared.map((r) => oByFrame.get(r[0])) };
+  sim = { ...sim, rows: shared };
+
+  const rows = shared.length;
+  if (rows === 0) {
+    return { fatal: 'no frames in common — the two sides do not overlap at all' };
+  }
 
   // A LENGTH mismatch is a finding, not a fatal: the shared prefix is still
   // worth diffing, and "identical for 6000 frames then the oracle stops" is a
   // very different bug from "diverges at frame 12".
-  const lengths = oracle.rows.length !== sim.rows.length
-    ? `row count: oracle ${oracle.rows.length}, sim ${sim.rows.length} ` +
-      `(comparing the first ${rows})`
+  const lengths = simOnly > 0
+    ? `${simOnly} sim frame(s) have no oracle counterpart; comparing the ${rows} in common`
     : null;
 
   const idx = (t, c) => t.header.indexOf(c);

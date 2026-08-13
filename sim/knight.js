@@ -73,7 +73,16 @@ export const PHASE4_GATE = 5840;
 export function createKnight() {
   return {
     hp: KNIGHT_MAXHP,
-    damagereduction: DR_BASE,
+    // THE OPENING VALUE IS 0.04, not 0.2. `DR_OPENING` was already defined
+    // from the Create and then never used — the Knight was built at DR_BASE,
+    // so the fight's opening near-immunity simply did not exist and early
+    // damage was five times what it should be.
+    //
+    // `damagereductiontimer++; if (damagereductiontimer == 1)
+    //  damagereduction = 0.2;` runs on the Knight's FIRST STEP, so 0.04 only
+    // covers the gap between his Create and his first step. Short — but the
+    // attack bar can resolve inside it, and the diff reads frame 0.
+    damagereduction: DR_OPENING,
     damagereductiontimer: 0,
     blocking: false,
     phase: 1,
@@ -203,6 +212,31 @@ export function damageKnight(state, amount) {
 export function stepKnightAnim(state) {
   const k = state.knight;
   if (!k) return;
+
+  // THE OPENING REDUCTION ENDS ON THE FIRST STEP.
+  //
+  //     damagereductiontimer++;
+  //     if (damagereductiontimer == 1) { ... damagereduction = 0.2;
+  //                                      global.monstername = ""Knight""; }
+  //
+  // `damagereductiontimer` was in createKnight and NOTHING EVER INCREMENTED
+  // IT — a write-only field of the same family as `state.inv` and the
+  // original's `destroy_on_hit`. Setting the Create value to 0.04 without
+  // this would have been strictly worse than the bug it fixed: the Knight
+  // would sit at near-immunity for the entire fight instead of the one frame
+  // it is meant to last.
+  //
+  // The `== 1` is an equality, not a threshold, so it fires exactly once and
+  // the per-turn ramp takes over from there.
+  k.damagereductiontimer += 1;
+  if (k.damagereductiontimer === 1) {
+    k.damagereduction = DR_BASE;
+    // The same line renames the enemy from ""???"" to ""Knight"". Also, at
+    // `damagereductiontimer >= 750`, the Step renames it again — the fight
+    // stops calling him a mystery about 25 seconds in.
+    k.named = true;
+  }
+
   if (k.whiteflash > 0) k.whiteflash -= 1;
   // `shakex` is not decremented by the knight — scr_enemy_drawidle_generic
   // walks it toward zero, flipping sign each frame, which is what makes it a

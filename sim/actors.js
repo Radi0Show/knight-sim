@@ -159,5 +159,14 @@ export const KNIGHT = { x: 425, ystart: 78 };
 /** The battle box, as obj_knight_enemy builds it for this attack. */
 export const BOX = { x: 320, y: 170 };
 
-/** scr_moveheart's landing spot for this turn. */
-export const SOUL_START = { x: 310, y: 160 };
+/**
+ * Where the soul starts the fight, MEASURED against the real game rather than
+ * rounded: `instance_create(obj_growtangle.x - 6, obj_growtangle.y - 8,
+ * obj_heart)` with the board at (320, 170) puts it at (314, 162).
+ *
+ * This was (310, 160) — four pixels left and two up — and the whole-fight
+ * diff caught it on frame 0 of the first real recording. Two pixels of soul
+ * is two pixels of hitbox in a fight whose corridors are measured in single
+ * digits, so this is not cosmetic.
+ */
+export const SOUL_START = { x: 314, y: 162 };
