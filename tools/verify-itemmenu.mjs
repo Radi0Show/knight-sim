@@ -19,8 +19,8 @@
 // real font and a wrong one is visible to the player.
 
 import { createState } from '../sim/index.js';
-import { stepMenu, openMenu, createMenu } from '../sim/menu.js';
-import { ITEMS, freshInventory, INVENTORY_SIZE } from '../sim/items.js';
+import { stepMenu, openMenu, createMenu, bagOf } from '../sim/menu.js';
+import { ITEMS, applyItem, freshInventory, INVENTORY_SIZE } from '../sim/items.js';
 
 const failures = [];
 const NONE = { left: false, right: false, up: false, down: false, confirm: false, cancel: false };
@@ -159,7 +159,45 @@ if (st.menu.submenu !== 'target') failures.push('ReviveMint did not open the pic
 tap(st, 'right');
 if (st.menu.targetIndex !== 1) failures.push('the picker skipped the fallen ally');
 tap(st, 'confirm');
-if (st.partyHp[1] <= 0) failures.push(`ReviveMint left the ally at ${st.partyHp[1]}`);
+
+// ITEMS DO NOT RESOLVE ON SELECTION — they are queued and fire in the resolve
+// phase, at `maxdelaytimer == spelldelay[c]`, alongside the spells.
+//
+// This asserted the opposite until it was reported from play: applying on
+// selection let a Revive land during the COMMAND phase, so the revived ally
+// could still take their turn. They cannot — by the time the item resolves
+// the menu is closed and their turn is spent.
+//
+// The two halves happen at different times, and both matter:
+//   * the item leaves the snapshot NOW (that is what cancel restores)
+//   * the effect waits
+if (st.partyHp[1] > 0) {
+  failures.push('ReviveMint healed during the command phase — items resolve '
+    + 'with the turn, not on selection');
+}
+if (!st.pendingItem?.[st.menu.charturn] && !st.pendingItem?.[0]) {
+  failures.push('ReviveMint was not queued for the resolve phase');
+}
+// The bag lost it immediately even though the effect has not landed.
+//
+// Check the snapshot of the character who USED it — `bagOf` returns the
+// CURRENT character's list, and confirming has already advanced the turn to
+// the next one, whose 12 slots are untouched. `tempitem` is per-character,
+// which is the whole point of it.
+{
+  const used = st.menu.tempitem.findIndex((l) => l.filter(Boolean).length === 11);
+  if (used < 0) {
+    failures.push('no character\'s snapshot lost the ReviveMint');
+  }
+}
+// And it works when the resolve phase runs it.
+{
+  const queued = st.pendingItem.find(Boolean);
+  applyItem(st, queued.id, queued.target);
+  if (st.partyHp[1] <= 0) {
+    failures.push(`ReviveMint did nothing on resolve (${st.partyHp[1]})`);
+  }
+}
 
 // CANCEL ON THE BUTTON ROW steps back a character AND UNDOES what they did —
 // `scr_prevhero` restores both the bag and the TP. A bare `charturn -= 1` let

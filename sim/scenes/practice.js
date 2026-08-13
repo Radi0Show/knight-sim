@@ -20,11 +20,12 @@ import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
-import { createMenu, stepMenu, openMenu } from '../menu.js';
+import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
 import { endTurnItems } from '../menu.js';
-import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_SPELL } from '../heroes.js';
+import { applyItem } from '../items.js';
+import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_ITEM, HERO_SPELL } from '../heroes.js';
 import {
   advanceBalloon, advanceReply, clearDialogue, dialogueDone,
 } from '../dialogue.js';
@@ -465,7 +466,12 @@ const director = {
 
     // `maxdelay` — 0 with no spells or items, otherwise 25 + 15 per caster.
     if (e.maxdelay === undefined) {
-      const casters = (state.pendingSpell ?? []).filter(Boolean).length;
+      // `for each char with charaction 4 (ITEM) or 2 (SPELL)` — obj_attackpress's
+      // Create counts BOTH, so a turn with two items holds the bar exactly as
+      // long as a turn with two spells.
+      const casters = [0, 1, 2].filter(
+        (c) => state.pendingSpell?.[c] || state.pendingItem?.[c],
+      ).length;
       e.maxdelay = casters ? 25 + 15 * casters : 0;
       e.maxdelaytimer = 0;
       // `spelldelay[xyz]` defaults to 10 for all three, so the first caster's
@@ -478,11 +484,21 @@ const director = {
     if (e.maxdelaytimer < e.maxdelay) {
       e.maxdelaytimer += 1;
       for (let c = 0; c < 3; c++) {
+        if (e.spellFired[c] || e.maxdelaytimer < 10) continue;
         const p = state.pendingSpell?.[c];
-        if (p && !e.spellFired[c] && e.maxdelaytimer >= 10) {
+        const it = state.pendingItem?.[c];
+        if (p) {
           e.spellFired[c] = true;
           heroAct(state, c, HERO_SPELL);
           castSpell(state, c, p.id, p.target, { alreadyPaid: true });
+        } else if (it) {
+          // THE ITEM LANDS HERE, not when it was chosen. `state = 4` and the
+          // effect both fire at `maxdelaytimer == spelldelay[c]`, so a Revive
+          // used this turn cannot give that character a turn — by the time it
+          // resolves the command phase is over.
+          e.spellFired[c] = true;
+          heroAct(state, c, HERO_ITEM);
+          applyItem(state, it.id, it.target);
         }
       }
       return;
@@ -490,6 +506,7 @@ const director = {
     // Everything queued has fired; the bolt may still be flying.
     if (rudeBusterBusy(state)) return;
     if (state.pendingSpell) state.pendingSpell = [];
+    if (state.pendingItem) state.pendingItem = [];
 
     if (e.bar) {
       if (!e.bar.done) {

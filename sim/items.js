@@ -137,6 +137,59 @@ export function reviveAmount(state, target, which) {
  * caller decides whether a no-op still costs the turn; here it does not consume
  * the item, which is the forgiving reading and the one a practice tool wants.
  */
+/**
+ * TAKE the item out of the character's snapshot, WITHOUT applying it.
+ *
+ * The two halves of using an item happen at different times: `tempitem` loses
+ * it the moment it is chosen — that is the state cancel restores — but the
+ * EFFECT waits for the resolve phase, where obj_attackpress fires it at
+ * `maxdelaytimer == spelldelay[c]` alongside the spells.
+ *
+ * Bundling both into one call let a Revive land during the command phase, so
+ * the revived ally could still act that turn. They cannot: by the time the
+ * item resolves, the menu is closed.
+ *
+ * Returns the item id, or null if the slot is empty.
+ */
+export function takeItem(state, slot, bag = null) {
+  const list = bag ?? state.inventory;
+  const id = list[slot];
+  if (!ITEMS[id]) return null;
+  // `scr_itemshift_temp` COMPACTS the list — everything moves down one and
+  // slot 12 is zeroed, so there is never a hole.
+  list.splice(slot, 1);
+  return id;
+}
+
+/** Apply an item's effect by id, with no bag bookkeeping. See takeItem. */
+export function applyItem(state, id, target = 0) {
+  const item = ITEMS[id];
+  if (!item) return null;
+  let did = 0;
+  let what = '';
+
+  if (item.kind === 'heal') {
+    did = item.target === 'all'
+      ? scrHealitemAll(state, item.amount)
+      : scrHealitem(state, target, item.amount);
+    what = `healed ${did}`;
+  } else if (item.kind === 'revive') {
+    const which = item.name === 'ReviveMint' ? 'mint' : 'dust';
+    if (item.target === 'all') {
+      for (let i = 0; i < 3; i++) did += applyHeal(state, i, reviveAmount(state, i, which));
+    } else {
+      did = applyHeal(state, target, reviveAmount(state, target, which));
+    }
+    what = `revived ${did}`;
+  } else if (item.kind === 'tension') {
+    did = MAX_TENSION - state.tension;
+    state.tension = MAX_TENSION;
+    what = `TP +${Math.round(did)}`;
+  }
+  if (did <= 0) return null;
+  return `${item.name}: ${what}`;
+}
+
 export function useItem(state, slot, target = 0, bag = null) {
   // THE BAG IS THE CHARACTER'S SNAPSHOT, not `global.item`. `tempitem` holds
   // one list per party member; the item leaves that list now and only reaches

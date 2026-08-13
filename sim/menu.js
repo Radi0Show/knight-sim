@@ -18,7 +18,7 @@
 import { ACTION_DEFEND, TP_DEFEND, isUp, PARTY } from './damage.js';
 import { scrTensionheal } from './tension.js';
 import { cue } from './audio.js';
-import { useItem, ITEMS } from './items.js';
+import { useItem, takeItem, ITEMS } from './items.js';
 import {
   SPELLS, SPELL_LIST, ACTS, canAfford, spellCost, castSpell, holdBreath,
 } from './spells.js';
@@ -35,6 +35,36 @@ import {
  * TP is still spent NOW: `scr_spellconsumeb` deducts on selection, which is
  * what stops two characters spending the same 125.
  */
+/**
+ * ITEMS RESOLVE WITH THE TURN, NOT ON SELECTION.
+ *
+ * `tempitem` removes the item from the character's snapshot the moment it is
+ * chosen (that is what cancel restores), but the EFFECT waits for the resolve
+ * phase — obj_attackpress's Draw fires each character's item at
+ * `maxdelaytimer == spelldelay[c]`, exactly as it does for spells.
+ *
+ * Applying on selection let a revived ally act on the same turn they were
+ * revived, which the real fight does not allow: by the time the Revive Mint
+ * lands, the command phase is over and their turn is already spent. Reported
+ * from play, and it changes what a turn can do rather than how it looks.
+ *
+ * TP items are the exception the report also named — see useItem's own note.
+ * They are not special-cased here: they resolve with everything else, and
+ * what makes them feel immediate is that TP is spent from `temptension`
+ * during the menu, so a TP item's effect is visible to the NEXT character's
+ * spell cost without the item itself having resolved.
+ */
+function recordItem(state, c, slot, target) {
+  // The item leaves the snapshot NOW — that is what cancel restores — but
+  // its effect is queued for the resolve phase.
+  const id = takeItem(state, slot, bagOf(state));
+  if (id === null) return null;
+  state.charaction[c] = 4;
+  state.pendingItem = state.pendingItem ?? [];
+  state.pendingItem[c] = { id, target };
+  return ITEMS[id]?.name ?? 'Item';
+}
+
 function recordSpell(state, c, id, target) {
   const cost = spellCost(state, c, id);
   if (state.tension < cost) return null;
@@ -422,7 +452,9 @@ export function stepMenu(state, input) {
       const t = menu.targetIndex;
       let did = null;
       if (p?.kind === 'item') {
-        did = useItem(state, p.slot, t, bagOf(state));
+        // Recorded, not applied — see recordItem.
+        const nm = recordItem(state, c, p.slot, t);
+        did = nm ? `${nm}!` : null;
       } else if (p?.kind === 'spell') {
         did = recordSpell(state, c, p.id, t);
       }
@@ -580,7 +612,10 @@ export function stepMenu(state, input) {
             // animation while the NEXT character was still choosing.
             const did = menu.submenu === 'magic'
               ? recordSpell(state, c, row.id, c)
-              : useItem(state, menu.gridIndex, c, bagOf(state));
+              : (() => {
+                const nm = recordItem(state, c, menu.gridIndex, c);
+                return nm ? `${nm}!` : null;
+              })();
             if (!did) {
               cue(state, 'snd_error');
             } else {
