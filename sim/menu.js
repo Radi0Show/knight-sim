@@ -18,7 +18,7 @@
 import { ACTION_DEFEND, TP_DEFEND, isUp, PARTY } from './damage.js';
 import { scrTensionheal } from './tension.js';
 import { cue } from './audio.js';
-import { useItem, takeItem, ITEMS } from './items.js';
+import { useItem, takeItem, applyItem, ITEMS } from './items.js';
 import {
   SPELLS, SPELL_LIST, ACTS, canAfford, spellCost, castSpell, holdBreath,
 } from './spells.js';
@@ -48,18 +48,40 @@ import {
  * lands, the command phase is over and their turn is already spent. Reported
  * from play, and it changes what a turn can do rather than how it looks.
  *
- * TP items are the exception the report also named — see useItem's own note.
- * They are not special-cased here: they resolve with everything else, and
- * what makes them feel immediate is that TP is spent from `temptension`
- * during the menu, so a TP item's effect is visible to the NEXT character's
- * spell cost without the item itself having resolved.
+ * THE TP ITEMS ARE A REAL EXCEPTION, and this comment used to deny it. The
+ * claim was that nothing is special-cased and TP items only FEEL immediate
+ * because `temptension` is spent during the menu. That was reasoning from the
+ * outside; obj_battlecontroller's Step settles it and says otherwise:
+ *
+ *     if (tempitem[...] == 27) { scr_tensionheal(80);                   _tensionhealed = 1; }
+ *     if (tempitem[...] == 28) { scr_tensionheal(ceil(maxtension / 2)); _tensionhealed = 1; }
+ *     if (tempitem[...] == 29) { scr_tensionheal(ceil(maxtension));     _tensionhealed = 1; }
+ *     if (_tensionhealed) { ...healanim, snd_cardrive...
+ *                           scr_itemshift_temp(...); scr_nexthero(); }
+ *     if (!_tensionhealed) { scr_itemconsumeb(); }      // <- everything else
+ *
+ * The TP items are applied INLINE, in the selection code, and then hand
+ * straight to the next hero. `scr_itemconsumeb` — the deferred path every
+ * other item takes — is explicitly the ELSE of that. So the split is not a
+ * feel, it is two different code paths, and the difference is visible: fill
+ * TP with TensionMax and the very next character can afford a spell with it
+ * this turn.
+ *
+ * Reported from play, twice: once to establish that items defer, and once to
+ * say TP was wrongly deferred with them.
  */
 function recordItem(state, c, slot, target) {
-  // The item leaves the snapshot NOW — that is what cancel restores — but
-  // its effect is queued for the resolve phase.
+  // The item leaves the snapshot NOW — that is what cancel restores.
   const id = takeItem(state, slot, bagOf(state));
   if (id === null) return null;
   state.charaction[c] = 4;
+
+  // `_tensionhealed`: applied here, never queued.
+  if (ITEMS[id]?.kind === 'tension') {
+    applyItem(state, id, target);
+    return ITEMS[id]?.name ?? 'Item';
+  }
+
   state.pendingItem = state.pendingItem ?? [];
   state.pendingItem[c] = { id, target };
   return ITEMS[id]?.name ?? 'Item';

@@ -9,7 +9,7 @@ import { drain, MS_PER_FRAME } from '../sim/clock.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { createRecorder, recordInput, encodeReplay, decodeReplay } from '../sim/replay.js';
 import { createTitle, stepTitle } from '../sim/modes.js';
-import { drawTitle, drawGameOver, stepGameOver, makeShards } from '../render/title.js';
+import { drawTitle, drawGameOver, stepGameOver, makeGameOver } from '../render/title.js';
 import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
@@ -87,6 +87,9 @@ if (skip > 0) {
 window.__audio = audio;
 window.__sim = {
   get state() { return state; },
+  // The Game Over sequence, for the same reason state is here: it is a
+  // timeline with a lot of frames in it and no other way to look inside.
+  get over() { return over; },
   step(n = 1) { for (let i = 0; i < n; i++) stepFrame(state, keys.read()); renderer.draw(state); },
 };
 
@@ -121,10 +124,48 @@ const bar = document.getElementById('picker');
 // ?difficulty and ?replay all bypass the title screen — because a shareable
 // link to a specific attack is the thing the dropdowns were actually good for.
 
+/**
+ * A BUTTON HELD ACROSS A TRANSITION MUST NOT ACT ON THE OTHER SIDE.
+ *
+ * Confirming a mode on the title screen used to fire Kris's FIGHT the instant
+ * the fight opened, unless you let go of Z faster than a human reliably can.
+ * The battle menu IS edge-triggered — but its `menu.held` map starts empty, so
+ * the first frame of a still-held key reads as a fresh 0->1 edge. Same for the
+ * game over's two options, and for R restarting into a run.
+ *
+ * The original has this problem too and solves it exactly here: obj_heart's
+ * Create latches `disableslow` when the focus button is ALREADY down, so
+ * holding focus through the transition into a fight does not slow the opening
+ * frames. This is that latch, generalised to every button — the transition
+ * happens at a moment the player did not choose, so nothing they were already
+ * holding should count as an intent aimed at what comes next.
+ *
+ * The mask clears per key on release, so holding Z through the transition and
+ * keeping it down does not lock FIGHT out — it just requires a new press.
+ */
+let inputMask = {};
+function gatedKeys() {
+  const raw = keys.read();
+  const out = { ...raw };
+  for (const k of Object.keys(inputMask)) {
+    if (!raw[k]) delete inputMask[k];      // released: the key is live again
+    else out[k] = false;                   // still down from before: not a press
+  }
+  return out;
+}
+/** Latch everything currently down; called at every scene change. */
+function maskHeldInput() {
+  inputMask = {};
+  const raw = keys.read();
+  for (const k of Object.keys(raw)) if (raw[k]) inputMask[k] = true;
+}
+
 function reset() {
   // Sustained cues do not belong to the sim state — rotating slash's aim loop
   // would keep whining over a fresh fight.
   audio.stopAll();
+  // Whatever is down right now belongs to the thing that just ended.
+  maskHeldInput();
   // The bar's two trailing values are renderer-local, so a fresh fight has to
   // clear them or the new run starts with the old one's TP draining away.
   resetTensionBar();
@@ -237,7 +278,7 @@ function frame(now) {
     const { steps: ts, accumulator: ta } = drain(acc, elapsed);
     acc = ta;
     for (let i = 0; i < ts; i++) {
-      const r = stepTitle(title, keys.read(), ATTACK_MENU.length);
+      const r = stepTitle(title, gatedKeys(), ATTACK_MENU.length);
       if (r.moved) audio.play([{ name: 'snd_menumove', pitch: 1, gain: 1 }]);
       if (r.selected) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
       if (r.chosen) { startRun(); break; }
@@ -253,22 +294,31 @@ function frame(now) {
     return;
   }
 
-  // GAME OVER. The party is down; the fight stops and the shatter plays out.
+  // GAME OVER. The Knight's own — the soul does not break, it glides away and
+  // he talks to you. See render/title.js for why this is not the game over
+  // everybody knows: `global.tempflag[93]`, set by his encounter room.
   if (over) {
     const { steps: gs, accumulator: ga } = drain(acc, elapsed);
     acc = ga;
     for (let i = 0; i < gs; i++) {
-      stepGameOver(over);
-      // The two cracks, on the original's own frames — 50 and 90, forty apart.
-      if (over.t === 50) audio.play([{ name: 'snd_break1', pitch: 1, gain: 1 }]);
-      if (over.t === 90) {
-        audio.play([{ name: 'snd_break2', pitch: 1, gain: 1 }]);
-        over.shards = makeShards(over.x, over.y, Math.random);
-      }
-      // `try again` accepts confirm once the prompt is up.
-      if (over.t > 170 && keys.read().confirm) {
+      const r = stepGameOver(over, gatedKeys());
+      if (r.moved) audio.play([{ name: 'snd_menumove', pitch: 1, gain: 1 }]);
+      if (r.advanced) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
+      if (r.chosen !== undefined) {
+        audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
         over = null;
-        reset();
+        if (r.chosen === 0) {
+          // GO BACK (FIGHT AGAIN) — the same fight, from the top.
+          reset();
+        } else {
+          // GO FORWARD (MOVE ON) — in the original this leaves the fight
+          // behind for the rest of the chapter. Here there is nothing past
+          // the fight, so it goes back to the mode menu, which is the same
+          // gesture: stop fighting this thing.
+          title.mode = null;
+          title.pickingAttack = false;
+          reset();
+        }
         break;
       }
     }
@@ -282,7 +332,7 @@ function frame(now) {
     const { steps, accumulator } = drain(acc, elapsed);
     acc = accumulator;
     for (let i = 0; i < steps; i++) {
-      const input = keys.read();
+      const input = gatedKeys();
       // RECORD EVERY FRAME. `sim/` is deterministic, so seed + input stream
       // reproduces this exact run on any machine — which turns a playtester's
       // bug report from a description into something you can run. See
@@ -321,14 +371,19 @@ function frame(now) {
           shot.width = renderer.VIEW_W;
           shot.height = renderer.VIEW_H;
           shot.getContext('2d').drawImage(canvas, 0, 0);
-          over = {
-            t: 0,
+          // `global.heartx = (x + 2) - viewX` (obj_heart's Step) — the soul
+          // appears where it died, in SCREEN space, and the +2 is what
+          // centres the 16px spr_heart inside the 20px spr_dodgeheart you
+          // were dodging with. Dropping either term puts it two pixels off,
+          // or anywhere at all once the arena has scrolled.
+          // The key that was down when you died is not an answer to the
+          // Knight's question.
+          maskHeldInput();
+          over = makeGameOver(
             shot,
-            // `global.heartx/hearty` — the soul breaks where it died.
-            x: state.soul?.x ?? renderer.VIEW_W / 2,
-            y: state.soul?.y ?? 170,
-            shards: [],
-          };
+            (state.soul?.x ?? renderer.VIEW_W / 2) + 2 - (state.view?.x ?? 0),
+            (state.soul?.y ?? 170) + 2 - (state.view?.y ?? 0),
+          );
         }
         break;
       }
