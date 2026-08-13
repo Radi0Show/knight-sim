@@ -458,8 +458,6 @@ const director = {
       e.bar = null;
       state.fightBar = null;
       state.menu.fight = [false, false, false];
-      // `damagereduction += 0.01` once per resolved turn, inside [0.2, 0.35).
-      advanceTurn(state);
       e.maxdelay = undefined;
       return;
     }
@@ -482,6 +480,21 @@ const director = {
     // these 12 frames there is nothing to collide with.
     if (e.spawnDelay > 0) {
       if (e.spawnDelay === RTIMER_SPAWN) {
+        // `damagereduction += 0.01`, HERE and not after the party's turn.
+        //
+        //     if (global.mnfight == 1.5 && end_cutscene_version == 0) {
+        //         if (!instance_exists(obj_growtangle)) {
+        //             event_user(0);
+        //             setdownmessage = false;
+        //             if (damagereduction >= 0.2 && damagereduction < 0.35)
+        //                 damagereduction += 0.01;
+        //
+        // It sits in the Knight's attack SETUP — the same block that creates
+        // the board and runs the selector — so it applies before the FIRST
+        // attack, not after the first party turn. The oracle reads 0.21 on
+        // frame 1 of turn 1; the sim read 0.20 for the whole of turn 1 and
+        // was one ramp step behind for the rest of the fight.
+        advanceTurn(state);
         const upcoming = FIGHT_TABLE[e.phase][e.turn];
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');

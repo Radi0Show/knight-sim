@@ -164,7 +164,12 @@ function wideRow(state) {
     // `phase` is a human string in the narrow row; here it is the numbers, so
     // a diff points at a turn rather than at prose.
     int(state.phaseNum ?? 0),
-    int(state.turnNum ?? 0),
+    // `phaseturn` IS 1-BASED IN THE GAME — its first turn is 1, and the
+    // selector's branches read `phaseturn == 1..5`. The sim indexes turns from
+    // 0 internally, which is fine, but the TRACE has to speak the game's
+    // numbering or every row disagrees by one for no reason. Caught on frame 1
+    // of the first complete recording.
+    int((state.turnNum ?? 0) + 1),
     state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-',
     state.fightBar ? int(state.fightBar.boltx) : '-',
     int(state.dialogue?.balloonturn ?? 0),
