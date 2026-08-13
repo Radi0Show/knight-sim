@@ -131,6 +131,20 @@ export const trackingSword = {
 
   step(e, state) {
     const heart = state.soul;
+    // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+    // Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a bullet that outlives its turn by a frame has
+    // nothing to aim at. Skipping the frame leaves it where it was until the
+    // turn sweep takes it; inventing a position would make it lunge at a soul
+    // that is not there.
+    if (!heart) return;
+    // NO SOUL, NO TRACKING. obj_heart exists only during the bullet phase —
+    // the Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a sword that outlives its turn by a frame has nothing
+    // to follow. Skipping the frame leaves it exactly where it was until the
+    // turn sweep takes it, which is what the original's sweep does; inventing
+    // a target position would make it lunge at a soul that is not there.
+    if (!heart) return;
 
     // Tracking. It follows the soul right up until it commits at con 2.
     if (e.con < 2) {
@@ -387,6 +401,20 @@ export const trackingSwordsManager = {
     // Place it around the soul. Note this runs AFTER setdirection may have
     // overridden the heading, so the two always agree.
     const heart = state.soul;
+    // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+    // Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a bullet that outlives its turn by a frame has
+    // nothing to aim at. Skipping the frame leaves it where it was until the
+    // turn sweep takes it; inventing a position would make it lunge at a soul
+    // that is not there.
+    if (!heart) return;
+    // NO SOUL, NO TRACKING. obj_heart exists only during the bullet phase —
+    // the Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a sword that outlives its turn by a frame has nothing
+    // to follow. Skipping the frame leaves it exactly where it was until the
+    // turn sweep takes it, which is what the original's sweep does; inventing
+    // a target position would make it lunge at a soul that is not there.
+    if (!heart) return;
     inst.x = heart.x + 10 + lengthdirX(inst.len, inst.direction);
     inst.y = heart.y + 10 + lengthdirY(inst.len, inst.direction);
     inst.ystart = inst.y;

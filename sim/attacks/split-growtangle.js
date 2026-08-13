@@ -195,6 +195,13 @@ export const splitGrowtangle = {
         eventUser0(e); // -> con 2, timer 0
 
         const heart = state.soul;
+        // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+        // Knight delivers it per turn via scr_moveheart and it is gone by the
+        // party's menu — so a bullet that outlives its turn by a frame has
+        // nothing to aim at. Skipping the frame leaves it where it was until the
+        // turn sweep takes it; inventing a position would make it lunge at a soul
+        // that is not there.
+        if (!heart) return;
         if (e.diagonal) {
           // Diagonal branch not exercised by the verified scenario.
           e.heart_x = 1;
@@ -299,6 +306,13 @@ export const splitGrowtangle = {
       if (e.timer <= hold / 2) {
         e.distance = scrEaseOut(e.timer / (e.split_hold / 2), 3) * e.max_distance;
         const heart = state.soul;
+        // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+        // Knight delivers it per turn via scr_moveheart and it is gone by the
+        // party's menu — so a bullet that outlives its turn by a frame has
+        // nothing to aim at. Skipping the frame leaves it where it was until the
+        // turn sweep takes it; inventing a position would make it lunge at a soul
+        // that is not there.
+        if (!heart) return;
         if (e.diagonal) {
           heart.x += (e.distance - e.old_distance) * e.heart_x * 1;
           heart.y += (e.distance - e.old_distance) * e.heart_y * 1;
@@ -396,6 +410,13 @@ export const splitGrowtangle = {
     e.flame_index = (e.flame_index ?? 0) + 0.5;
 
     const heart = state.soul;
+    // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+    // Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a bullet that outlives its turn by a frame has
+    // nothing to aim at. Skipping the frame leaves it where it was until the
+    // turn sweep takes it; inventing a position would make it lunge at a soul
+    // that is not there.
+    if (!heart) return;
     const gt = box(state);
     if (!heart || !gt) return;
 

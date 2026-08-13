@@ -222,6 +222,13 @@ export const swordTunnelSword = {
     e.image_blend = WHITE;
 
     const heart = state.soul;
+    // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+    // Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a bullet that outlives its turn by a frame has
+    // nothing to aim at. Skipping the frame leaves it where it was until the
+    // turn sweep takes it; inventing a position would make it lunge at a soul
+    // that is not there.
+    if (!heart) return;
     if (
       heart &&
       e.x > heart.x - 80 &&

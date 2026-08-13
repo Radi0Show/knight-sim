@@ -295,6 +295,13 @@ export const splitslash = {
   /** Other_15's body. */
   onHit(e, state) {
     const heart = state.soul;
+    // NO SOUL, NO TARGET. obj_heart exists only during the bullet phase — the
+    // Knight delivers it per turn via scr_moveheart and it is gone by the
+    // party's menu — so a bullet that outlives its turn by a frame has
+    // nothing to aim at. Skipping the frame leaves it where it was until the
+    // turn sweep takes it; inventing a position would make it lunge at a soul
+    // that is not there.
+    if (!heart) return;
     e.playerstrike = 1;
     e.active = 0;
     e.memheartx = heart.x;

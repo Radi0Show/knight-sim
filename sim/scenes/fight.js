@@ -368,13 +368,19 @@ export function clearTurn(state) {
     if (e.alive && !SURVIVES_TURN.has(e.type.name)) e.alive = false;
   }
 
-  // ROARING DESTROYS THE SOUL. Its finale cuts the screen — and obj_heart with
-  // it — which in the real game is the end of the fight, not the end of a turn.
-  // Since this harness loops, the soul has to come back; that is stand-in
-  // machinery, like the rest of the turn system (see the header).
-  if (!state.soul || !state.soul.alive) {
-    state.soul = spawn(state, soul, { ...SOUL_START });
-  }
+  // THE SOUL IS NOT RESURRECTED HERE. It used to be, as stand-in machinery for
+  // ROARING — whose finale cuts the screen and obj_heart with it.
+  //
+  // But the Knight creates the soul per bullet phase (scr_moveheart, from his
+  // `mnfight == 1.5` setup) and the director now does the same at arena-open,
+  // so a respawn here fired at TURN END and put the soul straight back for the
+  // party's menu, where the real fight has none. It defeated the whole
+  // lifecycle fix silently: the oracle correctly reported no soul while the
+  // sim reported one moving, and the sim change looked like it had not worked.
+  //
+  // ROARING is still covered — the next turn's arena-open creates the soul
+  // again, which is what the real fight does.
+  if (state.soul && !state.soul.alive) state.soul = null;
   state.view.x = 0;
   state.view.y = 0;
   const knight = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_enemy');
