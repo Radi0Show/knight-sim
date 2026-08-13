@@ -109,6 +109,34 @@ export function createMenu() {
     siner: 0,
     /** Edge-detection for the menu's own keys; the soul uses held input. */
     held: {},
+    /**
+     * `onebuffer` / `twobuffer` — obj_battlecontroller's input cooldowns, and
+     * the reason the menu cannot be blitzed through.
+     *
+     *     // set on a confirm
+     *     if (button1_p() == 1 && twobuffer < 0 && can_input == true) {
+     *         onebuffer = 1; ...
+     *     // set on a cancel
+     *     if (button2_p() == 1 && onebuffer < 0 && global.charturn > 0 ...) {
+     *         twobuffer = 1; ...
+     *     // once per Step, at the very bottom
+     *     onebuffer -= 1;
+     *     twobuffer -= 1;
+     *
+     * Every input test is `< 0`, and the value is set to 1 and decremented
+     * once a frame — so a confirm LOCKS OUT further menu input for two
+     * frames (1, then 0, both >= 0), and a cancel does the same in the other
+     * direction. They cross-gate: confirm checks `twobuffer`, cancel checks
+     * `onebuffer`, so you cannot cancel out of a selection you just made.
+     *
+     * The sim had neither, so it walked the whole three-character menu in a
+     * handful of frames while the game took ~90. The whole-fight diff showed
+     * it as the sim resolving its attack bar at frame 26 while the oracle's
+     * turn had not started — everything after that was measured from two
+     * different clocks.
+     */
+    onebuffer: 0,
+    twobuffer: 0,
     /** Set for one frame when the last character confirms. */
     justClosed: false,
     /** Set with justClosed; the director runs scr_endturn on it. */
@@ -287,17 +315,61 @@ export function stepMenu(state, input) {
   menu.justClosed = false;
   menu.siner += 2;
 
+  // `onebuffer -= 1; twobuffer -= 1;` — the LAST two lines of
+  // obj_battlecontroller's Step, so the decrement happens after every input
+  // test that frame. Doing it first here is equivalent only because the tests
+  // below read the already-decremented value, which is what the original's
+  // NEXT frame sees. Setting to 1 and testing `< 0` gives a two-frame lockout
+  // either way.
+  const wasOne = menu.onebuffer;
+  const wasTwo = menu.twobuffer;
+  menu.onebuffer = (menu.onebuffer ?? 0) - 1;
+  menu.twobuffer = (menu.twobuffer ?? 0) - 1;
+  void wasOne; void wasTwo;
+
   for (let c = 0; c < 3; c++) slide(menu, c, menu.open && menu.charturn === c);
 
   if (!menu.open) return false;
 
   // Edge-triggered: the menu must not skip five buttons because a key was held
   // for five frames. The soul's own movement is level-triggered and unaffected.
-  const pressed = (k) => {
+  const rawPressed = (k) => {
     const down = !!input[k];
     const was = !!menu.held[k];
     menu.held[k] = down;
     return down && !was;
+  };
+
+  // THE BUFFERS GATE CONFIRM AND CANCEL, AND THEY CROSS-GATE.
+  //
+  //     if (button1_p() == 1 && twobuffer < 0 && can_input == true) onebuffer = 1;
+  //     if (button2_p() == 1 && onebuffer < 0 && ...)               twobuffer = 1;
+  //
+  // Confirm checks `twobuffer` and cancel checks `onebuffer`, so you cannot
+  // immediately cancel a selection you just made, or re-confirm out of a
+  // cancel. Both are set to 1 and decremented once per Step, so each locks
+  // input out for two frames.
+  //
+  // The EDGE is still consumed while buffered — `menu.held` updates either
+  // way — so a key held across the cooldown does not fire the moment it
+  // lifts. That matches `button1_p()` being evaluated before the buffer test
+  // in the original: the press is seen, then discarded.
+  const pressed = (k) => {
+    const edge = rawPressed(k);
+    if (!edge) return false;
+    if (k === 'confirm') {
+      if (menu.twobuffer >= 0) return false;
+      // `onebuffer = 1` — latched HERE rather than in each accepting branch.
+      // The original sets it in all six of them; one gate cannot miss one.
+      menu.onebuffer = 1;
+      return true;
+    }
+    if (k === 'cancel') {
+      if (menu.onebuffer >= 0) return false;
+      menu.twobuffer = 1;
+      return true;
+    }
+    return true;
   };
 
   // `movenoise` / `selnoise` — the same flag-then-play pattern as the graze:
