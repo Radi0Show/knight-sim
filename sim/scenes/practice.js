@@ -99,6 +99,30 @@ const TURN_GAP = 1;
 /** How long bullets get to leave on their own before the sweep. */
 const DRAIN_FRAMES = 90;
 
+/**
+ * obj_moveheart — the soul flying to the board. Create aims it and arms
+ * `alarm[0] = flytime` (8); the alarm snaps it to the destination, creates
+ * obj_heart there, and destroys itself. The burst at the launch point is
+ * obj_heartburst, visual only.
+ */
+const moveheart = {
+  name: 'obj_moveheart',
+  create(e) {
+    e.image_alpha = 0;
+    e.image_speed = 0;
+  },
+  alarm: {
+    0(e, state) {
+      e.x = e.distx;
+      e.y = e.disty;
+      if (!state.soul) {
+        state.soul = spawn(state, soul, { x: e.distx, y: e.disty });
+      }
+      e.alive = false;
+    },
+  },
+};
+
 const director = {
   name: 'fight_director',
 
@@ -656,7 +680,11 @@ const director = {
       // `fade = 1` — the bar paints a black rectangle over itself for the
       // next 13 frames rather than vanishing. See render/fightbar.js.
       e.bar.fade = true;
-      e.bar.fadeamt = 0;
+      // `fadeamt += 0.08` runs in the SAME Draw that set `fade = 1`, so the
+      // first faded frame is already at 0.08 — and the object dies the frame
+      // fadeamt passes 1, thirteen v-frames total. Starting from 0 kept the
+      // sim's bar alive one frame past the oracle's.
+      e.bar.fadeamt = 0.08;
       e.fadingBar = e.bar;
       e.barHold = 0;
       e.bar = null;
@@ -762,8 +790,49 @@ const director = {
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
         e.arenaOpen = true;
+        // THE SOUL FLIES IN; IT DOES NOT APPEAR. obj_baseenemy's mnfight-1.5
+        // block calls `scr_moveheart()`, which sets `global.inv = 0` and
+        // creates obj_moveheart at Kris (+10, +40). Its Create aims it at the
+        // marker, `alarm[0] = flytime` with **flytime = 8**, and only when
+        // that alarm fires does `obj_heart` exist:
+        //
+        //     dist = point_distance(x, y, distx, disty);
+        //     move_towards_point(distx, disty, dist / flytime);
+        //     alarm[0] = flytime;
+        //     instance_create(x, y, obj_heartburst);
+        //
+        // Spawning the soul directly put it on the board 8 frames before the
+        // oracle's — the whole-fight diff's soul_x column moved at frame 88
+        // in the sim and 96 in the recording, and 96 - 88 is this flytime.
         if (upcoming.ac !== -1 && !state.soul) {
-          state.soul = spawn(state, soul, { ...SOUL_START });
+          state.inv = 0;
+          const kris = PARTY[0];
+          const mh = spawn(state, moveheart, { x: kris.x + 10, y: kris.y + 40 });
+          // No obj_heartmarker exists in this fight (only the watercooler
+          // enemy ever creates one), so the destination is the moveheart
+          // Create's growtangle branch: `(gt.x - 10, gt.y - 10)` — with the
+          // knight's own ac-13 override reaching in afterwards:
+          //
+          //     if (myattackchoice == 13) { distx = gt.x - 40; disty = gt.y - 8; }
+          //
+          // NOT SOUL_START. (314, 162) is where the TESTER creates its heart
+          // (growtangle - 6/-8), and the per-attack suites still use it; the
+          // fight lands 4 left and 2 up of that, and the oracle's first soul
+          // row — (314, 160), i.e. (310, 160) plus one movement step of 4,
+          // because the newborn heart DOES step on its birth frame — is what
+          // separated the two.
+          if (gt && upcoming.ac === 13) {
+            mh.distx = gt.x - 40;
+            mh.disty = gt.y - 8;
+          } else {
+            mh.distx = (gt ? gt.x : state.view.x + 320) - 10;
+            mh.disty = (gt ? gt.y : state.view.y + 170) - 10;
+          }
+          const dist = Math.hypot(mh.distx - mh.x, mh.disty - mh.y);
+          mh.builtinMotion = true;
+          mh.speed = dist / 8;
+          mh.direction = (Math.atan2(-(mh.disty - mh.y), mh.distx - mh.x) * 180) / Math.PI;
+          mh.alarm[0] = 8;
         }
       }
       e.spawnDelay -= 1;

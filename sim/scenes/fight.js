@@ -236,18 +236,14 @@ export function launchAttack(state, entry) {
   }
   if (gt) gt.arenaOpened = null;
 
-  // scr_moveheart() drops the soul in the arena; ac 13 is the one attack that
-  // overrides where, putting it left of centre so the corridor sweeps past.
-  if (state.soul) {
-    if (ac === 13) {
-      state.soul.x = (gt ? gt.x : 300) - 40;
-      state.soul.y = (gt ? gt.y : 190) - 8;
-    } else {
-      state.soul.x = (gt ? gt.x : 320) - 10;
-      state.soul.y = (gt ? gt.y : 170) - 10;
-    }
-    state.soul.boundaryup = 0;
-  }
+  // NO SOUL PLACEMENT HERE. This block used to stand in for scr_moveheart()
+  // by snapping the soul to the arena at the LAUNCH frame — but the real
+  // delivery is obj_moveheart (sim/scenes/practice.js), which lands the heart
+  // 8 frames after the arena opens and 4 before the attack launches. By
+  // launch the player has been steering for those 4 frames, and the snap
+  // yanked them back to the drop point: the whole-fight diff caught it as
+  // soul_x 330 -> 310 on the rtimer-12 frame. The ac-13 destination override
+  // lives with the moveheart now, where the knight's Step actually applies it.
 
   // `obj_knight_enemy.myattackchoice == 2 && (difficulty == 1 || 3)` — Flurry
   // at those two difficulties takes a further third off the damage, inside
