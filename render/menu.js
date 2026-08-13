@@ -27,7 +27,33 @@ const BP = 152;
 const CHUNK = [0, 213, 426];
 const PANEL_W = 212;
 /** `global.fighting == 0` for the whole of the menu and bullet phases. */
-const B_OFFSET = 430;
+/**
+ * `b_offset` — where the name/HP strip sits. IT IS CONDITIONAL, and 430 is
+ * the wrong branch for a battle.
+ *
+ *     // scr_charbox
+ *     b_offset = 480;
+ *     if (global.fighting == 0) b_offset = 430;
+ *     if (global.fighting == 1) b_offset = 336;
+ *     ...
+ *     draw_sprite(spr_headkris, ..., xx + 13 + xchunk, bpoff + b_offset + mmy[c]);
+ *
+ * and `bpoff = -bp + bpy + yy` (obj_battlecontroller's Draw) is ZERO, since
+ * bp and bpy are both 152 and the view y is 0. So the strip is at b_offset
+ * itself: 336 in a fight, 430 outside one.
+ *
+ * This was hardcoded to 430 — over a hundred pixels too low, which is why the
+ * icons and HP bars sat far below the button row instead of beside it, and
+ * why anything drawn in the real message band appeared to collide with them.
+ *
+ * MEASURED, not derived: reference/flipped_oracle_shot_140.png from the real
+ * game puts the unraised strip at ~332 and Kris's raised box at ~300, which
+ * is 336 and 336 - 32 (see the mmy note in sim/menu.js — the raise stops at
+ * 32, and the -64 clamp is unreachable). The panel row above it is at
+ * 480 - 152 = 328, so the strip and the buttons share a band, as the
+ * screenshot shows.
+ */
+const B_OFFSET = 336;
 /** c_maroon — GameMaker packs BGR, so 0x000080 is RGB(128, 0, 0). */
 const MAROON = 'rgb(128,0,0)';
 /** `bcolor` — obj_battlecontroller's band colour, c_navy. */
