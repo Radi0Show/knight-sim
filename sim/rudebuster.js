@@ -59,6 +59,7 @@
 
 import { cue } from './audio.js';
 import { damageKnight, KNIGHT_MAXHP } from './knight.js';
+import { spawnDmgNumber, resetDmgStack } from './dmgnumbers.js';
 
 /** `t >= 28` ends the animation; the bolt leaves at `t == 10`. */
 export const ANIM_FRAMES = 28;
@@ -122,6 +123,12 @@ export function stepRudeBuster(state, press = false) {
         dealt: 0,
       };
       r.pending = null;
+      // A SPAWNED OBJECT DOES NOT STEP ON ITS CREATION FRAME — CLAUDE.md
+      // records this from the vortex swords. The bolt's own Step does its
+      // setup at `t == 0` and only moves from the frame after, so homing and
+      // advancing it here would put the whole arc one frame early and start
+      // the press window a frame too soon.
+      r.justSpawned = true;
     }
     a.t += 1;
     if (a.t >= ANIM_FRAMES) r.anim = null;
@@ -130,6 +137,10 @@ export function stepRudeBuster(state, press = false) {
   // ---- obj_rudebuster_bolt ------------------------------------------------
   const b = r.bolt;
   if (!b) return;
+  if (r.justSpawned) {
+    r.justSpawned = false;
+    return;
+  }
 
   if (b.alpha < 1) b.alpha = Math.min(1, b.alpha + 0.25);
 
@@ -174,6 +185,19 @@ export function stepRudeBuster(state, press = false) {
       dmg = Math.round(dmg / 2);
       b.dealt = dmg;
       damageKnight(state, dmg);
+      // `scr_damage_enemy(star, damage)` — and THAT is what makes the number
+      // purple. `dm.type = global.char[caster] - 1`, and Susie is character 2,
+      // so type 1, which obj_dmgwriter draws in
+      // `lightf = merge_color(c_purple, c_white, 0.6)`.
+      //
+      // The bolt calling scr_damage_enemy rather than touching HP directly is
+      // the whole reason the popup exists at all; subtracting HP here and
+      // stopping — which is what this did — landed the damage with no number.
+      //
+      // `global.hittarget[star] = 0` first, so the number starts at the bottom
+      // of the stack instead of above whatever the attack bar left there.
+      resetDmgStack(state);
+      spawnDmgNumber(state, b.cx, b.cy, dmg, 1, 2);
       cue(state, 'snd_rudebuster_hit');
       b.explode = 1;
       b.t = 1;

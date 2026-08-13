@@ -23,6 +23,7 @@ import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford }
 import { freshInventory } from '../sim/items.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
 import { stepRudeBuster, rudeBusterBusy } from '../sim/rudebuster.js';
+import { dmgColor } from '../sim/dmgnumbers.js';
 
 const failures = [];
 const NONE = { left: false, right: false, up: false, down: false, confirm: false, cancel: false };
@@ -168,6 +169,28 @@ for (let gap = 1; gap <= 4 && landOn - gap >= 4; gap++) {
   if (got > prev) failures.push(`pressing ${gap} frames earlier dealt MORE (${got} > ${prev})`);
   if (got < noPress.dealt) failures.push(`a press dealt less than no press at all (${got})`);
   prev = got;
+}
+
+// THE POPUP IS PURPLE, and it is purple because the bolt goes through
+// `scr_damage_enemy(star, damage)` rather than touching HP directly:
+// `dm.type = global.char[caster] - 1`, Susie is character 2, so type 1 —
+// `merge_color(c_purple, c_white, 0.6)`. Subtracting HP and stopping landed
+// the damage with no number at all.
+{
+  const s = fresh(1);
+  s.tension = 250;
+  castSpell(s, 1, 4, 0);
+  let f = 0;
+  while (rudeBusterBusy(s) && f < 400) { stepRudeBuster(s, false); f += 1; }
+  const n = s.dmg.list[0];
+  if (!n) failures.push('Rude Buster landed with no damage popup');
+  else {
+    if (n.type !== 1) failures.push(`the popup is type ${n.type}, expected 1 (Susie)`);
+    if (dmgColor(n.type).join() !== '255,153,255') {
+      failures.push(`the popup is rgb(${dmgColor(n.type).join()}), expected Susie's purple`);
+    }
+    if (n.damage !== 89) failures.push(`the popup reads ${n.damage}, expected 89`);
+  }
 }
 
 // ONE PRESS ONLY. `chosen_bolt == 0` locks it, so mashing cannot stack bonuses.
