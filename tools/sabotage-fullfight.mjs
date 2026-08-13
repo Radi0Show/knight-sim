@@ -129,6 +129,27 @@ const CASES = [
     reject: [/column mismatch/, /FAIL/],
   },
   {
+    // REGRESSION for the worst failure this harness has had: a recording that
+    // ran ONE turn and then flatlined was diffed happily and reported "exact
+    // through frame 21". Literally true, and it had never compared a second
+    // turn, a phase transition, a difficulty variant or the phase-4 gate.
+    //
+    // A trace that is present but contains no fight is more dangerous than one
+    // that is absent, because it looks like evidence.
+    name: 'a recording that stops after one turn is refused, not diffed',
+    edit: (rows, h) => {
+      const b = h.indexOf('bullets');
+      const t = h.indexOf('turn');
+      // One turn, then a long dead tail.
+      for (let i = 0; i < rows.length; i++) {
+        if (i > 300) { rows[i][b] = '0'; rows[i][t] = '1'; }
+      }
+    },
+    expectCode: 1,
+    expect: [/DEGENERATE/, /distinct phase\/turn values/, /button1_p\(\) is edge-triggered|edge-triggered/],
+    reject: [/first divergence at frame/],
+  },
+  {
     name: 'a missing column is fatal and says which side',
     edit: (rows, h) => {
       const c = h.indexOf('tension');
@@ -167,6 +188,32 @@ function main() {
   const base = readFileSync(simPath, 'utf8').trim().split('\n');
   const baseHeader = base[0].split(',');
   const baseRows = base.slice(1).map((l) => l.split(','));
+
+  // MAKE THE BASE TRACE WELL-FORMED. These cases test the DIFFER, not the
+  // fight, but the differ now refuses to diff a degenerate recording — one
+  // that runs a turn or two and then flatlines — and a sim replay of a short
+  // synthetic token is exactly that. Without this the truncation case trips
+  // the degeneracy guard instead of exercising the length-mismatch path.
+  //
+  // Stamping a plausible turn cycle and a bullet here is not faking a result:
+  // every assertion below is about how the differ REPORTS, and each one edits
+  // the cells it cares about on top of this.
+  {
+    const pi = baseHeader.indexOf('phase');
+    const ti = baseHeader.indexOf('turn');
+    const bi = baseHeader.indexOf('bullets');
+    baseRows.forEach((r, i) => {
+      const turnNo = Math.floor(i / 150);
+      if (pi >= 0) r[pi] = String(1 + Math.floor(turnNo / 5));
+      if (ti >= 0) r[ti] = String((turnNo % 5) + 1);
+      if (bi >= 0) r[bi] = (i % 150) > 40 ? '1' : '0';
+    });
+    // BOTH SIDES get the well-formed base. Stamping only the oracle copy made
+    // the two disagree on phase/turn/bullets in every row, so every case
+    // reported a divergence at frame 0 and stopped testing what it meant to.
+    writeFileSync(simPath,
+      `${baseHeader.join(',')}\n${baseRows.map((r) => r.join(',')).join('\n')}\n`);
+  }
 
   let failed = 0;
   for (const c of CASES) {

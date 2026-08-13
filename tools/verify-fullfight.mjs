@@ -133,6 +133,47 @@ function compare(oracle, sim, context) {
     return { fatal: 'no frames in common — the two sides do not overlap at all' };
   }
 
+  // A DEGENERATE RECORDING MUST NOT PRODUCE A CONFIDENT RESULT.
+  //
+  // The first recordings ran ONE attack turn and then flatlined for 790 of
+  // their 1200 frames — the input token held `confirm` instead of pulsing it,
+  // and `button1_p()` is edge-triggered, so the party menu could never
+  // complete a second time and the Knight never took another turn. The differ
+  // happily reported "exact through frame 21" against that, which is literally
+  // true and badly misleading: no second turn, no phase transition, no
+  // difficulty variant and no phase-4 gate were ever compared.
+  //
+  // This is the same hazard the loud SKIP handles when traces are ABSENT. A
+  // trace that is present but contains no fight is worse, because it looks
+  // like evidence. So the shape of the recording is checked before its
+  // contents are trusted.
+  const oTurns = new Set();
+  const pi = oracle.header.indexOf('phase');
+  const ti = oracle.header.indexOf('turn');
+  const bi = oracle.header.indexOf('bullets');
+  if (pi >= 0 && ti >= 0) {
+    for (const r of oracle.rows) oTurns.add(`${r[pi]}/${r[ti]}`);
+  }
+  // The tail: how many frames run to the end with nothing on screen.
+  let tail = 0;
+  if (bi >= 0) {
+    for (let r = oracle.rows.length - 1; r >= 0 && Number(oracle.rows[r][bi]) === 0; r--) tail++;
+  }
+  const tailFrac = tail / rows;
+  if (oTurns.size < 3 || tailFrac > 0.4) {
+    return {
+      fatal: 'THE RECORDING IS DEGENERATE — refusing to report a diff against it\n'
+        + `  distinct phase/turn values: ${oTurns.size} (${[...oTurns].join(' ')})\n`
+        + `  trailing frames with no bullets: ${tail} of ${rows}`
+        + ` (${Math.round(tailFrac * 100)}%)\n`
+        + '  A fight that stops after one turn cannot verify a fight. Most likely\n'
+        + '  the replay token HOLDS confirm rather than pulsing it: button1_p()\n'
+        + '  is edge-triggered, so a held button is one press and the party menu\n'
+        + '  never completes again. Generate a pulsing token (see the menuInput\n'
+        + '  helper in tools/verify-fight-order.mjs) and re-record.',
+    };
+  }
+
   // A LENGTH mismatch is a finding, not a fatal: the shared prefix is still
   // worth diffing, and "identical for 6000 frames then the oracle stops" is a
   // very different bug from "diverges at frame 12".
