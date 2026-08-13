@@ -21,6 +21,8 @@
 // for the very attacks that hit hardest, which is faithful and useless as a
 // test. This walks a square.
 
+import * as TRACKING from '../sim/attacks/tracking-swords.js';
+import { spawn } from '../sim/entity.js';
 import { createState, stepFrame } from '../sim/index.js';
 import { buildSingleAttackScene, ATTACK_MENU } from '../sim/scenes/single.js';
 import { MAX_TENSION } from '../sim/tension.js';
@@ -86,6 +88,40 @@ for (const [id, tp, n, flash] of rows) {
   console.log(`${id.padEnd(13)} TP ${String(tp).padStart(3)}/${MAX_TENSION}  ${String(n).padStart(3)} grazes  ring up ${flash} frames`);
 }
 console.log(`\nturn clock: ${spent.toFixed(1)} spent over ${FRAMES} frames — ${(spent - FRAMES).toFixed(1)} of it from grazing`);
+
+
+// ── GRAZEPOINTS ARE HALVED DURING THE VORTEX TURN ────────────────────────
+//
+// obj_tracking_sword_slash's Create:
+//
+//     grazepoints = 4;
+//     if (i_ex(obj_sword_vortex_manager)) grazepoints = 2;
+//     if (i_ex(obj_tracking_swords_manager) && variant == 1) grazepoints = 2;
+//
+// ac 15 chains the vortex and the tracking swords, so the vortex manager is
+// alive while the slashes spawn and every one pays HALF. This build hardcoded
+// the un-halved 4, which double-counted TP for the whole of phase 2 turn 9 —
+// and a 900px bar sweeping the arena is a lot of graze frames to double.
+{
+  const slash = Object.values(TRACKING).find(
+    (v) => v && v.name === 'obj_tracking_sword_slash',
+  );
+  const fresh = () => createState({ seed: 1 });
+
+  let s = fresh();
+  let e = spawn(s, slash, { x: 0, y: 0 });
+  if (e.grazepoints !== 4) failures.push(`a lone slash pays ${e.grazepoints}, expected 4`);
+
+  s = fresh();
+  spawn(s, { name: 'obj_sword_vortex_manager', create() {} }, { x: 0, y: 0 });
+  e = spawn(s, slash, { x: 0, y: 0 });
+  if (e.grazepoints !== 2) failures.push(`during ac 15 the slash pays ${e.grazepoints}, expected 2`);
+
+  s = fresh();
+  spawn(s, { name: 'obj_tracking_swords_manager', create(x) { x.variant = 1; } }, { x: 0, y: 0 });
+  e = spawn(s, slash, { x: 0, y: 0 });
+  if (e.grazepoints !== 2) failures.push(`at variant 1 the slash pays ${e.grazepoints}, expected 2`);
+}
 
 if (failures.length) {
   console.log('');

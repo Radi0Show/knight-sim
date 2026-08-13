@@ -59,7 +59,26 @@ export const trackingSwordSlash = {
     e.active = 1;
     e.destroyonhit = 0;
     e.damage = 1;
-    e.grazepoints = 4;
+    // GRAZEPOINTS ARE HALVED IN TWO CASES, and this hardcoded the un-halved 4:
+    //
+    //     grazepoints = 4;
+    //     if (i_ex(obj_sword_vortex_manager)) grazepoints = 2;
+    //     if (i_ex(obj_tracking_swords_manager) && variant == 1) grazepoints = 2;
+    //
+    // `variant` is the attack's DIFFICULTY (`_manager.variant = difficulty`).
+    //
+    // The first case is the one this fight hits: ac 15 chains the vortex and
+    // the tracking swords, so the vortex manager is alive while the slashes
+    // spawn and every one of them pays HALF. Paying the full 4 there gave
+    // double TP for the whole of phase 2 turn 9 — a 900px bar sweeping the
+    // arena is a lot of graze frames to be double-counting.
+    const vortex = state.entities.some(
+      (x) => x.alive && x.type.name === 'obj_sword_vortex_manager',
+    );
+    const variantOne = state.entities.some(
+      (x) => x.alive && x.type.name === 'obj_tracking_swords_manager' && x.variant === 1,
+    );
+    e.grazepoints = (vortex || variantOne) ? 2 : 4;
     e.timepoints = 11;
     e.sprite_index = 'spr_pxwhite2';
     e.isBullet = true;
