@@ -176,7 +176,16 @@ export async function createRenderer(canvas) {
       // the box stayed on screen through the whole command phase.
       if (state.boardVisible === false) return true;
       drawGrowtangle(ctx, e, deps.sprites, SPRITE_FOR.obj_growtangle);
-      return true;
+      // RETURN FALSY. `drawGrowtangle` draws only the GREEN UNDER-LAYER —
+      // frame 1, the solid interior. The BORDER is frame 0, drawn by
+      // `draw_self()`, which here is the generic blit that runs when an
+      // override declines to handle the entity.
+      //
+      // Returning true to suppress the blit therefore deleted the box's
+      // outline and left a black interior on a dark background: the arena
+      // looked like it had stopped appearing entirely. Both layers are
+      // needed, which is what obj_growtangle's own two-line Draw says.
+      return false;
     },
 
     /**

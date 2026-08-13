@@ -33,6 +33,11 @@ import { cue } from './audio.js';
 // cycle is not worth untangling for two coordinates.
 const PARTY_POS = [{ x: 126, y: 104 }, { x: 80, y: 142 }, { x: 58, y: 190 }];
 const KNIGHT_POS = { x: 425, y: 78 };
+// The Knight's sprite is 2x from its origin; his mass sits down and right of
+// the instance position. Measured against where the hurt strobe draws him.
+// `targety -= 50` from the bolt's Create is folded in here: 90 down to his
+// mass, 50 back up for the Knight's own aim offset.
+const KNIGHT_AIM = { dx: 60, dy: 90 - 50 };
 
 /** `scr_spellinfo`, the cases this fight can reach. */
 export const SPELLS = {
@@ -139,8 +144,20 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     //
     // See sim/rudebuster.js. `scr_spell` sets `global.spelldelay = 70`, so the
     // turn holds while it resolves.
+    // AIM AT THE KNIGHT WHERE HE ACTUALLY IS, not at a constant. `targetx/y`
+    // come from `global.monsterx/monstery`, which track the instance — and
+    // this Knight BOBS (`y = ystart + cos(siner2 / 8) * 8`) and shakes when
+    // hit. A fixed origin sent the bolt to where he was at scene build, so it
+    // flew past him and detonated on empty air.
+    //
+    // The sprite is drawn at scale 2 from its origin, so the visual centre is
+    // well right of and below `x, y` — aiming at the raw origin puts the
+    // impact off his shoulder even when the coordinates are live.
+    const k = state.entities.find((en) => en.alive && en.type.name === 'obj_knight_enemy');
+    const kx = (k?.x ?? KNIGHT_POS.x) + KNIGHT_AIM.dx;
+    const ky = (k?.y ?? KNIGHT_POS.y) + KNIGHT_AIM.dy;
     castRudeBuster(state, PARTY_POS[slot].x, PARTY_POS[slot].y,
-      spellDamage(state, slot), KNIGHT_POS.x, KNIGHT_POS.y);
+      spellDamage(state, slot), kx, ky);
     return 'Rude Buster!';
   }
   if (spellId === 2) {

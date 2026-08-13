@@ -96,8 +96,10 @@ export function stepRudeBuster(state, press = false) {
       const { damage, targetX, targetY } = r.pending;
       const bx = a.x + 40;
       const by = a.y + 30;
-      // The Knight's aim point sits 50px higher than his origin.
-      const cy = targetY - 50;
+      // `targety -= 50` for the Knight lives in the CALLER now, together with
+      // the rest of the aim offset — applying it here too shifted the impact
+      // 50px above his head.
+      const cy = targetY;
       let dir = (Math.atan2(-(cy - by), targetX - bx) * 180) / Math.PI;
       if (dir < 0) dir += 360;
       r.bolt = {
