@@ -16,6 +16,7 @@ import { createHeroes } from './heroes.js';
 import { createDmgNumbers } from './dmgnumbers.js';
 import { createAttackVfx } from './attackvfx.js';
 import { createRudeBuster } from './rudebuster.js';
+import { createDialogue } from './dialogue.js';
 import { createKnight } from './knight.js';
 import { createRng, gmlCreate } from './rng.js';
 
@@ -74,6 +75,8 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     attackVfx: createAttackVfx(),
     /** Rude Buster's animation and bolt. */
     rude: createRudeBuster(),
+    /** The Knight/Susie exchange and the ACT chatbox. */
+    dialogue: createDialogue(),
     /** TP. `global.tension` / `global.maxtension` — see sim/tension.js. */
     tension: 0,
     /** The fight's twelve slots — see sim/items.js. */

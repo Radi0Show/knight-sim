@@ -21,6 +21,7 @@ import { drawFightBar } from './fightbar.js';
 import { drawBackground } from './background.js';
 import { drawDmgNumbers, drawAttackVfx } from './dmgnumbers.js';
 import { drawRudeBuster } from './rudebuster.js';
+import { drawDialogue } from './dialogue.js';
 import {
   drawSwordTunnelSword, drawTrackingSword, drawTrackingSwordsManager,
   drawSplitslashStrike,
@@ -512,6 +513,9 @@ export async function createRenderer(canvas) {
     drawAttackVfx(ctx, state, sprites);
     drawRudeBuster(ctx, state, sprites);
     drawDmgNumbers(ctx, state, sprites);
+    // The chatbox occupies the same band as the button row, and the two are
+    // never up together — the exchange runs before the menu opens.
+    drawDialogue(ctx, state, sprites);
     drawMenu(ctx, state, sprites);
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.
     drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);

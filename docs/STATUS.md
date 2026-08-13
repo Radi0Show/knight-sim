@@ -2582,3 +2582,68 @@ The audit now walks each object's Other_15 and reports what it actually does
 (single / AOE / MAXHP / no damage / catch) against whether the sim gives that
 object its own handler or the inherited one. That table is what surfaced the
 roaring star.
+
+## Dialogue, and the plan for one-to-one verification (38 suites)
+
+### The exchange is TWO BEATS, not a stream of lines
+
+`obj_knight_enemy`'s Step. Reading it as one list of lines gets the shape
+wrong:
+
+    balloonturn++;                    once a turn, and ONLY while Susie stands
+    balloonturn == N   ->  the Knight's taunt, and `ballooncon = N - 5`
+    button3_p() / writer ends  ->  Susie's reply, then ballooncon = 0
+
+The Knight speaks, you press C, Susie answers. Nine pairs, extracted
+programmatically from the dump rather than transcribed.
+
+**IT IS SILENT FOR FIVE TURNS.** `balloonturn` counts from 0 and the first
+line is at 6 — the taunting starts once the fight has been going long enough
+to be going badly.
+
+**A DOWNED SUSIE FREEZES IT.** The increment sits inside `if (global.hp[2] >
+0)`, so it holds where it stands rather than skipping ahead. She is the one
+being talked to.
+
+**Two taunts have alternates** for when Kris AND Ralsei are both down —
+`hp[1] < 1 && hp[3] < 1`, both, not either — swapping "knock me down" for
+"knock them down". Asserted, including that one of them down is not enough.
+
+The typing logic (`global.typer = 81`, ~2 chars a frame, `&` as the break)
+lives in `sim/` and not `render/`: the turn loop needs to know when a line has
+finished, and a sim module importing from render/ to find out is the
+dependency arrow pointing the wrong way.
+
+### One-to-one verification — docs/VERIFICATION.md
+
+**The gap is not coverage, it is that nothing checks the fight AS PLAYED.**
+All 21 oracle suites pin ONE attack in a frozen scenario. Nothing has compared
+a whole fight — menus, turn order, damage accumulating over fifteen turns —
+against the real thing. And the 17 self-contained suites are careful readings,
+which this session proved can be careful readings of the wrong half of an
+object three times over.
+
+The plan is **one token, two runs, one diff**, and every piece already exists
+for other reasons:
+
+    token ─┬─> patched game ─> oracle.csv ─┐
+           └─> sim headless ─> sim.csv    ─┴─ exact diff
+
+The replay token is already a seed plus an input stream that `verify-replay`
+proves reproduces a live run exactly — it is the input table the oracle
+harness has wanted since T4, including menu presses.
+
+**Built this session:** the WIDE trace row (96 columns — per-character HP, TP,
+the Knight's HP and creeping damagereduction, phase, turn, menu, bar, balloon,
+and every bullet's x/y/angle/scale) and `tools/fullfight-trace.mjs`, the sim
+half. Confirmed byte-identical across runs.
+
+**Still needed:** `oracle_fullfight.csx` to drive the game from a token, one
+recorded fight, and the differ. Steps that need a game run, which the sim half
+does not.
+
+**What this will NOT cover, stated plainly:** the renderer. A frame-perfect
+CSV diff says nothing about whether the Flurry flame is the right colour — and
+that exact bug shipped this session and survived every suite. Visual fidelity
+is reviewed by eye and nothing more until a screenshot-comparison pass exists,
+which is a different and much fuzzier discipline.

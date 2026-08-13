@@ -24,6 +24,9 @@ import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
 import { endTurnItems } from '../menu.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_SPELL } from '../heroes.js';
+import {
+  advanceBalloon, advanceReply, clearDialogue, dialogueDone,
+} from '../dialogue.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
@@ -195,6 +198,9 @@ const director = {
 
     const entry = FIGHT_TABLE[e.phase][e.turn];
     state.phase = `phase ${e.phase} · turn ${e.turn + 1} · ${entry.name}`;
+    // Numeric, for the wide trace — a diff should point at a turn, not at prose.
+    state.phaseNum = e.phase;
+    state.turnNum = e.turn;
 
     if (e.started) {
       e.elapsed += 1;
@@ -228,6 +234,7 @@ const director = {
       if (!finished) return;
 
       e.started = false;
+      e.balloonDone = false;
       e.arenaOpen = false;
       e.gap = TURN_GAP;
       e.spawnDelay = RTIMER_SPAWN;
@@ -268,6 +275,28 @@ const director = {
     // party members picks from their button row, and only when the last one
     // confirms does the enemy attack. The gap above is the beat before the
     // panels rise.
+    // THE EXCHANGE runs before the menu, one beat per turn from turn 6.
+    // `balloonturn++` sits inside `if (global.hp[2] > 0)`, so a downed Susie
+    // freezes it where it stands rather than skipping ahead — she is the one
+    // being talked to.
+    if (!e.balloonDone) {
+      e.balloonDone = true;
+      advanceBalloon(state.dialogue, state);
+    }
+    if (state.dialogue.text) {
+      state.dialogue.timer += 1;
+      const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
+      // `button3_p() && talktimer > 15` — C advances, but only after a beat,
+      // so the press that dismissed the previous line cannot eat this one.
+      const press = !!state.input?.button3 && !e.talkHeld;
+      e.talkHeld = !!state.input?.button3;
+      if ((press && state.dialogue.timer > 15) || (done && state.dialogue.timer > 90)) {
+        if (state.dialogue.speaker === 'knight') advanceReply(state.dialogue);
+        else clearDialogue(state.dialogue);
+      }
+      return;
+    }
+
     if (!e.menuShown) {
       e.menuShown = true;
       // `for (__hiti...) global.hittarget[__hiti] = 0;` — scr_attackphase

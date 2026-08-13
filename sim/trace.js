@@ -7,6 +7,30 @@
 export const BASE_FIELDS = ['frame', 'soul_x', 'soul_y', 'hp', 'inv_timer', 'phase'];
 
 /**
+ * THE WIDE ROW, for whole-fight verification (docs/VERIFICATION.md).
+ *
+ * The narrow row above was built to diff ONE attack in a frozen scenario. A
+ * whole fight has to carry everything that accumulates across fifteen turns —
+ * the party's HP individually rather than as one number, the Knight's HP and
+ * his creeping damagereduction, TP, the turn and phase, the menu, the bar.
+ *
+ * A FIELD NOTHING LOOKS AT IS A FIELD THAT CAN DIVERGE SILENTLY. That is how
+ * the f32 narrowing survived T3 and T4 — nothing traced image_angle, so
+ * nothing could see it drift. Widen this rather than trusting that a column
+ * would not have mattered.
+ */
+export const WIDE_FIELDS = [
+  'frame',
+  'soul_x', 'soul_y', 'inv_timer',
+  'hp0', 'hp1', 'hp2',
+  'tension',
+  'knight_hp', 'knight_dr',
+  'phase', 'turn',
+  'menu', 'bar', 'balloon',
+  'bullets',
+];
+
+/**
  * Format a real to match GML `string_format(v, 0, 10)`.
  *
  * JS `(-0).toFixed(10)` yields "0.0000000000" — no sign. If GML turns out to
@@ -56,6 +80,15 @@ export function int(v) {
 }
 
 export function traceHeader(state) {
+  if (state.traceWide) {
+    const cols = [...WIDE_FIELDS];
+    for (let i = 0; i < state.traceBulletSlots; i++) {
+      // Angle and the scales too — they feed the rotated-mask collision, so a
+      // divergence there is a divergence in what can hit you.
+      cols.push(`b${i}_x`, `b${i}_y`, `b${i}_a`, `b${i}_xs`, `b${i}_ys`);
+    }
+    return cols.join(',');
+  }
   const cols = [...BASE_FIELDS];
   for (let i = 0; i < state.traceBulletSlots; i++) {
     cols.push(`b${i}_x`, `b${i}_y`);
@@ -73,6 +106,7 @@ export function traceHeader(state) {
  */
 export function traceRow(state) {
   const soul = state.soul;
+  if (state.traceWide) return wideRow(state);
 
   const cells = [
     int(state.frame),
@@ -94,5 +128,50 @@ export function traceRow(state) {
 
   if (state.traceExtra) cells.push(...state.traceExtra(state));
 
+  return cells.join(',');
+}
+
+/**
+ * One wide row. Bullets are sorted by SPAWN ORDER (`seq`), never instance id —
+ * ids shift as objects are added, and the game's own per-frame iteration order
+ * is not spawn order either. Where the two runs disagree on ordering, the
+ * differ matches nearest and asserts the count, as verify-roaring-pull does.
+ */
+function wideRow(state) {
+  const soul = state.soul;
+  const bullets = state.entities
+    .filter((e) => e.alive && e.isBullet && e.type.name !== 'obj_heart')
+    .sort((a, b) => a.seq - b.seq);
+
+  const cells = [
+    int(state.frame),
+    real(soul ? soul.x : 0),
+    real(soul ? soul.y : 0),
+    real(state.invTimer ?? 0),
+    int(state.partyHp?.[0] ?? 0),
+    int(state.partyHp?.[1] ?? 0),
+    int(state.partyHp?.[2] ?? 0),
+    real(state.tension ?? 0),
+    int(state.knight?.hp ?? 0),
+    real(state.knight?.damagereduction ?? 0),
+    // `phase` is a human string in the narrow row; here it is the numbers, so
+    // a diff points at a turn rather than at prose.
+    int(state.phaseNum ?? 0),
+    int(state.turnNum ?? 0),
+    state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-',
+    state.fightBar ? int(state.fightBar.boltx) : '-',
+    int(state.dialogue?.balloonturn ?? 0),
+    int(bullets.length),
+  ];
+
+  for (let i = 0; i < state.traceBulletSlots; i++) {
+    const b = bullets[i];
+    if (!b) {
+      cells.push('', '', '', '', '');
+      continue;
+    }
+    cells.push(real(b.x), real(b.y), real(b.image_angle ?? 0),
+      real(b.image_xscale ?? 1), real(b.image_yscale ?? 1));
+  }
   return cells.join(',');
 }
