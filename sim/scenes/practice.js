@@ -407,6 +407,20 @@ const director = {
       // clears the stack so each turn's numbers start at the bottom again.
       resetDmgStack(state);
       openMenu(state);
+      // PROCESS THIS FRAME'S INPUT TOO. `stepMenu` runs earlier in the same
+      // endStep (see above), when the menu was still closed and it did
+      // nothing — so without this the menu opens at the end of frame N and
+      // first sees input on frame N+1, losing a frame the game does not.
+      //
+      // obj_battlecontroller opens and reads the menu in the SAME Step, so a
+      // confirm held on the opening frame is acted on immediately. The
+      // whole-fight diff showed the cost: the oracle had already advanced
+      // charturn and banked DEFEND's 40 TP before its frame 1, while the sim
+      // took until frame 3.
+      //
+      // Safe to call twice in one frame: the earlier call was a no-op with
+      // the menu closed, so this processes the frame's input exactly once.
+      stepMenu(state, state.input ?? {});
       return;
     }
     if (state.menu.open) return;
