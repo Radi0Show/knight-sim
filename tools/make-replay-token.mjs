@@ -59,6 +59,11 @@ for (let f = 0; f < frames; f++) {
     // The pulse. Every other frame, so a menu that needs three confirms gets
     // them within six frames rather than never.
     confirm: f % confirmPeriod === 0,
+    // BUTTON3 advances the Knight's dialogue. Offset from confirm so the two
+    // edges never land on the same frame — the enemy-talk state needs
+    // `talktimer > 15` before it will accept one, and a press that arrives
+    // with a confirm is harder to reason about when a trace diverges.
+    button3: f % 4 === 1,
   });
 }
 

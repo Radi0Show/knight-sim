@@ -24,6 +24,22 @@
 
 const BITS = {
   left: 1, right: 2, up: 4, down: 8, focus: 16, confirm: 32, cancel: 64,
+  // BUTTON3 IS THE DIALOGUE ADVANCE (C), and it has to be in the token.
+  //
+  // obj_knight_enemy's enemy-talk state waits on it:
+  //
+  //     if (talked == 0.5) {
+  //         talktimer++;
+  //         if ((button3_p() && talktimer > 15) || !i_ex(obj_writer)) { ... }
+  //
+  // Without it the writer is never dismissed, `talked` sticks at 0.5, and the
+  // fight stalls before the Knight's setup — which is why the oracle harness
+  // forced `talked = 1` and, in doing so, silently dropped every other side
+  // effect of that branch (scr_randomtarget, obj_darkener, balloonturn++,
+  // rtimer = 0). Three separate bugs came out of that one shortcut.
+  //
+  // Adding a bit is backward compatible: older tokens simply never set it.
+  button3: 128,
 };
 const KEYS = Object.keys(BITS);
 
