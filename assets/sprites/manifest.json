@@ -866,6 +866,47 @@
    "spr_heart_1.png"
   ]
  },
+ "spr_heartbreak": {
+  "w": 20,
+  "h": 16,
+  "ox": 0,
+  "oy": 0,
+  "frames": 1,
+  "bbox": [
+   0,
+   0,
+   19,
+   15
+  ],
+  "sepmasks": "Precise",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_heartbreak_0.png"
+  ]
+ },
+ "spr_heartshards": {
+  "w": 10,
+  "h": 10,
+  "ox": 0,
+  "oy": 0,
+  "frames": 4,
+  "bbox": [
+   1,
+   1,
+   8,
+   8
+  ],
+  "sepmasks": "Precise",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_heartshards_0.png",
+   "spr_heartshards_1.png",
+   "spr_heartshards_2.png",
+   "spr_heartshards_3.png"
+  ]
+ },
  "spr_hpname": {
   "w": 16,
   "h": 11,

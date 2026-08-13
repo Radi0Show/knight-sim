@@ -28,6 +28,7 @@ import { cue } from '../audio.js';
 import { clamp01 } from '../gml.js';
 import { STAR_MASK, scrPreciseHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
+import { scrDamageAll } from '../damage.js';
 import { pointingStarchild } from './pointing-starchild.js';
 
 export const pointingStar = {
@@ -223,5 +224,44 @@ export const pointingStar = {
     return scrPreciseHit(heart, e, STAR_MASK, 3);
   },
 
-  other15: collidebulletOther15,
+  other15: starOther15,
 };
+
+/**
+ * `obj_knight_pointing_star`'s Other_15 — and it is NOT the inherited one.
+ *
+ *     target = 3;
+ *     damage = 75;
+ *     with (obj_knight_enemy) aoedamage = true;
+ *     if (active == 1) {
+ *         if (!scr_precise_hit(3)) exit;
+ *         if (target == 3) scr_damage_all();
+ *         if (destroyonhit == 1) instance_destroy();
+ *     }
+ *     with (obj_knight_enemy) aoedamage = false;
+ *
+ * THREE THINGS the generic handler got wrong, and the port used the generic
+ * handler for both the star and its children:
+ *
+ * 1. **THE DAMAGE IS 75, SET AT CONTACT.** The `damage = 1` in Create is a
+ *    placeholder the hit overwrites. An audit that compares the sim's value
+ *    against every `damage =` in the object sees 1 in a list of [1, 75] and
+ *    calls it a match — which is exactly what happened here. The value that
+ *    matters is the one live AT THE MOMENT OF THE HIT.
+ *
+ * 2. **`target = 3` MEANS THE WHOLE PARTY.** It is `scr_damage_all`, not
+ *    `scr_damage`. Stars was hitting one character for 1 instead of all three
+ *    for 75.
+ *
+ * 3. **`aoedamage = true` FOR THE DURATION.** The Knight's targeting block
+ *    reads it: an AOE hit skips the redirect-away-from-Kris and the
+ *    ShadowMantle pull entirely, because an attack that hits everyone has
+ *    nobody to redirect to. Set and cleared around the call, not left on.
+ */
+export function starOther15(e, state) {
+  if (e.active !== 1 && e.active !== true) return;
+  e.damage = 75;
+  e.target = 3;
+  scrDamageAll(state, e.damage, { aoe: true, element: 5 });
+  if (e.destroyonhit === 1) destroy(state, e);
+}

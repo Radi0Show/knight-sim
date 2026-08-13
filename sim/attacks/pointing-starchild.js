@@ -48,6 +48,7 @@ import {
   RED,
 } from '../gml.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
+import { starOther15 } from './pointing-star.js';
 import { STARCHILD_MASK, STARCHILD_TRAIL_MASK, scrPreciseHit } from '../masks.js';
 
 /** scr_rotatetowards — step `from` toward `to` by at most `delta`. */
@@ -310,5 +311,8 @@ export const pointingStarchild = {
     return scrPreciseHit(heart, e, mask, n);
   },
 
-  other15: collidebulletOther15,
+  // The SAME 75-damage party-wide hit as its parent — obj_knight_pointing_
+  // starchild's Other_15 is `target = 3; damage = 75; scr_damage_all()`.
+  // The children were doing 1 to one character.
+  other15: starOther15,
 };

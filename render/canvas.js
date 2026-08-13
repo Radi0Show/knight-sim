@@ -529,5 +529,10 @@ export async function createRenderer(canvas) {
       m.playbacktype === 'FramesPerSecond' ? (m.playback ?? 30) / 30 : (m.playback ?? 1);
   }
 
-  return { draw, VIEW_W, VIEW_H, spriteCount: sprites.size, spriteFrames, spriteRate };
+  // `sprites` and `ctx` are exposed so the title and Game Over screens can
+  // draw with the same assets rather than loading their own copies.
+  return {
+    draw, ctx, sprites, VIEW_W, VIEW_H,
+    spriteCount: sprites.size, spriteFrames, spriteRate,
+  };
 }

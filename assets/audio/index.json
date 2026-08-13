@@ -57,5 +57,7 @@
  "snd_scytheburst": "snd_scytheburst.wav",
  "snd_shinka_ambience": "snd_shinka_ambience.wav",
  "snd_smallswing": "snd_smallswing.wav",
- "snd_splat": "snd_splat.wav"
+ "snd_splat": "snd_splat.wav",
+ "snd_break1": "snd_break1.wav",
+ "snd_break2": "snd_break2.wav"
 }

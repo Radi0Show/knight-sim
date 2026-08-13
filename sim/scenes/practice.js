@@ -31,7 +31,7 @@ import { castSpell } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
-  endCutsceneReached, startEndCutscene, DR_PHASE4,
+  endCutsceneReached, startEndCutscene, DR_PHASE4, KNIGHT_MAXHP,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
 import { cueLoop, cue, cueStop } from '../audio.js';
@@ -133,7 +133,16 @@ const director = {
       cueLoop(state, 'mus_knight');
     }
 
-    if (endCutsceneReached(state)) {
+    // ENDLESS never reaches the ending — that is the mode's entire promise.
+    // The fight wraps back to phase 1 instead, and the Knight's HP resets so
+    // the 5840 gate can be crossed again rather than sitting permanently open.
+    if (state.runMode === 'endless' && endCutsceneReached(state)) {
+      state.knight.hp = KNIGHT_MAXHP;
+      state.knight.haveusedroaring = false;
+      e.phase = 1;
+      e.turn = 0;
+      e.turnsRun = 0;
+    } else if (endCutsceneReached(state)) {
       startEndCutscene(state);
       state.menu.open = false;
       state.fightBar = null;
@@ -242,7 +251,10 @@ const director = {
       //
       // The turn-count fallback stays as a floor so a player who never
       // attacks still reaches the finale rather than looping phase 3 forever.
-      if (e.phase === 3 && e.turn === 0 && (phase4Reached(state) || e.turnsRun >= 15)) {
+      // ENDLESS skips phase 4 entirely and keeps looping phase 3, since
+      // phase 4 is the run-ending sequence.
+      if (state.runMode !== 'endless'
+        && e.phase === 3 && e.turn === 0 && (phase4Reached(state) || e.turnsRun >= 15)) {
         e.phase = 4;
         e.turn = 0;
       }

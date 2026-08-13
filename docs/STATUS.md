@@ -2421,3 +2421,65 @@ nothing to play. Also wired `snd_criticalswing`, which obj_heroparent plays on
 `points == 150` — the only feedback that a bar was perfect rather than good.
 
 59 cues now, 58 preloaded (the music is deliberately not), none missing.
+
+## Title screen, the real Game Over, and Stars' damage (37 suites)
+
+**The HTML picker is gone.** Three `<select>` boxes above the canvas, one of
+them reading "Stars — phase 1/2/3 opener", made this look like a debug harness
+with a game attached. The title screen replaces them, drawn ON THE CANVAS with
+`fnt_mainbig`, `spr_heart` and the dark-fountain background — so the menu
+cannot drift stylistically from the fight it launches, because it is the same
+renderer one frame earlier.
+
+Four modes: NORMAL, HITLESS (restarts on any hit), ENDLESS (never ends; the
+order wraps and the Knight's HP resets so the 5840 gate can be crossed again),
+SINGLE ATTACK. HITLESS is the mode this project was implicitly built for the
+whole time — a deterministic sim with instant restart is exactly that shape —
+and it was the one thing the old UI could not express.
+
+`?mode`, `?attack`, `?difficulty` and `?replay` still bypass the title screen,
+because a shareable link to one attack is what the dropdowns were good for.
+
+### The Game Over was invented; now it is the event
+
+`obj_gameover_init`, timer for timer. Three things the first pass made up:
+
+1. **IT FREEZES THE SCREEN.** `scr_gameover` screenshots the application
+   surface at the instant of death and holds it for 30 frames. Cutting to
+   black throws the moment away.
+2. **The soul breaks WHERE IT DIED** — `global.heartx/hearty`, not centre
+   screen.
+3. **The shards fly at `random(360)`, speed 7, gravity 0.2**, and the gap
+   between `snd_break1` (timer 50) and `snd_break2` (timer 90) is FORTY
+   frames, not the 24 guessed. That beat is most of the feel.
+
+"try again" rides in on the fadeout at 140 and restarts on confirm.
+
+### Stars was doing 1 damage to one character instead of 75 to all three
+
+`obj_knight_pointing_star`'s Other_15 is NOT the inherited one:
+
+    target = 3;  damage = 75;  with (obj_knight_enemy) aoedamage = true;
+    if (target == 3) scr_damage_all();
+
+**The `damage = 1` in Create is a placeholder the hit overwrites.** The
+earlier audit compared the sim's value against every `damage =` in the object
+and saw 1 inside [1, 75] — a match. The value that matters is the one live AT
+THE MOMENT OF THE HIT, and auditing the Create is not auditing the hit.
+
+Stars went from 9 HP a turn to 360. The starchildren had the same handler and
+the same bug.
+
+`aoedamage` is set for the duration and cleared after: an AOE hit skips the
+redirect-away-from-Kris and the ShadowMantle pull, because an attack that hits
+everyone has nobody to redirect to.
+
+**STILL OPEN, stated rather than quietly left:** `obj_roaringknight_splitslash`
+(Flurry) also has a custom Other_15 and this build still gives it the generic
+one. Its real contact does NO damage — it sets `playerstrike = 1` and defers
+the hurt into the growtangle's split sequence. Flurry therefore reports a low
+number (15 a turn) and the shape of its damage is wrong even though the value
+in the field is right.
+
+**Q toggles the MUSIC only.** The effects are feedback — a graze, a scoring
+bolt — and muting them makes the fight harder to read.

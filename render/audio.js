@@ -131,6 +131,13 @@ export function createAudio() {
       .then((decoded) => {
         buffers.set(name, decoded);
         pending.delete(name);
+        // A LOOP CUED BEFORE ITS BUFFER EXISTED must start when the decode
+        // lands. One-shots can be dropped — they are cued again next time
+        // the thing that makes them happens — but a loop is cued ONCE, so a
+        // null buffer at that moment is permanent silence. That is what kept
+        // the music from ever playing: `mus_knight` is deliberately not
+        // preloaded, so its first and only cue always arrived early.
+        if (wantedLoops.has(name)) startLoop(name, wantedLoops.get(name));
       })
       .catch(() => {
         buffers.set(name, null);
@@ -145,8 +152,17 @@ export function createAudio() {
   // would stack into a drone; a single source that is started and stopped is
   // what `snd_loop(snd_knight_rotatingslash_line)` actually is.
   const loops = new Map();
+  /** Loops asked for while their buffer was still decoding. */
+  const wantedLoops = new Map();
+
+  function startLoop(name, opts) {
+    wantedLoops.delete(name);
+    if (loops.has(name)) return;
+    fire(name, opts.pitch, opts.gain, true);
+  }
 
   function stopLoop(name) {
+    wantedLoops.delete(name);
     const node = loops.get(name);
     if (!node) return;
     try {
@@ -160,7 +176,11 @@ export function createAudio() {
   function fire(name, pitch, gain, loop) {
     const buf = buffer(name);
     const c = audioCtx();
-    if (!buf || !c) return null;
+    if (!buf || !c) {
+      // Remember the intent so the decode's `then` can honour it.
+      if (loop && c) wantedLoops.set(name, { pitch, gain });
+      return null;
+    }
     const src = c.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = pitch ?? 1;
@@ -220,6 +240,9 @@ export function createAudio() {
   return {
     play,
     stopAll,
+    // Exposed so the Q key can silence the MUSIC without touching the SFX —
+    // the effects are feedback and muting them makes the fight harder to read.
+    stopLoop,
     get enabled() {
       return enabled;
     },
