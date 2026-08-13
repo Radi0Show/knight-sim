@@ -57,6 +57,20 @@ const SIM_OUT = process.env.KNIGHT_SIM_OUT || '/tmp/knight-fullfight';
  * divergence in a later group with an earlier group clean is a real, local
  * fault. The reverse is almost always the earlier group's shadow.
  */
+/**
+ * THE MENU COLUMN IS COARSE, and says so.
+ *
+ * `global.bmenuno` is a state machine with at least twelve values (0-4, 7, 8,
+ * 9, 11, 12, 99); the sim models five. Both sides map to the same declared
+ * coarse set — see the mapping table in oracle_fullfight.csx — so this column
+ * verifies WHICH KIND of menu is open, not which exact sub-state.
+ *
+ * Saying so matters more than the column does: a diff that looks exact while
+ * comparing a five-value model against a twelve-value one is the failure this
+ * project exists to avoid.
+ */
+const COARSE_COLUMNS = new Set(['menu']);
+
 const GROUPS = [
   ['turn', ['phase', 'turn', 'menu', 'balloon']],
   ['soul', ['soul_x', 'soul_y']],
@@ -317,6 +331,8 @@ function main() {
   }
 
   console.log('');
+  console.log(`note: ${[...COARSE_COLUMNS].join(', ')} `
+    + 'compared on a declared COARSE vocabulary — see oracle_fullfight.csx.');
   if (failed) {
     console.log(`verify-fullfight: ${failed} of ${fights.length} fights diverged`);
     process.exit(1);
