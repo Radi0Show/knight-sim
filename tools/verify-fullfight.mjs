@@ -67,7 +67,17 @@ const GROUPS = [
 ];
 
 function readCsv(path) {
-  const text = readFileSync(path, 'utf8').trim();
+  // STRIP THE CARRIAGE RETURNS. GML's `file_text_writeln` ends every line with
+  // \r\n, so without this the last column of the oracle's header is
+  // "b15_ys\r" and the last cell of every row carries one too. Because the
+  // header check compares two sets, that produced the genuinely baffling
+  // report "only in sim: b15_ys / only in oracle: b15_ys" — the same name on
+  // both sides, and the comparison is right: those are two different strings.
+  //
+  // Left unfixed it is worse than a confusing message: every row's final
+  // bullet column would compare unequal forever, so the differ could never
+  // report a clean fight even against a perfect trace.
+  const text = readFileSync(path, 'utf8').replace(/\r/g, '').trim();
   const lines = text.split('\n');
   const header = lines[0].split(',');
   return { header, rows: lines.slice(1).map((l) => l.split(',')), path };
@@ -191,8 +201,12 @@ function main() {
     process.exit(0);
   }
 
+  // `[^.]*` and not `.*`: the recorder writes a SIDE-CHANNEL log next to each
+  // trace, `fullfight-<name>.shuffle.csv`, and a greedy glob picked that up as
+  // a fight of its own and reported it as a divergence. Anything with a second
+  // dot in the stem is a companion file, not a recording.
   const fights = readdirSync(TRACES)
-    .filter((f) => /^fullfight-.*\.csv$/.test(f))
+    .filter((f) => /^fullfight-[^.]*\.csv$/.test(f))
     .filter((f) => !only || f.includes(only));
 
   if (fights.length === 0) {

@@ -114,6 +114,21 @@ const CASES = [
     expect: [/row count: oracle 600, sim 1200/, /600 shared frames byte-exact/],
   },
   {
+    // BOTH OF THESE ARE REGRESSION CASES for bugs the first real recording
+    // found. Neither was a fight divergence; both were faults in this differ,
+    // and both would have made a perfect trace unreportable.
+    //
+    // GML's `file_text_writeln` ends lines with \r\n. Un-stripped, the last
+    // header column reads "b15_ys\r" and the report becomes the genuinely
+    // baffling "only in sim: b15_ys / only in oracle: b15_ys".
+    name: 'CRLF line endings in the oracle are stripped, not reported',
+    raw: (text) => text.replace(/\n/g, '\r\n'),
+    edit: () => {},
+    expectCode: 0,
+    expect: [/byte-exact/],
+    reject: [/column mismatch/, /FAIL/],
+  },
+  {
     name: 'a missing column is fatal and says which side',
     edit: (rows, h) => {
       const c = h.indexOf('tension');
@@ -158,8 +173,9 @@ function main() {
     const header = [...baseHeader];
     const rows = baseRows.map((r) => [...r]);
     c.edit(rows, header);
-    writeFileSync(join(TRACES, `${NAME}.csv`),
-      `${header.join(',')}\n${rows.map((r) => r.join(',')).join('\n')}\n`);
+    let text = `${header.join(',')}\n${rows.map((r) => r.join(',')).join('\n')}\n`;
+    if (c.raw) text = c.raw(text);
+    writeFileSync(join(TRACES, `${NAME}.csv`), text);
 
     const { code, out } = run();
     const problems = [];
@@ -180,12 +196,33 @@ function main() {
     }
   }
 
+  // The recorder writes `fullfight-<name>.shuffle.csv` beside each trace. A
+  // greedy `fullfight-.*\.csv` glob picked that up as a fight in its own right
+  // and reported it as a divergence — on the first real recording, two
+  // failures where there was one.
+  {
+    const header = [...baseHeader];
+    const rows = baseRows.map((r) => [...r]);
+    writeFileSync(join(TRACES, `${NAME}.csv`),
+      `${header.join(',')}\n${rows.map((r) => r.join(',')).join('\n')}\n`);
+    writeFileSync(join(TRACES, `${NAME}.shuffle.csv`), '10,45|135|225|315\n');
+    const { code, out } = run();
+    if (code !== 0 || /shuffle/.test(out)) {
+      failed++;
+      console.log('FAIL  a .shuffle.csv companion is not treated as a fight');
+      console.log(out.split('\n').map((l) => `      | ${l}`).join('\n'));
+    } else {
+      console.log('ok    a .shuffle.csv companion is not treated as a fight');
+    }
+    rmSync(join(TRACES, `${NAME}.shuffle.csv`), { force: true });
+  }
+
   console.log('');
   if (failed) {
-    console.log(`sabotage-fullfight: ${failed} of ${CASES.length} cases failed`);
+    console.log(`sabotage-fullfight: ${failed} of ${CASES.length + 1} cases failed`);
     process.exit(1);
   }
-  console.log(`sabotage-fullfight: ${CASES.length}/${CASES.length} — the differ ` +
+  console.log(`sabotage-fullfight: ${CASES.length + 1}/${CASES.length + 1} — the differ ` +
               'catches every fault it is meant to');
 }
 
