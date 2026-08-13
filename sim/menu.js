@@ -704,6 +704,27 @@ export function stepMenu(state, input) {
 
   if (moveNoise) cue(state, 'snd_menumove');
   if (selNoise) cue(state, 'snd_select');
+
+  // `onebuffer -= 1; twobuffer -= 1;` — THE LAST TWO LINES of
+  // obj_battlecontroller's Step, and the position matters.
+  //
+  // Both start at 0 (Create). Decrementing at the END means frame 0's input
+  // test sees 0, which FAILS `< 0` — so the very first confirm of the fight
+  // is rejected and the menu cannot begin until frame 1 at the earliest.
+  // Decrementing at the TOP instead makes that test see -1 and accept it, and
+  // the sim then ran a constant TWO FRAMES AHEAD of the oracle all turn:
+  //
+  //     frame  oracle menu   sim menu
+  //       0    buttons       buttons
+  //       2    buttons       enemy      <- a selection ahead already
+  //       4    enemy         buttons
+  //       8    enemy         (bar started)
+  //
+  // An earlier version of this comment asserted the two placements were
+  // equivalent. They are not — the opening frame is exactly where they
+  // differ, and that difference propagates through every turn of the fight.
+  menu.onebuffer = (menu.onebuffer ?? 0) - 1;
+  menu.twobuffer = (menu.twobuffer ?? 0) - 1;
   return false;
 }
 
