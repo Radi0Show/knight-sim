@@ -2538,3 +2538,47 @@ did not.
     flurry     65   (66% maxhp, clamped)   tunnel    5136
     rotating 4821                          vortex    5136
     roaring  2568
+
+## Flurry's flame, and the last contact handler
+
+**The flame was drawn half-TRANSPARENT instead of half-BRIGHT.** `c_gray`
+multiplies the sprite to (128,128,128); this used `globalAlpha = 0.5`, which
+makes it a washed-out ghost you can see the box through rather than a dim
+ember on the cut face.
+
+CLAUDE.md records the case where those two ARE the same thing — a c_gray
+multiply under an ADDITIVE blend is exactly alpha 0.5. This is a normal blend,
+so the equivalence does not hold. Borrowing the note without its condition.
+
+`flame_index` was also a module-level counter advanced once per draw call:
+shared by every growtangle on screen, and frozen under `?frames=N`, which
+paints nothing. It lives on the entity now and the sim advances it.
+
+### The Roaring star was the most lethal thing in the fight; it should be the least
+
+Its Other_15 is a CATCH, not a hit:
+
+    if (i_ex(obj_knight_roaring2)) with (obj_knight_enemy) event_user(2);
+
+and `event_user(2)` is **40 to every living member**, clamped to `hp - 1` for
+anyone between 2 and 40 HP. The generic handler was dealing the star's own 206
+to one character instead.
+
+**The clamp does not cover 1 HP.** The guard is `hp > 1 && hp < 41`, so a
+character already on exactly 1 takes the full 40 and dies. Stated precisely
+because "cannot fell anyone" is the obvious reading and it is wrong at the one
+value where it matters — and asserted in the suite so the obvious reading
+cannot be written back in later.
+
+### Auditing the CREATE is not auditing the HIT
+
+Three attacks in a row had the same shape of bug — Stars, the starchildren,
+and now the roaring star — and the first audit missed all three because it
+compared the sim's `damage` field against every `damage =` in the object and
+found a match. The value that matters is the one live at the moment of
+contact, and for these it is set inside Other_15.
+
+The audit now walks each object's Other_15 and reports what it actually does
+(single / AOE / MAXHP / no damage / catch) against whether the sim gives that
+object its own handler or the inherited one. That table is what surfaced the
+roaring star.

@@ -44,6 +44,7 @@ import { cue } from '../audio.js';
 import { clamp01, scrEaseOut } from '../gml.js';
 import { STAR_MASK, scrPreciseHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
+import { knightCatch } from '../knight.js';
 import { pointingStarchild } from './pointing-starchild.js';
 
 export const roaringStar = {
@@ -104,7 +105,24 @@ export const roaringStar = {
     return scrPreciseHit(heart, e, STAR_MASK, 2);
   },
 
-  other15: collidebulletOther15,
+  /**
+   * `obj_knight_roaring_star`'s Other_15 — a CATCH, not a hit.
+   *
+   *     if (i_ex(obj_knight_roaring2)) with (obj_knight_enemy) event_user(2);
+   *     else { target != 3 ? scr_damage() : scr_damage_all(); }
+   *
+   * Roaring stars only exist while Roaring is on screen, so the catch is the
+   * live path and the damage branch is unreachable in practice. This had the
+   * generic handler, which dealt the star's own 206 to one character and made
+   * the finale the most lethal attack in the fight — when the real thing is
+   * 40 to everyone and cannot fell anybody.
+   */
+  other15(e, state) {
+    if (e.active !== 1 && e.active !== true) return;
+    if (state.roaringActive) knightCatch(state);
+    else collidebulletOther15(e, state);
+    if (e.destroyonhit === 1) destroy(state, e);
+  },
 
   step(e, state) {
     // Scale-dependent bounds; spr_knight_bullet_star is 64x64.

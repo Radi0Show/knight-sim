@@ -97,7 +97,6 @@ export function createSplitBox(sprites) {
 
   const halfA = makeCanvas();
   const halfB = makeCanvas();
-  let flameIndex = 0;
 
   // ---- the SHEAR, which is where the goop comes from ----------------------
   //
@@ -280,10 +279,12 @@ export function createSplitBox(sprites) {
     // The burning cut faces.
     const flame = sprites.get('spr_rk_split_flame_edge');
     if (!flame || !flame.frames.length) return;
-    // `flame_index += 0.5` lives in the original's Draw event, so it is not
-    // sim state and the renderer owns it.
-    flameIndex += 0.5;
-    const fi = Math.floor(flameIndex) % flame.frames.length;
+    // `flame_index` IS PER INSTANCE and lives on the object, not on the
+    // renderer. A module-level counter advanced once per draw call is shared
+    // by every growtangle on screen and stops entirely under `?frames=N`,
+    // which paints nothing — the documented "renderer state must not depend
+    // on which frames were PAINTED" trap. The sim owns it now.
+    const fi = Math.floor(e.flame_index ?? 0) % flame.frames.length;
     const img = flame.frames[fi];
     const { ox, oy } = flame.meta;
 
@@ -292,9 +293,16 @@ export function createSplitBox(sprites) {
       ctx.translate(x, y);
       ctx.rotate((-deg * Math.PI) / 180);
       ctx.scale(2, 2);
-      // c_gray in the original.
-      ctx.globalAlpha = 0.5;
-      ctx.drawImage(img, -ox, -oy);
+      // `c_gray` MULTIPLIES the sprite to half brightness. This drew it at
+      // `globalAlpha = 0.5` instead, which makes it half TRANSPARENT — a
+      // washed-out ghost you can see the box through, rather than a dim
+      // ember burning on the cut face.
+      //
+      // CLAUDE.md records the case where the two ARE equivalent: a c_gray
+      // multiply under an ADDITIVE blend is exactly alpha 0.5. This is a
+      // normal blend, so the equivalence does not hold, and borrowing it here
+      // was reading the note without its condition.
+      ctx.drawImage(tinted(img, 'rgb(128,128,128)'), -ox, -oy);
       ctx.restore();
     };
 

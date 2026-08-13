@@ -388,6 +388,13 @@ export const splitGrowtangle = {
 
   // Step_2 — End Step. Clamps the soul into the widened box, then ROUNDS it.
   endStep(e, state) {
+    // `flame_index += 0.5` at the bottom of the object's own Draw. It is a
+    // Draw-event counter, so it belongs in a step phase — and it is USE-then-
+    // increment, which CLAUDE.md's table puts in endStep's neighbourhood
+    // rather than beginStep. Keeping it here makes it per-instance and
+    // survives `?frames=N`, which paints nothing; the renderer only reads it.
+    e.flame_index = (e.flame_index ?? 0) + 0.5;
+
     const heart = state.soul;
     const gt = box(state);
     if (!heart || !gt) return;

@@ -24,6 +24,7 @@
 import { createState, stepFrame } from '../sim/index.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { scrDamageMaxhp } from '../sim/damage.js';
+import { knightCatch } from '../sim/knight.js';
 import { createHeroes } from '../sim/heroes.js';
 import { launchAttack } from '../sim/scenes/fight.js';
 
@@ -218,6 +219,53 @@ console.log(`\nDEFEND: a 206 slash deals ${defending} vs ${plain} undefended`);
   s.charaction[1] = ACTION_DEFEND;
   d = scrDamageMaxhp(s, 0.66, true, true, pick);
   if (d !== 126) failures.push(`ignoreDefend still applied the reduction (${d})`);
+}
+
+
+// ── THE ROARING CATCH — obj_knight_enemy's event_user(2) ─────────────────
+//
+// A roaring star that touches you during the roar fires this instead of its
+// own 206: 40 to every living member, clamped to `hp - 1` between 2 and 40.
+{
+  const BARE = [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }];
+  const mk = (hp) => {
+    const s = createState({ seed: 1 });
+    s.heroes = createHeroes();
+    s.partyHp = hp.slice();
+    s.invTimer = -1;
+    s.invc = 1;
+    s.loadout = { gear: BARE };
+    return s;
+  };
+
+  // It hits ALL THREE, not one — the generic handler hit one for 206.
+  let s = mk([160, 190, 140]);
+  knightCatch(s);
+  if (s.partyHp.some((h, i) => h === [160, 190, 140][i])) {
+    failures.push('the catch did not hit every member');
+  }
+  if (s.partyHp.some((h) => h <= 0)) failures.push('the catch felled a healthy party');
+
+  // The clamp keeps 2..40 alive.
+  s = mk([30, 5, 2]);
+  knightCatch(s);
+  if (s.partyHp.some((h) => h <= 0)) {
+    failures.push(`the catch felled someone in the 2-40 band: ${s.partyHp.join('/')}`);
+  }
+
+  // AND IT DOES NOT COVER 1 HP. `hp > 1` is false there, so the full 40 lands.
+  // Asserted because "cannot fell anyone" is the obvious reading of the clamp
+  // and it is wrong at exactly the value where it matters.
+  s = mk([1, 1, 1]);
+  knightCatch(s);
+  if (s.partyHp.every((h) => h > 0)) {
+    failures.push('a party on 1 HP survived the catch — the clamp starts at 2');
+  }
+
+  // The fallen are skipped, not revived or re-hit.
+  s = mk([160, -999, 140]);
+  knightCatch(s);
+  if (s.partyHp[1] !== -999) failures.push(`the catch touched a fallen member (${s.partyHp[1]})`);
 }
 
 if (failures.length) {

@@ -51,7 +51,7 @@
 // opening reduction that is x0.85 rather than x0.425 — spells are worth twice
 // what this module credited them with, and are the reason TP is worth banking.
 
-import { PARTY, statFor } from './damage.js';
+import { PARTY, statFor, scrDamage } from './damage.js';
 import { cue, cueStop } from './audio.js';
 
 export const KNIGHT_MAXHP = 7300;   // scr_monstersetup, monstertype 104
@@ -234,6 +234,52 @@ export function advanceTurn(state) {
   if (k.damagereduction >= DR_BASE && k.damagereduction < DR_CAP) {
     k.damagereduction += DR_PER_TURN;
   }
+}
+
+/**
+ * `obj_knight_enemy`'s **Other_12** — `event_user(2)`, the ROARING CATCH.
+ *
+ *     for (ti = 0; ti < 3; ti++) {
+ *         global.inv = -1;
+ *         damage = 40;
+ *         if (ti == 0 && hp[1] > 1 && hp[1] < 41) damage = hp[1] - 1;
+ *         if (ti == 1 && hp[2] > 1 && hp[2] < 41) damage = hp[2] - 1;
+ *         if (ti == 2 && hp[3] > 1 && hp[3] < 41) damage = hp[3] - 1;
+ *         target = ti;
+ *         if (hp[char[ti]] > 0) scr_damage();
+ *     }
+ *
+ * A roaring star that touches you during the roar does NOT deal its own 206.
+ * It fires this instead: **40 to every living member**, softened by a clamp
+ * that drops the damage to `hp - 1` for anyone sitting between 2 and 40 HP.
+ *
+ * **THE CLAMP DOES NOT COVER 1 HP.** The guard is `hp > 1 && hp < 41`, so a
+ * character already on exactly 1 takes the full 40 and dies. It is very nearly
+ * non-lethal and not quite — worth stating precisely, because "cannot fell
+ * anyone" is the obvious reading of the clamp and it is wrong at the one value
+ * where it matters most.
+ *
+ * `hp - 1` is also passed THROUGH `scr_damage`, so defence reduces it further
+ * and the survivor usually lands above 1 rather than on it.
+ *
+ * Treating the star as an ordinary 206 bullet made the finale the most lethal
+ * attack in the fight, when it is close to the least.
+ *
+ * `global.inv = -1` before each call, so all three land on the same frame
+ * rather than the first one granting invulnerability against the other two.
+ */
+export function knightCatch(state) {
+  let total = 0;
+  for (let ti = 0; ti < 3; ti++) {
+    const hp = state.partyHp[ti];
+    if (hp <= 0) continue;
+    let dmg = 40;
+    if (hp > 1 && hp < 41) dmg = hp - 1;
+    state.invTimer = -1;
+    total += scrDamage(state, dmg, ti, { truedamage: true });
+  }
+  state.invTimer = state.invc * 30;
+  return total;
 }
 
 export function phase4Reached(state) {
