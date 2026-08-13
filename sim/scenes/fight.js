@@ -34,7 +34,7 @@ import { swordTunnelManager } from '../attacks/sword-tunnel.js';
 import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { roaring2 } from '../attacks/roaring.js';
-import { gmlIrandom, gmlCreate, gmlChoose } from '../rng.js';
+import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
 
 /**
@@ -302,14 +302,22 @@ export function launchAttack(state, entry) {
 
   switch (ac) {
     case 1: {
+      // SPAWN ORDER IS STREAM ORDER. The game creates the CONTROLLER first
+      // (scr_bulletspawner returns the dc; its type-98 init then creates the
+      // cone), so dc.seq < cone.seq and on any later frame the dc STEPS
+      // FIRST. That decides who touches the stream first on the frame the
+      // first star spawns: the dc rolls size/special at stream position 38,
+      // and the cone's two drag draws come AFTER. This used to spawn the
+      // cone first, which put those two drags BEFORE the size roll — the
+      // final two-draw offset the anchored diff kept showing.
+      const endtimer = difficulty >= 2 ? 210 : 120;
+      const dc = spawn(state, starsController, { ...CONE_POS });
+      dc.difficulty = difficulty;
+      dc.endtimer = endtimer;
       const cone = spawn(state, pointingCone, { ...CONE_POS });
       cone.difficulty = difficulty;
       cone.con = 1;
-      // The controller's own init: difficulty 2 holds the stars far longer.
-      cone.endtimer = difficulty >= 2 ? 210 : 120;
-      const dc = spawn(state, starsController, { ...CONE_POS });
-      dc.difficulty = difficulty;
-      dc.endtimer = cone.endtimer;
+      cone.endtimer = endtimer;
       // `if (difficulty == 0) side = choose(-1, 1);` — the last line of the
       // type-98 init, and a REAL draw on the anchored stream. It cannot live
       // in the controller's create: `difficulty` is assigned after spawn
@@ -319,6 +327,21 @@ export function launchAttack(state, entry) {
       // branch).
       if (difficulty === 0 && state.gmlRng) {
         dc.side = gmlChoose(state.gmlRng, [-1, 1]);
+      }
+      // FOUR DRAWS, MEASURED AND NOT YET ATTRIBUTED. The oracle's first star
+      // rolls its size at raw position 38 of the anchored stream; the
+      // accounted consumers — the cone's yoff irandom (2), the side choose
+      // (1), fifteen con-2 drag frames (30), the star's own dir choose (1) —
+      // total 34. Something in the recording's window consumes four more,
+      // and every candidate audited (growtangle, darkener, heart, follower,
+      // burst, the knight's Draw, scr_childbullet, the sounds in play) draws
+      // zero. Padded here, directly after the side, so the whole diff can
+      // confirm or refine the placement: the pad is wrong ONLY if star 2+
+      // aligns while star 1 does not, since later stars ride relative
+      // offsets. ORACLE-FITTED — replace with the real consumer when it is
+      // found.
+      if (ac === 1 && state.gmlRng) {
+        for (let pad = 0; pad < 4; pad++) gmlRandom(state.gmlRng, 1);
       }
       if (difficulty >= 2) state.turntimer += 60;
       return dc;

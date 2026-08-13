@@ -25,6 +25,7 @@
 
 import { spawn, destroy } from '../entity.js';
 import { cue } from '../audio.js';
+import { gmlChoose } from '../rng.js';
 import { clamp01 } from '../gml.js';
 import { STAR_MASK, scrPreciseHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
@@ -60,10 +61,12 @@ export const pointingStar = {
     e.init = false;
     e.rotation = 0;
 
-    // The Create's `dir = choose(-1, 1)` is Draw-only, but it CONSUMES a draw.
-    // Scenes that need stream fidelity must account for it; here the value is
-    // unused so the draw is simply not taken (documented deviation).
-    e.dir = 1;
+    // The Create's `dir = choose(-1, 1)`. The value only feeds the Draw, but
+    // the DRAW IS REAL and sits between the spawn and the controller's
+    // size/special rolls — the oracle's ledger for the first star places it
+    // at exactly that position. The old "documented deviation" (skip it)
+    // held while nothing compared streams; the anchored whole-fight does.
+    e.dir = state?.gmlRng ? gmlChoose(state.gmlRng, [-1, 1]) : 1;
 
     e.isBullet = true;
     e.builtinMotion = true;

@@ -92,6 +92,8 @@ export function gmlCreate(seed) {
 
 /** One raw 32-bit draw (WELL512 step). */
 export function gmlU32(r) {
+  globalThis.__draws = (globalThis.__draws ?? 0) + 1;  // TEMP
+  if (globalThis.__trap) { const e = new Error(); console.log('DRAW @', e.stack.split('\n')[3]?.trim()); }
   const st = r.state;
   let a = st[r.idx];
   let c = st[(r.idx + 13) & 15];

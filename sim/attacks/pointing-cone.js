@@ -187,16 +187,13 @@ export const pointingCone = {
       }
     }
 
-    // The drag block is TOP-LEVEL in the Step — it runs from the cone's
-    // BIRTH, not from con 2, and both of its arms consume two random_range
-    // draws per frame. Gating it behind the con machinery starved the shared
-    // stream by 2 per early frame, which the whole-fight diff measured as the
-    // first star rolling values from ~40 draws upstream. The early-return arm
-    // runs it too, so both paths consume exactly once per frame.
-    if (e.con < 2) {
-      dragStep(e, state, gt, heart);
-      return;
-    }
+    // `if (con < 2) { exit; }` — the Step's own gate, lines 37-40, MEASURED
+    // this session after a wrong detour: an earlier change ran the drag from
+    // the cone's birth on the theory that the block was top-level. It is not
+    // — the exit precedes it — and the oracle's own draw ledger (the first
+    // star's size at raw stream position 38, decomposed) confirms the drag
+    // consumes only from con 2. The detour is recorded so it is not retaken.
+    if (e.con < 2) return;
 
     if (state.turntimer <= e.endtimer) {
       // FIRE. On the first frame of the closing branch angle_lerp is still 1,

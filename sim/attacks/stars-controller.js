@@ -24,8 +24,8 @@
 // recording grows at the same 0.02.
 
 import { spawn } from '../entity.js';
-import { lerp } from '../gml.js';
-import { gmlChoose, gmlRandom } from '../rng.js';
+import { scrMovetowards, scrEaseOut, lerp } from '../gml.js';
+import { gmlRandomRange, gmlChoose, gmlRandom } from '../rng.js';
 import { pointingStar } from './pointing-star.js';
 import { heartFollower } from './pointing-starchild.js';
 
@@ -72,26 +72,90 @@ export const starsController = {
       );
       if (!cone) return;
 
+      // THE ANGLE THE CONE WILL HAVE THIS FRAME, not the one it has. Two
+      // exact measurements pin an ordering the per-instance model cannot
+      // produce: the first star's special is us[39] of the anchored stream
+      // TO THE LAST DIGIT only if dir used angle 56.25 — the value the cone
+      // reaches during the SAME frame — while size sits at us[38], which
+      // requires the controller's rolls to precede the cone's two drag
+      // draws. So the game's dc reads a current-frame angle while drawing
+      // first. Reproduced by advancing a COPY of the cone's own
+      // deterministic ramp (movetowards 0.025, ease_out 6) — no state is
+      // touched, no draws consumed; the cone still runs its real update
+      // afterwards. Marked as an ordering reconciliation: the underlying
+      // event scheduling is not fully understood, the two measurements are.
+      let coneAngle = cone.angle;
+      if ((cone.angle ?? 0) < (cone.target_angle ?? 60) && (cone.con ?? 0) >= 2) {
+        const nextLerp = scrMovetowards(cone.angle_lerp ?? 0, 1, 0.025);
+        coneAngle = lerp(0, cone.target_angle ?? 60, scrEaseOut(nextLerp, 6));
+      }
+
+      // THE STAR IS CREATED BEFORE THE ROLLS. `d = scr_childbullet(...)` runs
+      // first — and the star's Create draws its `dir = choose(-1, 1)` — THEN
+      // the controller rolls size/special. Rolling first put the sim's size
+      // one stream position early (us[37] instead of us[38]), which two
+      // recordings measured as speed 7.2553 vs the oracle's 6.8077.
+      const d = spawn(state, pointingStar, { x: cone.x + 22, y: cone.y + 56 });
+      d.difficulty = e.difficulty ?? 0;
+      d.side = e.side ?? 1;
+
       let direction;
       let speed;
       const replay = state.starVariant ? state.starVariant.launches : null;
       if (replay) {
         const rec = replay[e.made];
-        if (!rec) return;
+        if (!rec) { d.alive = false; return; }
         direction = rec.direction;
         speed = rec.speed;
+      } else if (e.made === 0) {
+        // THE FIRST STAR ROLLS, the rest INCREMENT:
+        //
+        //     if (made == 0) { size = random_range(0.5, 1);
+        //                      special = random_range(-0.5, 0.5); }
+        //     else { ...the += formulas... }
+        //
+        // This branch was MISSING: every star took the else-arm, and with
+        // size starting at 0 the first star's size was (0 + 0.5 + sin(0)/2)
+        // % 1 = exactly 0.5 — speed exactly 7.5, which is what finally gave
+        // it away: two independent recordings measured the sim at 7.5000
+        // while the oracle rolled 6.8077 = lerp(10, 5, us[38]) of the
+        // anchored stream, to the last digit.
+        e.size = gmlRandomRange(state.gmlRng, 0.5, 1);
+        e.special = gmlRandomRange(state.gmlRng, -0.5, 0.5);
+        direction = 180 + e.special * coneAngle;
+        speed = lerp(10, 5, e.size);
       } else {
         e.size = (e.size + (0.5 + Math.sin(e.made) * 0.5)) % 1;
         e.special =
           ((e.special + (0.5 + (0.5 + Math.sin(gmlRandom(state.gmlRng, 1)) * 0.3))) % 1) - 0.5;
-        direction = 180 + e.special * cone.angle;
+        direction = 180 + e.special * coneAngle;
         speed = lerp(10, 5, e.size);
       }
 
-      // scr_childbullet(bulletmaker.x + 22, bulletmaker.y + 56, ...)
-      const d = spawn(state, pointingStar, { x: cone.x + 22, y: cone.y + 56 });
-      d.difficulty = e.difficulty ?? 0;
-      d.side = e.side ?? 1;
+      // `if (size <= 0.1)` — the fast-star aim clamp. A star this small is
+      // near max speed, and if its heading lies within 20 degrees of the
+      // soul it is pushed OUT to exactly 20 degrees off, then looped back
+      // into the cone's arc. Deterministic — no draws — but absent it a
+      // sub-0.1 roll fires a near-guaranteed hit the real game never fires.
+      if (!replay && e.size <= 0.1 && state.soul) {
+        const hx = state.soul.x + 10 - (cone.x + 22);
+        const hy = state.soul.y + 10 - (cone.y + 56);
+        const heartdir = ((Math.atan2(-hy, hx) * 180) / Math.PI + 360) % 360;
+        let diffd = ((heartdir - direction) % 360 + 540) % 360 - 180;
+        if (Math.abs(diffd) < 20) {
+          direction = direction < heartdir
+            ? heartdir - 20 + diffd
+            : heartdir + 20 + diffd;
+          const lo = 180 - cone.angle;
+          const hi = 180 + cone.angle;
+          const span = hi - lo;
+          if (span > 0) {
+            while (direction < lo) direction += span;
+            while (direction > hi) direction -= span;
+          }
+        }
+      }
+
       d.direction = direction;
       d.speed = speed;
 
