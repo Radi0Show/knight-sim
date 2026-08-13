@@ -2314,3 +2314,66 @@ Both covered in `verify-dmgnumbers`.
 the dump: the attack bar, the damage formulas, targeting, the fonts, the item
 menu and `tempitem`, the turn buffers, the ending, the background, and the
 animation model.
+
+## Music, and the equipment layer (37 suites)
+
+**The music needed no extraction.** Unlike the SFX, which are packed into
+`audiogroup1`, the fight's track is a LOOSE `.ogg` — `snd_init("knight.ogg")`
+out of `Resources/mus/`. Copied, looped as `batmusic[1]`, faded by the end
+cutscene. NOT preloaded: at 2.1 MB it dwarfs everything else on the site and
+decoding it to PCM blocks the first frame, so it fetches on first cue. A loop
+starting a beat late is inaudible as a fault; a missing hit sound is not.
+
+### The equipment tables are GENERATED, not retyped
+
+`sim/equipment.js` is emitted by parsing `scr_weaponinfo` and `scr_armorinfo`
+case blocks — 26 weapons, 27 armour, with `at`/`df`/`magic`, the char flags,
+and the element fields. The handoff spec was accurate on most of it and wrong
+in four places, three of them in the direction that flatters the item:
+
+**1. THE RIBBONS COST YOU TP.** The spec lists Pink/TwinRibbon as pure
+graze-area upgrades. `obj_grazebox`'s Create:
+
+    grazetpfactor   -= count(3) * 0.2     PinkRibbon
+    grazetpfactor   -= count(9) * 0.25    TwinRibbon
+    grazetimefactor -= count(3) * 0.2     PinkRibbon
+
+A bigger box that pays LESS per graze. The spec's "Turbo-TP variant" puts
+TwinRibbon on Ralsei to farm tension — it produces 25% LESS per graze than no
+ribbon at all.
+
+**2. LodeStone is +5%**, not +10%. TensionBow is the +10% one.
+
+**3. The factors count WEARERS.** `scr_armorcheck_equipped_party` returns a
+total across the party, so two TensionBows is +20%, and the size factor is
+capped at 3.
+
+**4. BounceBlade is df 1**, which the spec flagged as a guess at 2.
+
+**The ribbon rule is data, not a special case.** "Susie refuses ribbons" is
+`armorchar2temp = 0` on every ribbon; `allowed` is generated from the char
+flags, so there is no `susieRefusesRibbons` boolean to disagree with them.
+
+**The mantle's slot-1/slot-2 distinction does not exist.** `scr_damage` tests
+`chararmor1[i] == 23 || chararmor2[i] == 23` — either slot, same behaviour.
+Modelled as the dump has it, and the spec's claim is noted as unsupported.
+
+### The bug the layer exposed
+
+**THE MANTLE WAS PARTY-WIDE.** `state.loadout.shadowMantle` was one boolean,
+so all three characters got the x0.33 and the +3 DF. `scr_damage` checks
+`chararmor1[2] == 23 && target == 1` — one test per character, so only the
+WEARER gets either. That is most of why the party felt unkillable.
+
+Everything now flows from `statFor(state, slot)`: AT, DF, MAG, BlueRibbon's
+Heal+ x1.125, Devilsknife's 125 -> 100 Rude Buster cost (and the menu displays
+the real one, not a stale 50%), and the graze factors. No hardcoded totals.
+
+Default build is the spec's §5.1 Taunt-Kris: Kris AT20 DF10, Susie AT25 MAG9
+with Devilsknife, Ralsei MAG19 with Heal+ — Rude Buster 272 for 100 TP, Heal
+Prayer 106.
+
+The formula suites now run against an explicitly EMPTY loadout so they test
+formulas rather than the current build, with the equipped numbers pinned
+separately — otherwise a gear retune moves every assertion and a real
+regression hides in the churn.

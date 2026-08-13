@@ -17,7 +17,7 @@
 import { drawSpriteExt, rgb } from './draw/gm.js';
 import { PARTY } from '../sim/damage.js';
 import { BUTTONS, CHAR_COLOR, PARTY_SPRITES, listRows } from '../sim/menu.js';
-import { SPELLS } from '../sim/spells.js';
+import { SPELLS, spellCost } from '../sim/spells.js';
 import { MAX_TENSION } from '../sim/tension.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
 import { drawSpriteText, FONTS } from './text.js';
@@ -165,7 +165,10 @@ function drawItemList(ctx, state, sprites, font, siner) {
   // avoids that by only ever showing the SELECTED spell's cost. It is also a
   // percentage, so Rude Buster reads "50% TP" rather than its raw 125.
   if (menu.submenu === 'magic' && sel && SPELLS[sel.id]) {
-    const pct = Math.floor((SPELLS[sel.id].cost / MAX_TENSION) * 100);
+    // The DISPLAYED cost has to be the one that will actually be charged —
+    // Devilsknife turns Rude Buster's 50% into 40%, and a menu that still
+    // says 50% is lying about the only stat that item exists for.
+    const pct = Math.floor((spellCost(state, menu.charturn, sel.id) / MAX_TENSION) * 100);
     drawText(ctx, font, `${pct}% TP`, 496, 440, { color: 'rgb(255,160,64)' });
   }
 }

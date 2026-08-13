@@ -29,6 +29,7 @@
 // around; `state.loadout.shadowMantle = false` gives the unmantled numbers.
 
 import { heroHurt } from './heroes.js';
+import { statsOf } from './equipment.js';
 import { spawnDmgNumber, TYPE_PARTY, TYPE_DEAD } from './dmgnumbers.js';
 import { gmlChoose } from './rng.js';
 
@@ -49,10 +50,50 @@ export const PARTY = [
   { name: 'RALSEI', maxhp: 140, at: 12, magic: 11, df: 2, weaponDf: 0, armorDf: [1, 2] },
 ];
 
+/**
+ * THE DEFAULT LOADOUT — the spec's §5.1 "Taunt Kris" build, which is also the
+ * one the wiki's own analysis lands on.
+ *
+ *   Kris    Saber10 (23)      · ShadowMantle (23) · TennaTie (27)
+ *   Susie   Devilsknife (7)   · RoyalPin (22)     · Jevilstail (7)
+ *   Ralsei  FiberScarf (18)   · Dealmaker (21)    · BlueRibbon (26)
+ *
+ * Weapon and armour ids are separate namespaces, which is why 23 and 7 each
+ * appear twice above meaning different things.
+ *
+ * The mantle goes on KRIS because the Knight's targeted attacks avoid him by
+ * default (see knightTarget) — putting it on him inverts that and makes the
+ * one character who can only DOWN, never SWOON, eat two hits in three at a
+ * third of the damage.
+ */
+export const DEFAULT_GEAR = [
+  { weapon: 23, armor: [23, 27] },
+  { weapon: 7, armor: [22, 7] },
+  { weapon: 18, armor: [21, 26] },
+];
+
+/** The equipment in play. Falls back to the default build. */
+export function gearOf(state) {
+  return state.loadout?.gear ?? DEFAULT_GEAR;
+}
+
+/**
+ * `global.battleat/battledf/battlemag[i]` — base plus everything equipped.
+ *
+ * Every damage and healing formula reads these rather than the base stats,
+ * which is the whole point of the equipment layer: nothing downstream should
+ * know whether a number came from the character or their gear.
+ */
+export function statFor(state, slot) {
+  return statsOf(PARTY[slot], gearOf(state)[slot] ?? { weapon: 0, armor: [] });
+}
+
 /** ShadowMantle replaces the second armour slot: df 2 -> 3, plus the x0.33. */
 const MANTLE_DF = 3;
 
 export function battleDf(target, shadowMantle) {
+  // Kept for the suites that call it directly with a boolean. The live path
+  // is statFor(), which sums whatever is actually equipped.
   const p = PARTY[target];
   const armor2 = shadowMantle ? MANTLE_DF : p.armorDf[1];
   return p.df + p.weaponDf + p.armorDf[0] + armor2;
@@ -74,9 +115,12 @@ export function battleDf(target, shadowMantle) {
  * flat `ceil(damage - battledf * 3)` is still in the source behind an
  * `oldcalculation` flag that is never set.
  */
-export function scrDamageCalculation(damage, target, shadowMantle) {
+export function scrDamageCalculation(damage, target, shadowMantle, state = null) {
   let d = damage;
-  const def = battleDf(target, shadowMantle);
+  // `global.battledf[i]` — the sum of everything equipped when there is a
+  // state to read it from, and the legacy two-armour approximation when a
+  // suite calls this directly.
+  const def = state ? statFor(state, target).df : battleDf(target, shadowMantle);
   const maxhp = PARTY[target].maxhp;
   const a = maxhp / 5;
   const b = maxhp / 8;
@@ -177,8 +221,14 @@ export function knightTarget(state, target, opts = {}) {
   }
 
   // 2. The ShadowMantle brunt. `myattackchoice != 13` — not the sword tunnel.
-  const mantle = state.loadout?.shadowMantle ?? true;
-  const wearer = state.loadout?.mantleWearer ?? 0;
+  // WHO WEARS IT comes from the gear, not a flag. `scr_damage` tests
+  // `chararmor1[i] == 23 || chararmor2[i] == 23` per character — EITHER slot,
+  // same behaviour. The handoff spec claims slot 1 and slot 2 differ (a
+  // persistent cycle against only the first two hits of the battle); no such
+  // distinction exists in the code, and it is modelled as the dump has it.
+  const gear = gearOf(state);
+  const wearer = gear.findIndex((g) => (g.armor ?? []).includes(23));
+  const mantle = wearer >= 0;
   if (mantle && opts.ac !== 13) {
     const k = state.knight;
     k.damagecounter = (k.damagecounter ?? 0) + 1;
@@ -223,11 +273,16 @@ export function knightTarget(state, target, opts = {}) {
  * revival costs, which are out of scope.
  */
 export function scrDamage(state, damage, target, opts = {}) {
-  const mantle = state.loadout?.shadowMantle ?? true;
+  // THE MANTLE IS PER-CHARACTER, not a party switch. `scr_damage` checks
+  // `chararmor1[2] == 23 && target == 1` and so on, one test per slot — only
+  // the WEARER gets the x0.33 and the +3 DF. Treating it as a global boolean
+  // gave the reduction to all three, which is most of why the party used to
+  // feel unkillable.
+  const mantle = (gearOf(state)[target]?.armor ?? []).includes(23);
   const hp = state.partyHp;
   if (!hp || hp[target] <= 0) return 0;
 
-  let t = scrDamageCalculation(damage, target, mantle);
+  let t = scrDamageCalculation(damage, target, mantle, state);
 
   let mantled = false;
   if (mantle) {

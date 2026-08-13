@@ -28,8 +28,13 @@ import { dmgColor } from '../sim/dmgnumbers.js';
 const failures = [];
 const NONE = { left: false, right: false, up: false, down: false, confirm: false, cancel: false };
 
+// Bare stats for the formula assertions, as verify-knight does — the
+// equipped build is checked there and in verify-equipment.
+const BARE = { gear: [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
+
 function fresh(charturn = 1) {
   const st = createState({ seed: 1 });
+  st.loadout = BARE;
   st.menu = createMenu();
   st.inventory = freshInventory();
   openMenu(st);

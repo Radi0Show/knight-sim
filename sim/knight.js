@@ -51,7 +51,7 @@
 // opening reduction that is x0.85 rather than x0.425 — spells are worth twice
 // what this module credited them with, and are the reason TP is worth banking.
 
-import { PARTY } from './damage.js';
+import { PARTY, statFor } from './damage.js';
 import { cue, cueStop } from './audio.js';
 
 export const KNIGHT_MAXHP = 7300;   // scr_monstersetup, monstertype 104
@@ -124,7 +124,7 @@ export function krisMult(state, slot) {
  */
 export function fightDamage(state, slot, accuracy) {
   if (accuracy <= 0) return 0;
-  const at = PARTY[slot].at;
+  const at = statFor(state, slot).at;
   let damage = Math.round((at * accuracy) / 20 - KNIGHT_DF * 3);
   damage = Math.ceil(damage * state.knight.damagereduction);
   if (slot === 0) {
@@ -145,7 +145,7 @@ export function fightDamage(state, slot, accuracy) {
  * Kris scaling applies here — that block is in the FIGHT path only.
  */
 export function spellDamage(state, slot) {
-  const { at, magic } = PARTY[slot];
+  const { at, magic } = statFor(state, slot);
   const base = Math.ceil(magic * 5 + at * 11 - KNIGHT_DF * 3);
   return Math.max(0, Math.ceil(base * (state.knight.damagereduction + 0.65)));
 }

@@ -138,7 +138,8 @@ for (let i = 0; i < 3; i++) {
   s.heroes = null;
   s.partyHp = [160, 190, 140];
   s.knight = createKnight();
-  s.loadout = { shadowMantle: false };
+  // No mantle anywhere: the plain avoid-Kris redirect.
+  s.loadout = { gear: [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
   const hits = [0, 0, 0];
   for (let i = 0; i < 30; i++) hits[knightTarget(s, 0, { choose: (...x) => x[i % x.length] })] += 1;
   if (hits[0] !== 0) failures.push(`Kris took ${hits[0]} hits aimed at him — he should never be the target`);
@@ -155,7 +156,8 @@ for (let i = 0; i < 3; i++) {
   const s = st();
   s.partyHp = [160, 190, 140];
   s.knight = createKnight();
-  s.loadout = { shadowMantle: true, mantleWearer: 0 };
+  // ShadowMantle is armour id 23; on Kris, as the default build has it.
+  s.loadout = { gear: [{ weapon: 0, armor: [23] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
   const hits = [0, 0, 0];
   for (let i = 0; i < 30; i++) hits[knightTarget(s, 1, { choose: (...x) => x[i % x.length] })] += 1;
   if (hits[0] !== 20) failures.push(`the mantle wearer took ${hits[0]}/30, expected 20 (two in three)`);
@@ -165,7 +167,8 @@ for (let i = 0; i < 3; i++) {
   const s = st();
   s.partyHp = [160, 190, 140];
   s.knight = createKnight();
-  s.loadout = { shadowMantle: true, mantleWearer: 0 };
+  // ShadowMantle is armour id 23; on Kris, as the default build has it.
+  s.loadout = { gear: [{ weapon: 0, armor: [23] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
   const hits = [0, 0, 0];
   for (let i = 0; i < 30; i++) hits[knightTarget(s, 1, { ac: 13, choose: (...x) => x[i % x.length] })] += 1;
   if (hits[0] !== 0) failures.push(`the mantle pulled ${hits[0]} sword-tunnel hits — ac 13 is exempt`);
@@ -175,7 +178,8 @@ for (let i = 0; i < 3; i++) {
   const s = st();
   s.partyHp = [160, 190, 140];
   s.knight = createKnight();
-  s.loadout = { shadowMantle: true, mantleWearer: 0 };
+  // ShadowMantle is armour id 23; on Kris, as the default build has it.
+  s.loadout = { gear: [{ weapon: 0, armor: [23] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
   if (knightTarget(s, 0, { aoe: true, choose: (...x) => x[0] }) !== 0) {
     failures.push('an AOE hit was redirected');
   }

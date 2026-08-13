@@ -39,6 +39,8 @@
 // not among them, so both stay exactly 1.
 
 import { cue } from './audio.js';
+import { grazeFactors } from './equipment.js';
+import { gearOf } from './damage.js';
 
 export const MAX_TENSION = 250;
 
@@ -86,8 +88,14 @@ export function stepGraze(state, grazes) {
 
     if (state.invTimer >= 0) continue;
 
-    const tp = e.grazepoints ?? 0;
-    const time = e.timepoints ?? 0;
+    // `grazetpfactor` / `grazetimefactor` from obj_grazebox's Create. These
+    // were both hardcoded to 1 on the note that this fight's loadout does not
+    // touch them — which stopped being true the moment equipment became
+    // selectable. TensionBow is +10%, LodeStone +5%, and the RIBBONS ARE
+    // NEGATIVE: PinkRibbon -20%, TwinRibbon -25%.
+    const gf = grazeFactors(gearOf(state));
+    const tp = (e.grazepoints ?? 0) * gf.tp;
+    const time = (e.timepoints ?? 0) * gf.time;
     if (e.grazed === 1) {
       scrTensionheal(state, tp / 30);
       if (state.turntimer >= 10) state.turntimer -= time / 30;

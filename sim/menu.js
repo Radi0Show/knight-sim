@@ -19,7 +19,9 @@ import { ACTION_DEFEND, TP_DEFEND, isUp, PARTY } from './damage.js';
 import { scrTensionheal } from './tension.js';
 import { cue } from './audio.js';
 import { useItem, ITEMS } from './items.js';
-import { SPELLS, SPELL_LIST, ACTS, canAfford, castSpell, holdBreath } from './spells.js';
+import {
+  SPELLS, SPELL_LIST, ACTS, canAfford, spellCost, castSpell, holdBreath,
+} from './spells.js';
 import {
   FACE_IDLE, FACE_ATTACK, FACE_SPELL, FACE_ITEM, FACE_DEFEND, FACE_ACT,
   HERO_SPELL, HERO_ITEM, HERO_ACT, heroAct,
@@ -34,8 +36,9 @@ import {
  * what stops two characters spending the same 125.
  */
 function recordSpell(state, c, id, target) {
-  if (!canAfford(state, id)) return null;
-  state.tension -= SPELLS[id].cost;
+  const cost = spellCost(state, c, id);
+  if (state.tension < cost) return null;
+  state.tension -= cost;
   state.charaction[c] = 2;
   state.pendingSpell = state.pendingSpell ?? [];
   state.pendingSpell[c] = { id, target };
@@ -259,7 +262,7 @@ export function listRows(state) {
       id,
       // A spell you cannot pay for is SHOWN AND GREYED, not hidden — the list
       // is what the character knows, not what they can afford this second.
-      usable: canAfford(state, id),
+      usable: canAfford(state, id, c),
     }));
   }
   if (menu.submenu === 'act') {

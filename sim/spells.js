@@ -22,7 +22,7 @@
 // rather than from the spell's obvious meaning matters for Pacify — it targets
 // an enemy despite doing no damage.
 
-import { PARTY } from './damage.js';
+import { PARTY, statFor } from './damage.js';
 import { spellDamage, damageKnight } from './knight.js';
 import { castRudeBuster } from './rudebuster.js';
 import { applyHeal } from './items.js';
@@ -73,9 +73,16 @@ export const ACTS = [
  * greyed, not hidden — because the list is built from what the character
  * knows, not from what they can afford this second.
  */
-export function canAfford(state, spellId) {
+export function spellCost(state, slot, spellId) {
   const s = SPELLS[spellId];
-  return !!s && state.tension >= s.cost;
+  if (!s) return Infinity;
+  // Devilsknife's "Buster TP DOWN" — 125 -> 100, the familiar 50% -> 40%.
+  if (spellId === 4) return statFor(state, slot).rudeBusterCost;
+  return s.cost;
+}
+
+export function canAfford(state, spellId, slot = 1) {
+  return state.tension >= spellCost(state, slot, spellId);
 }
 
 /**
@@ -163,14 +170,17 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
   if (spellId === 2) {
     // Heal Prayer heals `magic * 5` — 55 at Ralsei's magic of 11. Through
     // scr_heal, so it lands on the fallen and floors at ceil(maxhp / 6).
-    const amount = PARTY[slot].magic * 5;
-    const did = applyHeal(state, target, amount);
+    // `magic * 5`, off the EQUIPPED magic — Dealmaker's +5 is most of
+    // Ralsei's healing. BlueRibbon's Heal+ multiplies what the WEARER heals.
+    const st = statFor(state, slot);
+    const did = applyHeal(state, target, st.magic * 5, st.healMult);
     return `Heal Prayer: +${did}`;
   }
   if (spellId === 11) {
     // UltraHeal's cost is `225 - round(global.flag[1045] * 2.5)`; flag 1045 is
     // 0 in this fight's state, so it is the flat 225.
-    const did = applyHeal(state, target, PARTY[slot].magic * 5 + 100);
+    const st2 = statFor(state, slot);
+    const did = applyHeal(state, target, st2.magic * 5 + 100, st2.healMult);
     return `UltraHeal: +${did}`;
   }
   if (spellId === 3) {

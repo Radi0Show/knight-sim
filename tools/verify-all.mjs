@@ -75,6 +75,7 @@ const SUITES = [
   ['verify-spells.mjs', 'MAGIC and ACT — lists, TP costs, HoldBreath'],
   ['verify-dmgnumbers.mjs', 'damage numbers + impacts — stack, squash, bounces'],
   ['verify-animation.mjs', 'party + knight animation — poses, timers, hurt strobe'],
+  ['verify-equipment.mjs', 'equipment — tables from the dump, mantle, graze factors'],
   ['verify-knight.mjs', 'knight damage — FIGHT, spells, the reduction ramp'],
 ['verify-replay.mjs', 'replay tokens — round-trip and reproduce a live run'],
 ['verify-determinism.mjs', 'byte-identical across 10 runs'],

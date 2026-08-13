@@ -27,7 +27,7 @@ import {
   KNIGHT_MAXHP, KNIGHT_AT, KNIGHT_DF, DR_BASE, DR_CAP, DR_PER_TURN,
   PHASE4_GATE, endCutsceneReached, startEndCutscene,
 } from '../sim/knight.js';
-import { PARTY } from '../sim/damage.js';
+import { PARTY, statFor } from '../sim/damage.js';
 
 const failures = [];
 const eq = (got, want, what) => {
@@ -39,7 +39,14 @@ eq(KNIGHT_MAXHP, 7300, 'knight maxhp');
 eq(KNIGHT_AT, 40, 'knight at');
 eq(KNIGHT_DF, 0, 'knight df');
 
-const mk = (hp = [160, 190, 140]) => ({ partyHp: hp.slice(), knight: createKnight() });
+// NO GEAR. The formula assertions below are about the FORMULAS, so they run
+// against bare base stats — otherwise every number here moves whenever the
+// default loadout is retuned, and a real regression hides in the churn.
+// The equipped build is checked separately, at the bottom.
+const BARE = { gear: [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }] };
+const mk = (hp = [160, 190, 140]) => ({
+  partyHp: hp.slice(), knight: createKnight(), loadout: BARE,
+});
 
 // ── The FIGHT formula, computed by hand from the GML ─────────────────────
 // Kris at 14, a critical (150), dr 0.2, healthy party:
@@ -142,6 +149,27 @@ eq(total, 56, 'a perfect three-bolt turn');
   if (endCutsceneReached(both)) failures.push('the end condition still reads true after firing');
   // The ending's strobe is 999, not an ordinary hit's 30.
   if (both.knight.hurttimer !== 999) failures.push(`ending hurttimer ${both.knight.hurttimer}, expected 999`);
+}
+
+// ── THE EQUIPPED BUILD ───────────────────────────────────────────────────
+// The default loadout is the spec's Taunt-Kris build. These are the numbers a
+// player actually sees, and they exist so a gear change that halves the
+// party's output cannot pass unnoticed.
+{
+  const g = { partyHp: [160, 190, 140], knight: createKnight() };  // default gear
+  const kris = statFor(g, 0);
+  const susie = statFor(g, 1);
+  const ralsei = statFor(g, 2);
+  if (kris.at !== 20) failures.push(`equipped Kris AT ${kris.at}, expected 20 (14 + Saber10 6)`);
+  if (susie.at !== 25) failures.push(`equipped Susie AT ${susie.at}, expected 25`);
+  if (susie.magic !== 9) failures.push(`equipped Susie MAG ${susie.magic}, expected 9`);
+  if (ralsei.magic !== 19) failures.push(`equipped Ralsei MAG ${ralsei.magic}, expected 19`);
+  if (!kris.mantle) failures.push('the mantle is not on Kris in the default build');
+  if (susie.rudeBusterCost !== 100) failures.push("Devilsknife did not cut Rude Buster's cost");
+  if (ralsei.healMult !== 1.125) failures.push('BlueRibbon Heal+ is not on Ralsei');
+  const rb = spellDamage(g, 1);
+  console.log(`equipped: Kris AT ${kris.at} · Susie AT ${susie.at} MAG ${susie.magic} · `
+    + `Ralsei MAG ${ralsei.magic} heal x${ralsei.healMult} · Rude Buster ${rb} for ${susie.rudeBusterCost} TP`);
 }
 
 console.log(`knight 7300 HP / AT ${KNIGHT_AT} / DF ${KNIGHT_DF}, reduction ${DR_BASE} +${DR_PER_TURN}/turn to ${DR_CAP}`);
