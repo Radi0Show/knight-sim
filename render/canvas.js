@@ -10,7 +10,7 @@ import { loadSprites, SPRITE_FOR } from './sprites.js';
 import { drawPointingCone } from './draw/pointing-cone.js';
 import { drawPointingStar } from './draw/pointing-star.js';
 import { drawPointingStarchild } from './draw/pointing-starchild.js';
-import { drawRoaring, drawScreenPiece, resetScreenCut } from './draw/roaring.js';
+import { drawRoaring, drawScreenPiece, resetScreenCut, roaringCover, drawRoaringCover } from './draw/roaring.js';
 import { drawRoaringknightSlash } from './draw/slash.js';
 import { drawGrowtangle, tinted } from './draw/gm.js';
 import { drawSplitCut } from './draw/splitcut.js';
@@ -400,6 +400,10 @@ export async function createRenderer(canvas) {
   }
 
   function draw(state) {
+    // The deferred roaring composite is per-frame: drawRoaring re-registers
+    // it if the attack is still on. Left set, the last composite would sit
+    // over the menu for the rest of the fight.
+    roaringCover.active = false;
     {
       const roaringNow = state.entities.some(
         (e) => e.alive && e.type.name === 'obj_knight_roaring2',
@@ -477,7 +481,8 @@ export async function createRenderer(canvas) {
 
     // Soul last so a bullet never hides it.
     const soul = state.soul;
-    if (soul && soul.alive) {
+    const drawSoul = () => {
+      if (!soul || !soul.alive) return;
       const iFrames = state.invTimer > 0;
       // The soul is DESTROYED with the board, not just idle — Alarm 11 does
       // `with (obj_heart) instance_destroy(); with (obj_growtangle)
@@ -486,19 +491,19 @@ export async function createRenderer(canvas) {
       // enough and a lone heart hung in the air over the command menu.
       const hidden = state.boardVisible === false
         || (iFrames && Math.floor(state.frame / 2) % 2 === 0);
-      if (!hidden) {
-        const entry = sprites.get('spr_dodgeheart');
-        if (entry && entry.frames.length) {
-          ctx.save();
-          if (iFrames) ctx.globalAlpha = 0.45;
-          blit(entry.frames[0], entry.meta.ox, entry.meta.oy, soul.x, soul.y, 1, 1, 0, 1);
-          ctx.restore();
-        } else {
-          blit(iFrames ? baked.heartHurt : baked.obj_heart,
-            HEART_MASK.originX, HEART_MASK.originY, soul.x, soul.y, 1, 1, 0, 1);
-        }
+      if (hidden) return;
+      const entry = sprites.get('spr_dodgeheart');
+      if (entry && entry.frames.length) {
+        ctx.save();
+        if (iFrames) ctx.globalAlpha = 0.45;
+        blit(entry.frames[0], entry.meta.ox, entry.meta.oy, soul.x, soul.y, 1, 1, 0, 1);
+        ctx.restore();
+      } else {
+        blit(iFrames ? baked.heartHurt : baked.obj_heart,
+          HEART_MASK.originX, HEART_MASK.originY, soul.x, soul.y, 1, 1, 0, 1);
       }
-    }
+    };
+    drawSoul();
 
     drawGraze(ctx, state, sprites);
 
@@ -519,6 +524,28 @@ export async function createRenderer(canvas) {
     drawMenu(ctx, state, sprites);
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.
     drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);
+
+    // THE ROAR COVERS THE MENU. obj_knight_roaring2's full-camera composite
+    // draws over the charboxes, the tension bar and the attack bar — none of
+    // them has a roaring guard in the dump; they are simply painted over as
+    // `darkness` ramps, and the sim's old order (panels last, "over
+    // everything") was the opposite of the game's. The SOUL alone rides above
+    // the cover: roaring2's Draw blits obj_heart immediately after its
+    // surface, so it is re-drawn here in screen space.
+    if (roaringCover.active) {
+      drawRoaringCover(ctx, state, sprites);
+      if (state.soul && state.soul.alive) {
+        const entry = sprites.get('spr_dodgeheart');
+        if (entry && entry.frames.length) {
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.drawImage(entry.frames[0],
+            state.soul.x - state.view.x - entry.meta.ox,
+            state.soul.y - state.view.y - entry.meta.oy);
+          ctx.restore();
+        }
+      }
+    }
   }
 
   // Frame counts for the sim's animation phase. sim/ must not read the

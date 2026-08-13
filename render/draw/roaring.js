@@ -432,26 +432,29 @@ export function drawRoaring(ctx, e, state, deps) {
     drawKnightRows(mg, sprites.get(e.knight_sprite), e, time, 0, 0);
   }
 
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = clamp01(e.darkness);
-  ctx.drawImage(my, 0, 0);
-  ctx.restore();
+  // THE COMPOSITE IS NOT BLITTED HERE ANY MORE — it is registered as a COVER
+  // and drawn after the battle UI. In the game the charboxes, the tension bar
+  // and the bar all draw at their legacy depths (5 / 1 / 1, from
+  // __global_object_depths) and NONE of them has a roaring guard; the
+  // full-camera composite simply draws over them, so the menu fades out
+  // underneath as `darkness` ramps and is gone at 1. The renderer's old order
+  // put the panels last "over everything, including a full-screen attack" —
+  // which is exactly the assumption the original does not make.
+  //
+  // The SOUL is the one thing above the cover: roaring2's own Draw does
+  // `with (obj_heart) draw_self();` immediately after its surface blit, so
+  // canvas.js re-draws it over the cover.
+  roaringCover.img = my;
+  roaringCover.alpha = clamp01(e.darkness);
+  roaringCover.active = true;
 
-  // THE KNIGHT IS DRAWN AGAIN ON THE FINALE FRAME, and to the MAIN CANVAS this
-  // time rather than into `my_surface` — the `do_fake_screen` branch repeats
-  // the whole scanline loop at `camerax() + fake_x` after the surface has been
-  // composited. That is why the fork above skips him: he is not missing from
-  // the last frame, he is drawn OVER it, at full brightness instead of behind
-  // `darkness`, holding the slash pose the roaring_timer 275/299 lerps put him
-  // in. Omitting this made the knight vanish for the one frame that gets
-  // photographed — so he was absent from both halves of the cut screen.
-  if (e.do_fake_screen) {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    drawKnightRows(ctx, sprites.get(e.knight_sprite), e, time, 0, 0);
-    ctx.restore();
-  }
+  // THE KNIGHT IS DRAWN AGAIN ON THE FINALE FRAME, over the composite — the
+  // `do_fake_screen` branch repeats the whole scanline loop after the surface
+  // has been composited, at full brightness instead of behind `darkness`,
+  // holding the slash pose the roaring_timer 275/299 lerps put him in. He
+  // rides the cover, so he is deferred with it.
+  roaringCover.fakeScreen = !!e.do_fake_screen;
+  roaringCover.entity = e;
 
   // THE SCREEN IS CUT IN TWO. `sprite_create_from_surface` twice over the same
   // composite, each pass erasing the other side with `gpu_set_blendenable(false)`
@@ -467,6 +470,30 @@ export function drawRoaring(ctx, e, state, deps) {
   }
 
   return true;
+}
+
+/**
+ * The deferred composite — see the registration site in drawRoaring. Cleared
+ * by canvas.js at the top of every frame, drawn by drawRoaringCover after the
+ * battle UI so the roar covers the menu the way the game's depth order does.
+ */
+export const roaringCover = {
+  active: false, img: null, alpha: 0, fakeScreen: false, entity: null,
+};
+
+/** Blit the registered cover (and the finale knight) over whatever is drawn. */
+export function drawRoaringCover(ctx, state, sprites) {
+  if (!roaringCover.active || !roaringCover.img) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = roaringCover.alpha;
+  ctx.drawImage(roaringCover.img, 0, 0);
+  ctx.globalAlpha = 1;
+  if (roaringCover.fakeScreen && roaringCover.entity) {
+    drawKnightRows(ctx, sprites.get(roaringCover.entity.knight_sprite),
+      roaringCover.entity, state.frame, 0, 0);
+  }
+  ctx.restore();
 }
 
 const CUT_TOP_X = 200;   // midway - 120
