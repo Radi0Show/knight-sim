@@ -14,9 +14,13 @@ checks it.
 
 ```bash
 export PATH="$HOME/tools/node/bin:$PATH"   # Node is NOT on PATH
-cd ~/knight-sim && npm run verify          # expect: All 10 suites green
+cd ~/knight-sim && npm run verify          # expect 40/41; verify-fullfight
+                                           # is task #28 and is tracked
+node tools/verify-damage.mjs               # no bullet holds the placeholder
 ```
 
+- **`docs/HANDOFF.md` — START A NEW SESSION HERE.** Priority order, what has
+  already been tried, and the traps that have each cost hours.
 - `docs/STATUS.md` — what is done, what is next, known gaps
 - `docs/ORACLE-RECIPE.md` — how to verify a new attack, end to end
 - `~/knight-research/` — PRIVATE repo: the oracle, the GML dump, the traces.
@@ -1325,3 +1329,118 @@ The Knight's own reaction, from `scr_damage_enemy`: `shakex = 9`,
 strobes him between his idle and `spr_roaringknight_ball_transition` FRAME 7.
 Below 100 there is no strobe, because the Draw's test reads
 `|| stronghurtanim == false` and takes the plain-idle branch.
+
+## The OBJECT DEFINITION holds more than the sprite
+
+CLAUDE.md already records that `sprite_index` set on the object is invisible to
+every grep of the code dump. **`depth` is the same hole**, and it is worse
+because nothing ever throws.
+
+`obj_knight_split_growtangle` assigns no depth in any event, but places three
+kinds of sibling relative to its own: `marker[0..1].depth = depth + 10` (the
+big cut-face flames), `_b.depth = depth + 1` (the teeth), and a `depth - 10`
+site. In the sim all three were `undefined + N` = **NaN**, and NaN in a depth
+comparator is neither less nor greater — so the sort left the box, its teeth
+and its flames in arbitrary order. No crash, no failing suite, no wrong number
+anywhere; the only symptom is something drawn in front of what it should be
+behind.
+
+**Rule: any `e.depth + N` whose base was never assigned is this bug.** Grep for
+them. The fix is the object-definition dump (task #47), the same technique that
+found `obj_basicattack -> spr_attack_cut1`.
+
+## A GML Draw runs at 30Hz; a browser renderer does not
+
+`obj_knight_split_growtangle`'s Draw rolls four `irandom_range(-1, 1)` offsets
+to shake the cut box. Translating that into the renderer and calling it once
+per `requestAnimationFrame` re-rolls it at the MONITOR's rate — 60Hz or 144Hz,
+not 30. Same amplitude, double or quintuple the rate, and the eye reads rate as
+intensity: reported from play as "the fuzzy effect is more intense in the sim
+than the actual game", which was exactly right.
+
+**Anything random that lives in a Draw event must be a pure function of the sim
+frame**, not advanced per paint. Seeding from `state.frame` also makes a paused
+inspection redraw identically, which a free-running generator cannot.
+
+## THE KNIGHT HAS HIS OWN GAME OVER
+
+`obj_gameover_init`'s Create reads `global.tempflag[93]` into `knight_mode`,
+and `obj_ch3_PTB02` — his encounter room — sets that flag as the fight begins.
+So dying here NEVER plays the game over everyone knows:
+
+```gml
+if (!knight_mode) { crack at 50; six shards at 90; fadeout at 140 }
+else if (timer == 80) { lerp x -> 312, y -> cameray() + 80, 30, 2, "out" }
+```
+
+**The soul does not break.** It holds where it died, then glides up on a
+quadratic ease-out (`scr_ease_out` curve 2 = `-t * (t - 2)`). The sprite is
+`spr_heart` (16x16), NOT `spr_dodgeheart` (20x20) — `global.heartx = (x + 2) -
+viewX` carries a +2 precisely to centre the smaller one inside the larger — and
+`image_xscale` is never set, so it draws at 1.
+
+`room_goto(PLACE_FAILURE)` at timer 150 is OUTSIDE the branch, so both modes
+reach it. **PLACE_FAILURE is a 320x240 room drawn at 2x** — `DEVICE_CHOICE`
+centres with `(320 - width) / 2`. Its options are the game's own strings:
+`GO BACK#(FIGHT AGAIN)` at (70,180) and `GO FORWARD#(MOVE ON)` at (190,180),
+`CURX = -1` so neither starts selected. The heart marker at (156,40) at
+`image_xscale 0.5` lands at exactly (312,80) full size — the same place the
+soul glided to, so the two rooms hand off without it moving. Any scaling that
+breaks that equality is wrong.
+
+## TP items are applied INLINE; every other item defers
+
+obj_battlecontroller's Step, in the selection code:
+
+```gml
+if (tempitem[...] == 27) { scr_tensionheal(80);                   _tensionhealed = 1; }
+if (tempitem[...] == 28) { scr_tensionheal(ceil(maxtension / 2)); _tensionhealed = 1; }
+if (tempitem[...] == 29) { scr_tensionheal(ceil(maxtension));     _tensionhealed = 1; }
+if (_tensionhealed) { ...healanim, snd_cardrive...; scr_itemshift_temp(); scr_nexthero(); }
+if (!_tensionhealed) { scr_itemconsumeb(); }      // <- everything else
+```
+
+`scr_itemconsumeb` — the deferred path, resolved later on the spell clock — is
+explicitly the ELSE of the TP branch. Three items, not one. The difference is
+visible: fill TP with TensionMax and the NEXT character can spend it this turn.
+
+## `scr_bullet_inherit` is how damage reaches a bullet
+
+`scr_bullet_init` gives every bullet `damage = 10`. That is a PLACEHOLDER. The
+real number arrives either from the bullet's own Other_15 (the slashes and
+stars hardcode 206/75) or by `scr_bullet_inherit` walking it down the spawn
+chain, one hop per link.
+
+**A bullet that never inherits does not look broken — it looks weak.**
+`scr_damage_calculation` removes 1 per DF point below maxhp/8 but 3 above
+maxhp/5, so 10 against the party's defence lands as 0-3 and floors at **1**,
+where 206 lands as 176. Nothing crashes, no traced column moves, the renderer
+is correct. Flurry's teeth shipped that way and a human PLAYING the fight found
+it, not 41 suites. `node tools/verify-damage.mjs` now guards every live attack.
+
+## A button held across a transition must not act on the other side
+
+Confirming a mode on the title screen fired Kris's FIGHT the instant the fight
+opened. The battle menu IS edge-triggered, but its `held` map starts empty, so
+the first frame of a still-down key reads as a fresh 0->1 edge.
+
+The original hits this too and solves it in `obj_heart`'s Create: `disableslow`
+latches when the focus button is ALREADY down, so holding focus through the
+transition into a fight does not slow the opening frames. web/main.js
+generalises that latch to every button, cleared per key on release.
+
+## The wiki is a hypothesis, not a source
+
+The Deltarune wiki's Chapter 3 tables were checked against the dump. It
+corroborates the whole 15-turn attack order, the phase structure, the
+damagereduction ramp, the invc values, and `monstertype 104` = 7300 HP / AT 40 /
+DF 0. **Three claims are wrong** and the sim already matched the dump on all
+three:
+
+| wiki | dump |
+|---|---|
+| Tracking Swords 206 | **200** — no override; inherits `monsterat * 5` |
+| Sword tunnel swords 62 | **200**; there is no `62` anywhere in the dump. 160 is the FINISHER only |
+| party damage halved/doubled by SWOON | **Kris only** — the block is inside `if (object_index == obj_herokris)`, which the wiki cites and misreads |
+
+Useful for cross-checking, never for settling. See task #45 for what is left.

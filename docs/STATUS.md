@@ -9,7 +9,16 @@ export PATH="$HOME/tools/node/bin:$PATH"
 cd ~/knight-sim && npm run verify
 ```
 
-Expected: **All 22 suites green.** If not, stop and fix before adding anything.
+Expected: **40 of 41 suites green.** The one failure, `verify-fullfight`, is
+the whole-fight oracle diff and is TRACKED, not ignored — see task #28 and
+`docs/HANDOFF.md`. Any OTHER failure means stop and fix before adding anything.
+
+Also run `node tools/verify-damage.mjs`: it asserts no live bullet is still
+carrying `scr_bullet_init`'s placeholder damage, which is a bug class that
+looks like "this attack is weak" rather than like a failure.
+
+**New session? Read `docs/HANDOFF.md`** — it has the priority order, what has
+already been tried, and the traps that have each cost hours.
 
 ## Engine — done and verified
 
