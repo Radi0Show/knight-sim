@@ -583,10 +583,7 @@ const director = {
         if (gt) gt.arenaOpened = upcoming.ac;
         e.arenaOpen = true;
         if (upcoming.ac !== -1 && !state.soul) {
-          // NO SOUL AT BUILD. The first turn's arena-open delivers it, exactly as the
-  // Knight does. Starting with one put a soul on screen through the opening
-  // menu, where the real fight has none.
-  state.soul = null;
+          state.soul = spawn(state, soul, { ...SOUL_START });
         }
       }
       e.spawnDelay -= 1;
@@ -628,7 +625,10 @@ export function buildPracticeScene(state, { seed = 12345 } = {}) {
   });
 
   settleBox(spawn(state, battlebox, { x: BOX.x, y: BOX.y }));
-  state.soul = spawn(state, soul, { ...SOUL_START });
+  // NO SOUL AT BUILD. The first turn's arena-open delivers it, exactly as the
+  // Knight does via scr_moveheart. Starting with one put a soul on screen
+  // through the opening menu, where the real fight has none.
+  state.soul = null;
   spawn(state, director);
   return state;
 }

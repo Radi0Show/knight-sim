@@ -27,6 +27,31 @@ import { scrDamageMaxhp } from '../sim/damage.js';
 import { knightCatch } from '../sim/knight.js';
 import { createHeroes } from '../sim/heroes.js';
 import { launchAttack } from '../sim/scenes/fight.js';
+import { spawn } from '../sim/entity.js';
+import { soul } from '../sim/soul.js';
+import { SOUL_START } from '../sim/actors.js';
+
+/**
+ * A scene with a soul in it, for the scenarios that launch an attack DIRECTLY
+ * rather than driving the director.
+ *
+ * `buildPracticeScene` no longer creates a soul: obj_heart is delivered per
+ * bullet phase by the Knight (scr_moveheart) and does not exist during the
+ * party's menu, so the director now spawns it at arena-open. These scenarios
+ * skip the director entirely, so nothing delivers one — and the tracking
+ * swords, which aim at the soul, return early every frame and never reach the
+ * slash. That reads as "no slash spawned in 400 frames", which looks like a
+ * damage-inheritance failure and is nothing of the sort.
+ *
+ * This suite is about what a hit is WORTH, not about when the soul exists, so
+ * it supplies one directly.
+ */
+function sceneWithSoul(seed) {
+  const s = createState({ seed, traceBulletSlots: 0 });
+  buildPracticeScene(s, { seed });
+  s.soul = spawn(s, soul, { ...SOUL_START });
+  return s;
+}
 
 const NONE = {
   left: false, right: false, up: false, down: false,
@@ -128,8 +153,7 @@ console.log(`\nDEFEND: a 206 slash deals ${defending} vs ${plain} undefended`);
 // this build kept, because it read each object's Create and never modelled
 // the inheritance. Six of the seven attacks did one point of damage a hit.
 {
-  const s = createState({ seed: 5, traceBulletSlots: 0 });
-  buildPracticeScene(s, { seed: 5 });
+  const s = sceneWithSoul(5);
   const owner = launchAttack(s, { ac: 11, difficulty: 0, name: 'Tracking Swords' });
   if (!owner) failures.push('the tracking manager did not launch');
   else if (owner.damage !== 200) {
@@ -154,8 +178,7 @@ console.log(`\nDEFEND: a 206 slash deals ${defending} vs ${plain} undefended`);
 // `difficulty` — so the cone never receives 200 and its stars keep their own
 // `damage = 1`. Stars really is chip damage; do not "fix" it to 200.
 {
-  const s = createState({ seed: 5, traceBulletSlots: 0 });
-  buildPracticeScene(s, { seed: 5 });
+  const s = sceneWithSoul(5);
   const owner = launchAttack(s, { ac: 1, difficulty: 0, name: 'Stars' });
   if (owner && owner.damage === 200) {
     failures.push('the Stars cone inherited 200 — the controller does not pass it');
