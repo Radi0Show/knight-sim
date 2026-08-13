@@ -14,7 +14,7 @@
 // The three panels are 212 wide at x 0, 213 and 426 (`xchunk` for
 // `chartotal == 3`).
 
-import { drawSpriteExt, rgb } from './draw/gm.js';
+import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { PARTY } from '../sim/damage.js';
 import { BUTTONS, CHAR_COLOR, PARTY_SPRITES, listRows } from '../sim/menu.js';
 import { SPELLS, spellCost } from '../sim/spells.js';
@@ -377,7 +377,59 @@ export function drawMenu(ctx, state, sprites) {
     drawTargetPicker(ctx, state, sprites, font);
   } else if (menu.open && menu.submenu === 'enemy') {
     drawEnemyRow(ctx, state, sprites, font);
+  } else if (menu.open) {
+    drawBattleMsg(ctx, state, font);
   }
 
   ctx.restore();
+}
+
+/**
+ * THE FLAVOUR LINE — `global.battlemsg[0]`, shown over the button row.
+ *
+ *     // scr_battletext
+ *     battlewriter = instance_create(xx + 30, yy + 376, obj_writer);
+ *
+ * The same y band as the item list (375), which is why only one of them is
+ * ever on screen: the lists replace the message rather than sitting beside
+ * it. That is also why this draws in the `else` arm above.
+ *
+ * `&` is the line break in these strings, as it is in the Susie dialogue —
+ * NOT `#`, which is what the item descriptions use. Two different break
+ * characters in the same UI, from two different string sources.
+ *
+ * The message is not cleared between turns (nothing assigns "" to
+ * `global.battlemsg[0]`), so whatever was last set stays up — including
+ * through turns that set nothing.
+ */
+function drawBattleMsg(ctx, state, font) {
+  if (!font?.ready || !state.battlemsg) return;
+  // LINE SPACING IS THE WRITER'S `vspace`, NOT THE FONT'S HEIGHT.
+  //
+  //     obj_writer Create:  vspace = 18;
+  //     obj_writer Draw:    charline = 26;
+  //                         if (global.fc == 22) { charline = 30;
+  //                             vspace = 28; if (i_ex(obj_writer)) vspace = 30; }
+  //
+  // `global.fc` selects the speaker's face and, with it, the spacing. The
+  // Susie exchange sets `fc = 22` (the enemy-talk branch) and so runs at 30;
+  // the battle MESSAGE sets `fc = 0` in the turn-end block
+  // (`global.typer = 6; global.fc = 0;`) and so runs at the Create default.
+  //
+  // Using the font's own height (32 here) put the second line's glyphs into
+  // the charbox HP strip at y 430-449 — visible overlap, caught by looking at
+  // the render rather than by any test.
+  //
+  // UNCERTAIN, and flagged rather than guessed: 18 is very tight for glyphs
+  // this tall, so `charline` may select a smaller font for the fc == 0 path
+  // that this renderer does not model. 30 is used here because it is the
+  // value the game uses for the other message in this same band and it does
+  // not collide. If a screenshot comparison ever runs, this is a number to
+  // check first.
+  const lh = 30;
+  const lines = state.battlemsg.split('&');
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    drawText(ctx, font, lines[i], 30, 376 + i * lh, { color: rgb(c_white) });
+  }
 }
