@@ -294,3 +294,18 @@ the party on screen, the snow at the edge. All five sourced and in
   __intro.hold freezes the loop) — screenshot tooling stalls rAF and the
   drain then blasts through the timeline, so real-time watching in the
   pane is useless for cutscenes.
+
+## 2026-08-14 (later still) — the ENDING was the wrong branch; rebuilt
+
+flag[50] == 1 means the KNIGHT was violenced (win by hit), not that the
+party lost — PTB02 con 8 routes it to con 49 -> 50: the warp destabilise,
+Susie's clash + parry + the sword shard, the taunts, the two blackout
+slashes with SWOON writers, and the knighting. The con 10-12 beam/Undyne
+scene shipped earlier is a DIFFERENT aftermath and is out of the flow.
+Read the flag semantics before trusting a branch's name.
+
+The scene ends at the knighting -> MAIN MENU (player-directed).
+__cutscene.drive(t) inspects any ending frame; drawSnowBackdrop is shared
+intro/ending and camera-aware. Ids resolved: rsprite 686 =
+spr_susier_dark, loopsfx 169 = snd_suslaugh, dmgwriter type 12 =
+spr_battlemsg frame 13 in c_red.
