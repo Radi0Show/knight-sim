@@ -17,7 +17,9 @@ import { bindKeyboard } from '../input/keyboard.js';
 import { createRenderer } from '../render/canvas.js';
 import { createIntroFx, stepIntroFx } from '../sim/intro.js';
 import { drawIntroFx } from '../render/draw/intro-fx.js';
-import { KNIGHT } from '../sim/actors.js';
+import { createVictoryScene, stepVictoryScene } from '../sim/victory-scene.js';
+import { drawVictoryScene } from '../render/draw/victory-scene.js';
+import { KNIGHT, PARTY as PARTY_ACTORS } from '../sim/actors.js';
 import { createAudio } from '../render/audio.js';
 import { drainCues } from '../sim/audio.js';
 import { resetTensionBar } from '../render/tensionbar.js';
@@ -265,6 +267,10 @@ let over = null;          // the Game Over sequence, once the party is down
 // shows its own card. Tool UI, styled like the title, labelled as the point
 // where the story continues — not a recreation of it.
 let victory = null;       // { timer } once the ending's fade has filled
+// THE STORY SCENE between the white and the card — Susie against the Knight,
+// Undyne, the bird. sim/victory-scene.js has the sourcing; it runs driver-
+// side like the intro. Z advances dialogue; X skips the whole scene.
+let cutsceneSeq = null;
 
 /**
  * The card itself: white field easing back to black, the game's own closing
@@ -385,6 +391,44 @@ function frame(now) {
     return;
   }
 
+  // THE STORY SCENE. White recedes over its first 20 frames, then the
+  // knight glides in. When it finishes (or X skips it), the card.
+  if (cutsceneSeq) {
+    const { steps: cs, accumulator: ca } = drain(acc, elapsed);
+    acc = ca;
+    for (let i = 0; i < cs; i++) {
+      const input = gatedKeys();
+      if (input.cancel) {
+        cutsceneSeq.done = true;
+      }
+      const cues = [];
+      stepVictoryScene(cutsceneSeq, input, cues);
+      if (cues.length) audio.play(cues);
+      if (cutsceneSeq.done) break;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    drawBackground(ctx, state, renderer.sprites);
+    if (!cutsceneSeq.done) {
+      drawVictoryScene(ctx, cutsceneSeq, renderer.sprites);
+      // The white receding out of the battle's ending fade.
+      const white = Math.max(0, 1 - cutsceneSeq.t / 20);
+      if (white > 0) {
+        ctx.globalAlpha = white;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      cutsceneSeq = null;
+      maskHeldInput();
+      victory = { timer: 0 };
+    }
+    requestAnimationFrame(frame);
+    return;
+  }
+
   // VICTORY. Held on the ending's full-white fade, then the card. Z fights
   // again; X returns to the mode menu.
   if (victory) {
@@ -464,10 +508,11 @@ function frame(now) {
       simFrames += 1;
 
       // The win: the ending's white fade has filled (stepEndCutscene drives
-      // it to 1 over 30 frames from endtimer 32). Hand off to the card.
-      if (!victory && (state.endFade ?? 0) >= 1) {
+      // it to 1 over 30 frames from endtimer 32). The story scene plays
+      // first; the card follows it.
+      if (!victory && !cutsceneSeq && (state.endFade ?? 0) >= 1) {
         maskHeldInput();
-        victory = { timer: 0 };
+        cutsceneSeq = createVictoryScene(PARTY_ACTORS.map((p) => ({ x: p.x, y: p.y })));
       }
 
       // HITLESS: one hit and it starts over. The restart is instant because
