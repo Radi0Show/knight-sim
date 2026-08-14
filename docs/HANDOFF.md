@@ -235,3 +235,18 @@ session TWICE.
 Check `lsof -nP -iTCP:8177 -sTCP:LISTEN` + `ps` for `-m http.server` vs
 `devserver.py`. The reliable setup: run `python3 tools/devserver.py 8178`
 yourself and point the preview tab at :8178.
+
+## 2026-08-14 (later still) — intro and ending landed
+
+- THE OPENING ROAR: obj_knight_roaring_fx ported on its visual-only path,
+  run DRIVER-SIDE between title and fight (the real one plays in the
+  overworld before scr_battle exists) — so tokens, the diff and all suites
+  are untouched by it. Skippable; plays on NORMAL/HITLESS entry only.
+- THE ENDING, battle side: the ending hit's shake chord and triple hurt,
+  the %3 strobe, the white fade at endtimer 32, the UI teardown past 45,
+  and the tool's victory card at the white handoff. The STORY scene
+  (Susie/Undyne/the bird) is sourced (PTB02 con 10-12) but needs the
+  overworld sprite extraction — task list lives on task #5.
+- knightblock is INTRO-ERA content: `blocking = 1` survives exactly one
+  knight step once the heroes exist, and `damagereduction < 0.1` never
+  recurs — the block cannot fire in play. The bell waits behind blockanim.
