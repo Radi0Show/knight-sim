@@ -266,3 +266,31 @@ rewrote it); 184 -> 208 entries, verified nothing lost.
 Verification pattern for driver-side scenes: headless full-timeline drive
 (phases + cue counts) plus live browser sampling of key beats — the
 throttled preview tab cannot play 40s in real time.
+
+## 2026-08-14 (later) — the intro rebuilt to the full pre-fight sequence
+
+Player feedback drove it: longer, the red screen layer, the sword draw,
+the party on screen, the snow at the edge. All five sourced and in
+(02c5c1f). Findings that matter beyond the intro:
+
+- **dump_room.csx** (research side): dumps a room's layers/tiles/assets +
+  textures. room_dw_snow_zone has NO tiles — black room, vista drawn by
+  obj_dw_snow_zone_parallax in WORLD coordinates with camera clamps all
+  saturated at cam 2230, and SOLID BLACK from world x 2600 right. Use this
+  script whenever a scene's look is in question — the battle-bg object was
+  the wrong source and cost a round of player feedback.
+- **object_ids.csx**: numeric object id -> name (the 46 in
+  scr_script_repeat = obj_afterimage_screen).
+- **First-run vs revisit staging**: PTB02 creates the knight at
+  (2350, cameray()+100) in con 0 (script lerps +320 -> 2670); the
+  (2655, +106) in Create is the tempflag[90] REVISIT branch. Check which
+  branch stages a scene before taking its coordinates.
+- **obj_knight_circle's missing r-approach is an ORIGINAL BUG** — the white
+  climax circle turns pure red and stays; the destroy test reads b==0
+  twice. That IS the red screen layer.
+- The title confirm was skipping the intro (a ~100ms press spans four 30Hz
+  frames) — maskHeldInput() now runs at the transition.
+- **__intro.drive(t)** paints any intro frame deterministically (and
+  __intro.hold freezes the loop) — screenshot tooling stalls rAF and the
+  drain then blasts through the timeline, so real-time watching in the
+  pane is useless for cutscenes.
