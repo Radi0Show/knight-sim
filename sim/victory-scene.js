@@ -508,6 +508,9 @@ export function stepVictoryScene(sc, input, cues) {
         su.index = 0;
         su.speed = 0.25;
         su.lerp = { field: 'x', from: su.x, to: a, t: 0, dur: b, curve: 'linear' };
+        // The walk anim STOPS on arrival (c_autowalk halts the cycle) —
+        // without this she treadmills in place until the clash.
+        setTimeoutStep(sc, b + 1, () => { su.speed = 0; su.index = 0; });
         break;
       }
       case 'clashStart':

@@ -81,4 +81,32 @@ if (missing.length) {
   for (const s of missing) console.log(`  ${s.padEnd(34)} ${[...new Set(gml.get(s))].join(', ')}`);
   process.exit(1);
 }
+
+// THE OTHER DIRECTION: every cue name the sim (or a driver-side scene) can
+// emit must have a file in the local audio index, or it plays as SILENCE.
+// Written after the ending's laugh and shard-break sounds shipped extracted
+// but unlisted — the audio layer plays only what index.json maps, so a
+// missing entry is inaudible and no suite saw it. Cue sites come in two
+// shapes: cue(state, 'snd_x') and the scenes' cues.push({ name: 'snd_x' }).
+const emitted = new Set(simCued);
+const collectPushes = (dir) => {
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    if (f.isDirectory()) { collectPushes(`${dir}/${f.name}`); continue; }
+    if (!f.name.endsWith('.js')) continue;
+    const text = readFileSync(`${dir}/${f.name}`, 'utf8');
+    for (const line of text.split('\n')) {
+      if (/^\s*(\/\/|\*)/.test(line)) continue;
+      for (const m of line.matchAll(/name:\s*'(snd_[a-z_0-9]+)'/g)) emitted.add(m[1]);
+    }
+  }
+};
+collectPushes(SIM);
+const index = JSON.parse(readFileSync(`${process.env.HOME}/knight-sim/assets/audio/index.json`, 'utf8'));
+const unplayable = [...emitted].filter((s) => !index[s]).sort();
+if (unplayable.length) {
+  console.log(`\n→ FAILURE  ${unplayable.length} cue(s) with no file in assets/audio/index.json (silent):`);
+  for (const s of unplayable) console.log(`  ${s}`);
+  process.exit(1);
+}
+console.log(`cue names emitted anywhere: ${emitted.size} — all present in the audio index`);
 console.log('\nPASS  audio coverage — every live knight sound is cued');
