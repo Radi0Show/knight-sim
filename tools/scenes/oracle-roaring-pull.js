@@ -227,6 +227,16 @@ export const SOUL_AT_START = { x: 310, y: 155.5500030518 };
 export const ORACLE_PULL_INPUT = [{ from: 0 }];
 
 export function buildOracleRoaringPullScene(state) {
+  // THE ORACLE'S DAMAGE IS A PURE COUNTER. The universal harness replaces
+  // obj_collidebullet's Other_15 with a hit recorder — no scr_damage, so no
+  // party HP change, no dmgwriter, and NO obj_shake. The sim must mirror
+  // that: scr_damage now spawns the screen shake (whole-fight f242 measured
+  // the camera moving on a hit), and a scene that leaves damage live shakes
+  // a camera the recording never shook — the tracking swords clamp to
+  // cameray()+40/+320, so the divergence surfaced as sword_y, three rooms
+  // away from its cause.
+  state.damageEnabled = false;
+
   state.view = { x: 0, y: 0 };
   state.turntimer = 999;
   state.roarBurstSpeeds = ROAR_BURST_SPEEDS;

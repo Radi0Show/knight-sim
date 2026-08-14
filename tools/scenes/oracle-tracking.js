@@ -81,6 +81,16 @@ const clock = {
 };
 
 export function buildOracleTrackingScene(state) {
+  // THE ORACLE'S DAMAGE IS A PURE COUNTER. The universal harness replaces
+  // obj_collidebullet's Other_15 with a hit recorder — no scr_damage, so no
+  // party HP change, no dmgwriter, and NO obj_shake. The sim must mirror
+  // that: scr_damage now spawns the screen shake (whole-fight f242 measured
+  // the camera moving on a hit), and a scene that leaves damage live shakes
+  // a camera the recording never shook — the tracking swords clamp to
+  // cameray()+40/+320, so the divergence surfaced as sword_y, three rooms
+  // away from its cause.
+  state.damageEnabled = false;
+
   state.view = { x: 0, y: 0 };
   // scr_turntimer(292) for ac 11 difficulty 0; the trace reads 290 by the
   // frame the manager appears.

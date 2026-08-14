@@ -49,7 +49,7 @@ import {
 } from '../gml.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { starOther15 } from './pointing-star.js';
-import { STARCHILD_MASK, STARCHILD_TRAIL_MASK, scrPreciseHit } from '../masks.js';
+import { STARCHILD_MASK, STARCHILD_TRAIL_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
 
 /** scr_rotatetowards — step `from` toward `to` by at most `delta`. */
 function scrRotatetowards(from, to, delta) {
@@ -308,6 +308,10 @@ export const pointingStarchild = {
       e.sprite_index === 'spr_knight_starchild_trail'
         ? STARCHILD_TRAIL_MASK
         : STARCHILD_MASK;
+    // Engine pair test first, then the Other_15 probe — see enginePairHit.
+    // Measured at whole-fight f295/296: the probe alone connected a frame
+    // before the recording's hit.
+    if (!enginePairHit(heart, e, mask)) return false;
     return scrPreciseHit(heart, e, mask, n);
   },
 

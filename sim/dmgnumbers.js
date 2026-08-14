@@ -42,6 +42,7 @@
 // kill` means the number stretches vertically as it disappears.
 
 import { PARTY } from './damage.js';
+import { gmlRandom } from './rng.js';
 
 // `type` is the writer's colour selector, and IT MEANS DIFFERENT THINGS in the
 // two directions:
@@ -93,6 +94,13 @@ export function createDmgNumbers() {
 export function spawnDmgNumber(state, x, y, damage, type, delay = 8) {
   const d = state.dmg;
   if (!d) return;
+  // `damage = round(random(600))` in obj_dmgwriter's CREATE — a placeholder
+  // the caller overwrites on the next line, but the roll still happens, and
+  // it comes from the same WELL512 stream every bullet draws from. Skipping
+  // it desynced the whole-fight diff four frames after the first landed hit:
+  // scr_damage_all spawns THREE writers, the next star (b15, f205) rolled
+  // three positions early and flew the opposite direction.
+  if (state.gmlRng) gmlRandom(state.gmlRng, 600);
   d.list.push({
     x,
     // `(monstery + 20) - (hittarget * 20)` — each hit this turn sits 20px
@@ -133,8 +141,13 @@ export function stepDmgNumbers(state, rng) {
       n.delaytimer += 1;
       if (n.delaytimer === n.delay) {
         // `vspeed = -5 - random(2)` — the throw is randomised, so three
-        // numbers from one turn do not travel in lockstep.
-        n.vspeed = -5 - (rng ? rng() * 2 : 1);
+        // numbers from one turn do not travel in lockstep. It fires in the
+        // DRAW event, once, at delay-elapse — and like every Draw-event
+        // random it consumes from the global stream, so it must come from
+        // gmlRng when the state carries one (the scene's mulberry fallback
+        // predates the RNG discovery and stays only for rng-less callers).
+        n.vspeed = -5 - (state.gmlRng ? gmlRandom(state.gmlRng, 2)
+          : (rng ? rng() * 2 : 1));
         n.vstart = n.vspeed;
         n.hspeed = 10;
       }

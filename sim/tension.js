@@ -81,10 +81,15 @@ export function stepGraze(state, grazes) {
     if (!active && e.type.name !== 'obj_sword_tunnel_sword') continue;
 
     if (!grazes(e, cx, cy)) {
-      // Leaving re-arms the entry bonus. obj_knight_pointing_star clears its
-      // own `grazed` on a timer instead, which is why a star parked on the soul
-      // keeps paying out.
-      if (e.grazed === 1 && e.grazeSticky !== true) e.grazed = 0;
+      // NOTHING CLEARS `grazed` HERE. obj_grazebox's collision event only
+      // ever SETS the flag; the dump has no generic clear-on-leave anywhere.
+      // Re-arming is strictly per-object: obj_knight_pointing_star and
+      // obj_sword_vortex zero it on their own %4 timers, and
+      // obj_knight_split_growtangle resets its teeth itself. Every other
+      // bullet pays its entry bonus ONCE and then only trickles — including
+      // starchildren born pre-grazed from a bursting parent
+      // (sim/childbullet.js). This used to clear the flag on leaving, an
+      // invented re-arm no recording ever showed.
       continue;
     }
 
@@ -98,6 +103,9 @@ export function stepGraze(state, grazes) {
     const gf = grazeFactors(gearOf(state));
     const tp = (e.grazepoints ?? 0) * gf.tp;
     const time = (e.timepoints ?? 0) * gf.time;
+    if (process.env.KNIGHT_GRAZE_DEBUG && state.frame >= 290 && state.frame <= 296) {
+      console.error('GRZ f' + state.frame, e.type?.name, 'seq', e.seq, e.grazed === 1 ? 'TRICKLE' : 'FRESH', 'gt', e.grazetimer, 'x', e.x?.toFixed(2), 'y', e.y?.toFixed(2), 'act', e.active);
+    }
     if (e.grazed === 1) {
       scrTensionheal(state, tp / 30);
       if (state.turntimer >= 10) state.turntimer -= time / 30;

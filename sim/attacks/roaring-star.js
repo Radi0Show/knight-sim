@@ -42,9 +42,10 @@
 import { spawn, destroy } from '../entity.js';
 import { cue } from '../audio.js';
 import { clamp01, scrEaseOut } from '../gml.js';
-import { STAR_MASK, scrPreciseHit } from '../masks.js';
+import { STAR_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { knightCatch } from '../knight.js';
+import { scrChildbulletCopy } from '../childbullet.js';
 import { pointingStarchild } from './pointing-starchild.js';
 
 export const roaringStar = {
@@ -102,6 +103,8 @@ export const roaringStar = {
   collides(e, heart, state) {
     if (state && state.replayContacts) return false;
     if (e.active !== 1 && e.active !== true) return false;
+    // Engine pair test first, then the Other_15 probe — see enginePairHit.
+    if (!enginePairHit(heart, e, STAR_MASK)) return false;
     return scrPreciseHit(heart, e, STAR_MASK, 2);
   },
 
@@ -203,6 +206,9 @@ export const roaringStar = {
           // it computes the split offsets and then does not use them.
           // ORIGINAL BUG, preserved.
           const d = spawn(state, pointingStarchild, { x: e.x, y: e.y });
+          // scr_childbullet's copy set, grazed/grazetimer included — see
+          // sim/childbullet.js.
+          scrChildbulletCopy(d, e);
           d.image_angle = angle;
           d.direction = angle;
           d.speed = 1;

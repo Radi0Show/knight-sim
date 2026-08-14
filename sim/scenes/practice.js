@@ -123,6 +123,29 @@ const moveheart = {
   },
 };
 
+/**
+ * obj_battlecontroller's ONE translated Step line: `turntimer -= 1` during the
+ * bullet phase. It gets its own entity because ORDER is the point — the
+ * battle controller is created at fight start, before any knight object, so
+ * its Step runs first and every attack reads the ALREADY-DECREMENTED clock.
+ * The director (order 0) cannot host it: the cone steps at -1 and the stars
+ * controller at -2, and both key transitions off `turntimer`. Measured at
+ * whole-fight f241: the cone's release (all stars -> con 1, friction 0.5,
+ * growth stops) fired one frame late with the decrement behind it.
+ *
+ * NOTE the phase within the frame: STEP, not Begin Step — GML alarms fire
+ * before any Step event, so an alarm that read `turntimer` would see the
+ * PRE-decrement value. Putting this in beginStep would break that.
+ */
+const turnClock = {
+  name: 'turn_clock',
+  stepOrder: -100,
+  create(e) {},
+  step(e, state) {
+    if (e.director?.started && state.turntimer > 0) state.turntimer -= 1;
+  },
+};
+
 const director = {
   name: 'fight_director',
 
@@ -279,11 +302,12 @@ const director = {
       e.soulHold = null;
     }
 
-    // The battle controller decrements global.turntimer every frame of the
-    // bullet phase. That object is not translated (turn system, out of scope),
-    // so the director stands in for exactly this one line — attacks read the
-    // clock to decide when to stop spawning and close out.
-    if (e.started && state.turntimer > 0) state.turntimer -= 1;
+    // global.turntimer's decrement lives in `turnClock` (stepOrder -100), not
+    // here: obj_battlecontroller is the oldest instance in the room, so its
+    // Step — the decrement — runs BEFORE every knight object's. The director
+    // sits at order 0, AFTER the cone's -1, and decrementing from here made
+    // the cone read yesterday's clock: its star release (`turntimer <=
+    // endtimer`) fired at whole-fight f242 where the recording fires at f241.
 
     const entry = FIGHT_TABLE[e.phase][e.turn];
     state.phase = `phase ${e.phase} · turn ${e.turn + 1} · ${entry.name}`;
@@ -905,6 +929,7 @@ export function buildPracticeScene(state, { seed = 12345 } = {}) {
   // Knight does via scr_moveheart. Starting with one put a soul on screen
   // through the opening menu, where the real fight has none.
   state.soul = null;
-  spawn(state, director);
+  const d = spawn(state, director);
+  spawn(state, turnClock, { director: d });
   return state;
 }

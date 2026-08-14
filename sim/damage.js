@@ -32,6 +32,7 @@ import { heroHurt } from './heroes.js';
 import { statsOf } from './equipment.js';
 import { spawnDmgNumber, TYPE_PARTY, TYPE_DEAD } from './dmgnumbers.js';
 import { gmlChoose } from './rng.js';
+import { scrShakescreen } from './shake.js';
 
 // Where each party member stands, for the damage number to pop off. Measured
 // from traces/flurry2.csv, the same figures sim/actors.js uses — imported from
@@ -273,6 +274,14 @@ export function knightTarget(state, target, opts = {}) {
  * revival costs, which are out of scope.
  */
 export function scrDamage(state, damage, target, opts = {}) {
+  // Scene parity with the universal oracle harness, which replaces
+  // obj_collidebullet's Other_15 with a pure hit counter: when a scene
+  // declares damage disabled, NONE of scr_damage happens — no HP change, no
+  // dmgwriter (and its RNG draw), no obj_shake, no inv. The camera shake made
+  // this observable: a disabled-damage recording never shakes, and a sim that
+  // still ran the side effects shook the tracking swords' cameray() clamp
+  // three suites away from the cause.
+  if (state.damageEnabled === false) return 0;
   // THE MANTLE IS PER-CHARACTER, not a party switch. `scr_damage` checks
   // `chararmor1[2] == 23 && target == 1` and so on, one test per slot — only
   // the WEARER gets the x0.33 and the +3 DF. Treating it as a global boolean
@@ -296,6 +305,20 @@ export function scrDamage(state, damage, target, opts = {}) {
   // Flurry (myattackchoice 2) at difficulty 1 or 3 takes a further third off,
   // inside the HP write itself rather than up with the other multipliers.
   if (opts.flurrySoftened) t = Math.round(t * 0.66);
+
+  // `if (!instance_exists(obj_shake)) instance_create(0, 0, obj_shake)` —
+  // every hit the party TAKES shakes the screen, and the shake is GAMEPLAY:
+  // camerax() moves ±4..0 for five frames, and the bullets' offscreen culls
+  // compare against camerax(), so the despawn boundary moves with it.
+  // Measured at whole-fight f242-247: a second star hit at f242 put the
+  // camera at +3 on f246's step, and a star at x -35.27 (past the unshaken
+  // -35.20 boundary) survived one more frame than the shake-less sim.
+  // scr_damage_all's three inner scr_damage calls pass through here too; the
+  // exists-guard (mirrored by obj_shake's own second-instance suicide) keeps
+  // it to one shake per burst.
+  if (!state.entities.some((s) => s.alive && s.type?.name === 'obj_shake')) {
+    scrShakescreen(state);
+  }
 
   hp[target] -= t;
   if (hp[target] <= 0) {
@@ -324,6 +347,7 @@ export function scrDamage(state, damage, target, opts = {}) {
  * `aoe` is set.
  */
 export function scrDamageSingle(state, damage, target, opts = {}) {
+  if (state.damageEnabled === false) return 0;
   if (state.invTimer >= 0) return 0;
   // `with (obj_knight_enemy) progamer = false;` — scr_damage's chapter-3
   // block, inside the same `global.inv < 0` gate. Any hit that actually
@@ -354,6 +378,7 @@ export function scrDamageSingle(state, damage, target, opts = {}) {
  * the per-character gate inside scr_damage cannot swallow the second and third.
  */
 export function scrDamageAll(state, damage, opts = {}) {
+  if (state.damageEnabled === false) return 0;
   if (state.invTimer >= 0) return 0;
   // `with (obj_knight_enemy) progamer = false;` — scr_damage's chapter-3
   // block, inside the same `global.inv < 0` gate. Any hit that actually

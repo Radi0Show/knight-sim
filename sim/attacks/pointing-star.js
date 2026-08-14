@@ -27,7 +27,8 @@ import { spawn, destroy } from '../entity.js';
 import { cue } from '../audio.js';
 import { gmlChoose } from '../rng.js';
 import { clamp01 } from '../gml.js';
-import { STAR_MASK, scrPreciseHit } from '../masks.js';
+import { STAR_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
+import { scrChildbulletCopy } from '../childbullet.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { scrDamageAll } from '../damage.js';
 import { pointingStarchild } from './pointing-starchild.js';
@@ -157,13 +158,13 @@ export const pointingStar = {
 
         for (let i = 0; i < 6; i++) {
           const d = spawn(state, pointingStarchild, { x: e.x, y: e.y });
+          // The full scr_childbullet copy set — including `grazed` and
+          // `grazetimer` (see sim/childbullet.js: a star bursting mid-graze
+          // seeds shards that trickle, never fresh-graze). NOT copied:
+          // difficulty, which is why it is assigned explicitly below.
+          scrChildbulletCopy(d, e);
           d.image_angle = angle;
           d.direction = angle;
-
-          // scr_childbullet copies damage/grazepoints/timepoints/inv/target
-          // — but NOT difficulty, which is why it is assigned explicitly below.
-          d.damage = e.damage;
-          d.grazepoints = e.grazepoints;
 
           if (e.difficulty === 0 && i % 2 === 1) {
             // Half the shards at difficulty 0 are slow and short-lived: the
@@ -224,6 +225,8 @@ export const pointingStar = {
    * probe ignores the heart's outline entirely.
    */
   collides(e, heart) {
+    // Engine pair test first, then the Other_15 probe — see enginePairHit.
+    if (!enginePairHit(heart, e, STAR_MASK)) return false;
     return scrPreciseHit(heart, e, STAR_MASK, 3);
   },
 

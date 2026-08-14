@@ -389,7 +389,16 @@ export const trackingSwordsManager = {
     if (e.swordcount > 7 && e.swordcount < e.maxswords) e.swordcount = 0;
 
     e.setcount += 1;
-    if (e.setdirection[e.setcount] !== -1) inst.direction = e.setdirection[e.setcount];
+    // The GML array is EXACTLY 50 slots (`for (i = 0; i < 50; i++)`), and a
+    // real turn cannot fire 50 swords — the game would hard-error on the
+    // read. verify-fight-order's confirm-mashing driver CAN run a vortex turn
+    // long enough to get there (the turntimer=120 refresh above keeps the
+    // finisher window open), and an out-of-range read here returned
+    // `undefined`, which `!== -1` treated as a scripted override: the sword's
+    // direction went NaN and the collision phase crashed on it. Out of range
+    // means "past the scripted opening" — no override.
+    const setdir = e.setcount < 50 ? e.setdirection[e.setcount] : -1;
+    if (setdir !== -1) inst.direction = setdir;
 
     if (e.multiswordmax > 0) e.multiswordcount += 1;
     if (e.multiswordcon === 0 && e.multiswordmax > 0) e.multiswordcon = 1;

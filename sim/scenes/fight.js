@@ -423,6 +423,10 @@ const SURVIVES_TURN = new Set([
   'actor_party',
   'fight_director',
   'practice_director',
+  // obj_battlecontroller's stand-in (the turntimer decrement). The real
+  // controller lives for the whole fight; sweeping it froze the clock at the
+  // second turn's 292 and the fight never advanced again.
+  'turn_clock',
 ]);
 
 /**

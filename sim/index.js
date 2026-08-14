@@ -9,6 +9,7 @@ import { runPhase, runAlarms, reap } from './entity.js';
 import { traceRow } from './trace.js';
 import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK } from './masks.js';
 import { stepGraze } from './tension.js';
+import { freshParty } from './damage.js';
 
 export { createState } from './state.js';
 export { spawn, destroy, ALARM_COUNT } from './entity.js';
@@ -159,7 +160,6 @@ function runCollisions(state) {
   // `grazePrev` is refreshed after the collision phase each frame, and
   // seeded from the heart's spawn position the frame it is born.
   if (!state.grazePrev) state.grazePrev = { x: heart.x + 10, y: heart.y + 10 };
-  stepGraze(state, grazes);
 
   for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
     if (!b.alive || !b.isBullet || !b.type.other15) continue;
@@ -193,6 +193,18 @@ function runCollisions(state) {
       b.type.other15(b, state);
     }
   }
+
+  // DAMAGE BEFORE GRAZE. The damage collision event belongs to obj_heart
+  // (`with (other) event_user(5)`), and the heart is created at the top of
+  // each turn, before any of that turn's bullets and after obj_grazebox has
+  // already been ordered behind it — so on the frame a bullet connects, the
+  // hit resolves FIRST and `global.inv` is already 30 when the grazebox's own
+  // collision event runs. The graze gate `if (global.inv < 0)` then eats both
+  // the trickle and the first-contact award, and a bullet destroyed by its
+  // hit is gone before the grazebox can see it at all. Measured at
+  // whole-fight f201: the oracle sets inv with NO tension change on the same
+  // frame; with graze first the sim paid +2 the recording never does.
+  stepGraze(state, grazes);
 }
 
 /**
@@ -286,6 +298,19 @@ export function stepFrame(state, input) {
   // Destroyed entities disappear before the row is written, matching GML
   // instance_destroy() taking effect immediately.
   reap(state);
+
+  // KEEP-ALIVE PARITY WITH THE ORACLE RECORDER. The whole-fight patch pins
+  // the party at max HP inside its per-frame recorder, BEFORE the row is
+  // composed — so a hit frame's row already shows full HP again. A tool that
+  // refilled after stepFrame returned left the drop visible in the row it had
+  // just captured, which the differ read as a real hp divergence on the first
+  // landed hit (f201). The refill lives here, in the same position relative
+  // to the row write as the oracle's. Damage itself still ran — inv, hurt,
+  // dmgwriter, TP all keep their effects; only the resulting HP is unpinned.
+  if (state.keepAlive) {
+    state.partyHp = freshParty();
+    state.gameOver = false;
+  }
 
   state.trace.push(traceRow(state));
   state.frame += 1;

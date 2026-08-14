@@ -172,15 +172,137 @@ function probeMask(n) {
   return m;
 }
 
+/** IEEE round-half-to-even — the C library's rint(), which is what the
+ *  runner's collision_rectangle uses on its bounds. Math.round is half-UP
+ *  and differs exactly at the .5 boundaries the probe grid exposed. */
+function rint(x) {
+  const f = Math.floor(x);
+  const d = x - f;
+  if (d < 0.5) return f;
+  if (d > 0.5) return f + 1;
+  return f % 2 === 0 ? f : f + 1;
+}
+
+/**
+ * `collision_rectangle(x1, y1, x2, y2, id, true, false)` against a precise
+ * mask — CALIBRATED, not modelled. An 15,795-point oracle sweep
+ * (knight-research tools/patches/oracle_rect_probe.csx ->
+ * traces/rect-probe.csv: the f201 star exactly, the same star at integer
+ * position, and a scale-1 star) selects ONE rule with zero mismatches:
+ *
+ *   1. round each bound with rint (HALF-TO-EVEN — half-up loses 81+ points
+ *      exactly at the .5 boundaries);
+ *   2. iterate integer pixels [x1..x2] x [y1..y2] INCLUSIVE;
+ *   3. sample the target mask at the pixel CENTRE (+0.5), anchored at
+ *      floor(instance position), floor-inverse to source coordinates.
+ *
+ * This is a DIFFERENT quantisation from masksOverlap's corner sampling —
+ * measured there, measured here, both kept. Rotation is applied by inverse
+ * transform like masksOverlap's, but the sweep did not cover rotated
+ * targets; a rotated scr_precise_hit target should get its own spot-check.
+ */
+export function collisionRectanglePrecise(x1, y1, x2, y2, e, mask) {
+  if (!mask) return false;
+  // CALIBRATED, second generation — two oracle sweeps:
+  //
+  //   traces/rect-probe.csv   15,795 pts, unrotated stars   -> 0 mismatches
+  //   traces/rect2-probe.csv  14,884 pts, rotated children  -> 12, all on one
+  //                           boundary row of the 270-degree config
+  //
+  // The rule the data selects:
+  //   1. B's world bbox: rotate the scaled sprite-bbox corners about the RAW
+  //      (f32) position — floats, no rounding;
+  //   2. intersect that with the FLOAT rectangle; empty -> no hit. The
+  //      fractional intersection is load-bearing: two rects with identical
+  //      integer pixel windows resolve differently when their float overlap
+  //      with the bbox differs (measured, cfg0 rows 152.4 vs 152.9);
+  //   3. integerize the intersection ends with rint (HALF-TO-EVEN — this is
+  //      also what reconciles the first sweep's floor-looking anchors:
+  //      rint(300.5) = 300);
+  //   4. sample each pixel CENTRE about an rint-rounded anchor, inverse
+  //      rotation, floor-divide into mask cells.
+  //
+  // The 12-point residual is a documented oracle-fitted limit: model hits on
+  // a row the runner misses, half a pixel above the mask's rotated top edge,
+  // in a configuration (fractional position, 270 degrees, scale 0.73) whose
+  // every neighbouring row and column fits exactly. No variant tried (raw or
+  // clamped sampling, floor/round windows, per-pixel square SAT) removes it
+  // without breaking hundreds of other points.
+  const sxs = e.image_xscale ?? 1;
+  const sys = e.image_yscale ?? 1;
+  const ang = e.image_angle ?? 0;
+  const r = (ang * Math.PI) / 180;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  const [bl, bt, br, bb] = mask.bbox;
+  const lx0 = (bl - mask.originX) * sxs;
+  const lx1 = (br + 1 - mask.originX) * sxs;
+  const ly0 = (bt - mask.originY) * sys;
+  const ly1 = (bb + 1 - mask.originY) * sys;
+  let mnx = Infinity;
+  let mxx = -Infinity;
+  let mny = Infinity;
+  let mxy = -Infinity;
+  for (const u of [lx0, lx1]) {
+    for (const v of [ly0, ly1]) {
+      const wx = e.x + u * cos + v * sin;
+      const wy = e.y - u * sin + v * cos;
+      if (wx < mnx) mnx = wx;
+      if (wx > mxx) mxx = wx;
+      if (wy < mny) mny = wy;
+      if (wy > mxy) mxy = wy;
+    }
+  }
+  const ix0 = Math.max(x1, mnx);
+  const ix1 = Math.min(x2, mxx);
+  const iy0 = Math.max(y1, mny);
+  const iy1 = Math.min(y2, mxy);
+  if (ix0 > ix1 || iy0 > iy1) return false;
+  const px0 = rint(ix0);
+  const px1 = rint(ix1);
+  const py0 = rint(iy0);
+  const py1 = rint(iy1);
+  const ax = rint(e.x);
+  const ay = rint(e.y);
+  for (let py = py0; py <= py1; py++) {
+    for (let px = px0; px <= px1; px++) {
+      const dx = px + 0.5 - ax;
+      const dy = py + 0.5 - ay;
+      const u = dx * cos - dy * sin;
+      const v = dx * sin + dy * cos;
+      const sx = Math.floor(u / sxs + mask.originX);
+      if (sx < 0 || sx >= mask.w) continue;
+      const sy = Math.floor(v / sys + mask.originY);
+      if (sy < 0 || sy >= mask.h) continue;
+      if (mask.px[sy][sx]) return true;
+    }
+  }
+  return false;
+}
+
 export function scrPreciseHit(heart, e, mask, n = 3) {
   const half = n / 2;
   const hx = heart.x + 10;
   const hy = heart.y + 10;
   if (!mask) return false;
-  const probe = probeMask(n);
+  return collisionRectanglePrecise(hx - half, hy - half, hx + half, hy + half, e, mask);
+}
+
+/**
+ * THE ENGINE PAIR TEST THAT PRECEDES EVERY Other_15. A bullet's damage event
+ * is obj_heart's collision event (`with (other) event_user(5)`), and the
+ * engine only fires it when the two instances' MASKS overlap. The
+ * scr_precise_hit call inside Other_15 is a REFINEMENT of that, never a
+ * replacement: both must pass. The sim's precise-hit bullets skipped the
+ * pair test and hit one frame early the moment a probe pixel touched before
+ * the masks did — whole-fight f295, a starchild's 3px probe connecting a
+ * frame before the recording's hit at f296.
+ */
+export function enginePairHit(heart, e, mask) {
+  if (!mask) return false;
   return masksOverlap(
-    probe, hx - half, hy - half,
-    mask, e.x, e.y, e.image_xscale, e.image_yscale, e.image_angle,
+    HEART_MASK, heart.x, heart.y,
+    mask, e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
   );
 }
 
@@ -208,7 +330,135 @@ export function spriteMaskHit(e, heart) {
  * A is always the heart here — the soul never rotates or scales, so only
  * the B side carries a transform.
  */
+/** IEEE round-half-to-even, as in collisionRectanglePrecise — exact .5
+ *  bbox extents (scale-1 masks at half-pixel offsets) round like the
+ *  runner's rint, not like Math.round's half-up. */
+function rintHalfEven(x) {
+  const f = Math.floor(x);
+  const d = x - f;
+  if (d < 0.5) return f;
+  if (d > 0.5) return f + 1;
+  return f % 2 === 0 ? f : f + 1;
+}
+
+/**
+ * TWO ROUTINES, SELECTED BY MASK A'S KIND — measured, not designed.
+ *
+ * The runner special-cases collision by mask type, and the two calibration
+ * datasets are irreconcilable under any single rule that was tried:
+ *
+ *   - PRECISE A (the heart, every bullet): corner-of-A-cells sampling with
+ *     B's position floored and a floor/ceil-1 world bbox. Calibrated by the
+ *     t4 contact study (48 points) and held by the t6/t7/roaring recordings
+ *     (a raw-position variant hits the t6 teeth one frame early and breaks
+ *     the roaring ring arc outright).
+ *
+ *   - AXIS-ALIGNED-RECT A (the graze box - spr_grazeappear has maskcount=0,
+ *     no pixel data at all): the rectangle routine - RAW positions, ROUND
+ *     bbox, pixel-corner sampling, floor-inverse into B. Calibrated by
+ *     traces/graze-probe.csv (30,976 place_meeting points, 0 mismatches);
+ *     the precise routine is 591 points wrong on that data and misses the
+ *     whole-fight f293 graze.
+ *
+ * This mirrors collisionRectanglePrecise above, which is the same rectangle
+ * family measured through collision_rectangle. A rect mask never reaches
+ * the precise path because it has no pixel data in the game files to be
+ * precise WITH.
+ */
 export function masksOverlap(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
+  if (maskA.axisRect) {
+    return masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
+  }
+  return masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
+}
+
+function masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
+  // PIXEL-INTERSECTION MODEL — CALIBRATED, second generation.
+  //
+  // The first model iterated A's solid cells and sampled their corners into
+  // B (positions floored, B's world bbox floor/ceil-1). It was fitted to the
+  // t4 contact study and held for every axis-aligned pairing — then
+  // whole-fight f293 found a rotated case it gets wrong: the graze box
+  // misses a starchild at angle 270, scale 0.61, fractional position, that
+  // the game grazes. A dedicated probe (knight-research
+  // tools/patches/oracle_graze_probe.csx -> traces/graze-probe.csv: 30,976
+  // place_meeting points over four child configs, angles 270/90/336/204)
+  // selects THIS rule with zero mismatches, and the t4 48-point study plus
+  // every green suite still pass under it:
+  //
+  //   1. positions RAW — not floored; the fractional part participates;
+  //   2. each mask's world bbox: A at position - origin + bbox (unrotated);
+  //      B by rotating its scaled bbox corners about its position, then
+  //      ROUND(min)..ROUND(max)-1 (not floor/ceil-1 — round is what keeps a
+  //      sub-pixel-thin axis-aligned mask unhittable AND matches the probe's
+  //      angle-90 edge columns, where floor/ceil-1 was 50 points wrong);
+  //   3. iterate the INTEGER pixels of the bbox intersection;
+  //   4. sample BOTH masks at the pixel corner: A directly
+  //      (pixel - (pos - origin)), B by inverse rotation about its raw
+  //      position, floor-divided into source cells.
+  //
+  // Cardinal-exact f32 trig and JS trig score identically on the probe; JS
+  // trig is kept.
+  const cos = Math.cos((bangle * Math.PI) / 180);
+  const sin = Math.sin((bangle * Math.PI) / 180);
+
+  const [al, at, ar, ab] = maskA.bbox;
+  const aox = maskA.originX ?? 0;
+  const aoy = maskA.originY ?? 0;
+  const aLeft = ax - aox + al;
+  const aRight = ax - aox + ar;
+  const aTop = ay - aoy + at;
+  const aBottom = ay - aoy + ab;
+
+  const [bl, bt, br, bb] = maskB.bbox;
+  const x0 = (bl - maskB.originX) * bsx;
+  const x1 = (br + 1 - maskB.originX) * bsx;
+  const y0 = (bt - maskB.originY) * bsy;
+  const y1 = (bb + 1 - maskB.originY) * bsy;
+  let minx = Infinity;
+  let maxx = -Infinity;
+  let miny = Infinity;
+  let maxy = -Infinity;
+  for (const u of [x0, x1]) {
+    for (const v of [y0, y1]) {
+      const wx = u * cos + v * sin;
+      const wy = -u * sin + v * cos;
+      if (wx < minx) minx = wx;
+      if (wx > maxx) maxx = wx;
+      if (wy < miny) miny = wy;
+      if (wy > maxy) maxy = wy;
+    }
+  }
+  const left = Math.max(Math.ceil(aLeft), rintHalfEven(bx + minx));
+  const right = Math.min(Math.floor(aRight), rintHalfEven(bx + maxx) - 1);
+  const top = Math.max(Math.ceil(aTop), rintHalfEven(by + miny));
+  const bottom = Math.min(Math.floor(aBottom), rintHalfEven(by + maxy) - 1);
+  if (left > right || top > bottom) return false;
+
+  for (let py = top; py <= bottom; py++) {
+    for (let px = left; px <= right; px++) {
+      const acx = Math.floor(px - (ax - aox));
+      if (acx < 0 || acx >= maskA.w) continue;
+      const acy = Math.floor(py - (ay - aoy));
+      if (acy < 0 || acy >= maskA.h) continue;
+      if (!maskA.px[acy][acx]) continue;
+
+      const dx = px - bx;
+      const dy = py - by;
+      const u = dx * cos - dy * sin;
+      const v = dx * sin + dy * cos;
+      const sx = Math.floor(u / bsx + maskB.originX);
+      if (sx < 0 || sx >= maskB.w) continue;
+      const sy = Math.floor(v / bsy + maskB.originY);
+      if (sy < 0 || sy >= maskB.h) continue;
+      if (maskB.px[sy][sx]) return true;
+    }
+  }
+
+  return false;
+}
+
+function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
   const px = Math.floor(bx);
   const py = Math.floor(by);
   const [al, at, ar, ab] = maskA.bbox;
@@ -463,4 +713,7 @@ export const GRAZE_MASK = build({
   originY: 25,
   bbox: [0, 0, 49, 49],
   rows: Array.from({ length: 50 }, () => '1'.repeat(50)),
-});
+})
+// AxisAlignedRect in the game data (maskcount=0): takes the rectangle
+// collision routine, not the precise one. See masksOverlap.
+GRAZE_MASK.axisRect = true;

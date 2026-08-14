@@ -16,7 +16,6 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
-import { freshParty } from '../sim/damage.js';
 
 const argv = process.argv.slice(2);
 const token = argv.find((a) => a.startsWith('K1.'));
@@ -125,12 +124,13 @@ if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verif
 // showed up as the sim being consistently one frame behind on the menu, the
 // bar and everything downstream.
 const rows = [traceHeader(state)];
+// The refill itself lives INSIDE stepFrame (state.keepAlive), before the
+// trace row is captured — the oracle recorder refills before composing its
+// row, so a refill done out here, after the row was already pushed, left
+// every hit frame showing the drop the oracle never records.
+state.keepAlive = keepAlive;
 for (let f = 0; f < replay.frames; f++) {
   stepFrame(state, replay.inputAt(f));
-  if (keepAlive) {
-    state.partyHp = freshParty();
-    state.gameOver = false;
-  }
 }
 rows.push(...state.trace);
 writeFileSync(out, `${rows.join('\n')}\n`);
