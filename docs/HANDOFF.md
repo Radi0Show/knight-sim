@@ -250,3 +250,19 @@ yourself and point the preview tab at :8178.
 - knightblock is INTRO-ERA content: `blocking = 1` survives exactly one
   knight step once the heroes exist, and `damagereduction < 0.1` never
   recurs — the block cannot fire in play. The bell waits behind blockanim.
+
+## 2026-08-14 (final) — the Susie cutscene shipped
+
+The full post-fight scene (obj_ch3_PTB02 con 10-12) is in: glide, beam,
+the Susie grab, Undyne and the spear barrage, the turn, the bird flight
+with the Undyne snatch, and Susie's chase — driver-side between the white
+fade and the victory card. sim/victory-scene.js has the sourcing and every
+labelled approximation; 24 sprites and 6 sounds extracted (numeric ids
+resolved first: reach = 1930 = look_down_full, spear = 4402).
+
+Manifest note: assets/sprites/manifest.json is now minified (the merge
+rewrote it); 184 -> 208 entries, verified nothing lost.
+
+Verification pattern for driver-side scenes: headless full-timeline drive
+(phases + cue counts) plus live browser sampling of key beats — the
+throttled preview tab cannot play 40s in real time.
