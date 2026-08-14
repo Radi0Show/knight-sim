@@ -1,14 +1,25 @@
-// Drawing the post-fight cutscene — the Draw events of the knight actor, the
-// beam object and the spear sequence, composited from sim/victory-scene.js
-// state. Sources are cited in that file's header; this one only paints.
+// Drawing the ending — the true win cutscene's Draw events, composited from
+// sim/victory-scene.js state. Sources cited there; this file only paints.
 //
-// The beam triangle is the pull_test's Draw verbatim: additive purple,
-// alpha 0.6 + sin(timer/3) * 0.1, from the hand to two points off
-// camera-left. Its particles are frame-seeded here (Draw-random rule).
+// Layering, per the original's depths: the snow vista (the room), the shard
+// and its shine (scr_depth — y-sorted with the actors), the actors in -y
+// order, the Knight (with his warp jolts and static ghosts), the clash fx
+// pair, the whiteall fill (white at the start, BLACK for the cuts, depth
+// -110 — over the actors), the slash streak (depth -120 — over the fill),
+// the clash flash, the SWOON writers (spr_battlemsg frame 13, c_red, the
+// dmgwriter's stretch-in), and the dialogue box.
+//
+// The big_shake is obj_shake moving the CAMERA (shakex 10, speed 2): drawn
+// here as a whole-frame jitter seeded by the sim frame (the 30Hz rule).
 
-import { drawSpriteExt, c_white } from './gm.js';
+import { drawSpriteExt } from './gm.js';
+import { drawSnowBackdrop } from './intro-fx.js';
 import { loadFont, drawText } from '../font.js';
 import { formatWriter, revealed } from '../../sim/dialogue.js';
+import { VICTORY_LINES } from '../../sim/victory-scene.js';
+
+const VIEW_W = 640;
+const VIEW_H = 480;
 
 function srand(frame, salt) {
   let t = (frame * 374761393 + salt * 668265263) >>> 0;
@@ -16,138 +27,155 @@ function srand(frame, salt) {
   return ((t ^ (t >>> 16)) >>> 0) / 4294967296;
 }
 
-function actor(ctx, sprites, a, camX, shake, frame) {
+function drawActor(ctx, sprites, a, cam) {
   if (!a.visible) return;
   const entry = sprites.get(a.sprite);
   if (!entry) return;
-  let ox = 0;
-  if (shake) ox = Math.floor(srand(frame, 31) * 3) - 1;
-  drawSpriteExt(ctx, entry, Math.floor(a.index), a.x - camX + ox, a.y, 2, 2, 0, null, 1);
+  const frames = entry.meta.frames ?? 1;
+  const index = Math.floor(a.index) % frames;
+  const sx = a.x - cam;
+  if (a.flip) {
+    ctx.save();
+    ctx.translate(sx, a.y);
+    ctx.scale(-1, 1);
+    drawSpriteExt(ctx, entry, index, 0, 0, 2, 2, 0, null, 1);
+    ctx.restore();
+  } else {
+    drawSpriteExt(ctx, entry, index, sx, a.y, 2, 2, 0, null, 1);
+  }
 }
 
 export function drawVictoryScene(ctx, sc, sprites) {
-  const cam = Math.round(sc.camX) + (sc.shake ? Math.floor(srand(sc.t, 30) * 5) - 2 : 0);
+  const shakeJitter = sc.bigShake > 0
+    ? [Math.floor(srand(sc.t, 51) * 21) - 10, Math.floor(srand(sc.t, 52) * 9) - 4]
+    : [0, 0];
+  ctx.save();
+  ctx.translate(shakeJitter[0], shakeJitter[1]);
+  const cam = Math.round(sc.camX);
+
+  // 1. The room.
+  drawSnowBackdrop(ctx, cam, sc.bg.fountain_speed, sprites);
+
+  // 2. The shard and its shine.
+  if (sc.shard) {
+    const s = sc.shard;
+    const piece = sprites.get('spr_roaringknight_sword_break_piece_small');
+    if (piece) {
+      drawSpriteExt(ctx, piece, 0, s.x - cam, s.y, 2, 2, s.angle, null, 1);
+    }
+    if (s.shine) {
+      const shine = sprites.get('spr_shine_white');
+      if (shine) {
+        const frames = shine.meta.frames ?? 4;
+        drawSpriteExt(ctx, shine, Math.floor(sc.t * 0.1) % frames,
+          s.x - 4 - cam, s.y - 4, 2, 2, 0, null, 1);
+      }
+    }
+  }
+
+  // 3. The actors, -y depth order (higher paints first).
+  const order = Object.values(sc.actors).sort((a, b) => a.y - b.y);
+  for (const a of order) drawActor(ctx, sprites, a, cam);
+
+  // 4. The Knight — hover, warp jolts, static ghosts, the clash composites.
   const k = sc.knight;
-  const A = sc.actors;
-
-  // The party and Undyne.
-  actor(ctx, sprites, A.ralsei, cam, 0, sc.t);
-  actor(ctx, sprites, A.susie, cam, A.susie.shake, sc.t);
-  actor(ctx, sprites, A.kris, cam, 0, sc.t);
-  actor(ctx, sprites, A.undyne, cam, 0, sc.t);
-
-  // The beam: base sprite + growing hand + the triangle + in-fall particles.
-  if (sc.beam) {
-    const b = sc.beam;
-    const bx = b.x - cam;
-    const by = b.y;
-    const base = sprites.get('spr_roaringknight_reach_base_sword');
-    if (base) drawSpriteExt(ctx, base, 0, bx, by, 2, 2, 0, null, 1);
-    const hand = sprites.get('spr_roaringknight_arm_reach_grow');
-    const hx = bx + 42 + (b.con >= 4 ? srand(sc.t, 33) * 2 : 0);
-    const hy = by + 40;
-    if (hand) drawSpriteExt(ctx, hand, Math.floor(b.handframe), hx, hy, 2, 2, 0, null, 1);
-    if (b.triheight > 0) {
-      const trix = hx + 16;
-      const triy = hy + 12;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.6 + Math.sin(b.timer / 3) * 0.1;
-      ctx.fillStyle = 'rgb(160,0,160)';
-      ctx.beginPath();
-      ctx.moveTo(trix, triy);
-      ctx.lineTo(-100, triy + b.triheight);
-      ctx.lineTo(-80, triy - b.triheight);
-      ctx.closePath();
-      ctx.fill();
-      // Particles pulled along the beam toward the hand.
-      if (b.con >= 4) {
-        for (let back = 0; back < 8; back++) {
-          const bf = sc.t - back;
-          const off = (srand(bf, 34) * 2 - 1) * b.triheight * 0.8;
-          const tt = back / 8;
-          const px = -80 + (trix + 80) * tt;
-          const py = (triy + off) + (triy - (triy + off)) * tt;
-          ctx.globalAlpha = 0.5 * (1 - tt) + 0.1;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(px - 2, py - 2, 4 + tt * 4, 4 - tt * 2);
-        }
-      }
-      ctx.restore();
-    }
-  }
-
-  // The spear-dodge sequence: the dodging knight and Undyne's spears.
-  if (sc.dodge) {
-    const d = sc.dodge;
-    const ball = sprites.get('spr_roaringknight_ball_transition');
-    if (ball) {
-      // Ghosts every other frame, per the sequence's Draw.
-      for (let g = 1; g <= 2; g++) {
-        drawSpriteExt(ctx, ball, Math.floor(d.index), d.x - cam + g * 4, d.y + g * 2,
-          2, 2, 0, null, 0.25 / g);
-      }
-      drawSpriteExt(ctx, ball, Math.floor(d.index), d.x - cam, d.y, 2, 2, 0, null, 1);
-    }
-    const spear = sprites.get('spr_undyne_dw_spear');
-    for (const s of d.spears) {
-      const ang = (s.dir * 180) / Math.PI + 90;
-      if (spear) drawSpriteExt(ctx, spear, 0, s.x - cam, s.y, 2, 2, ang, null, 1);
-      else {
-        ctx.save();
-        ctx.strokeStyle = '#66ccff';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(s.x - cam, s.y);
-        ctx.lineTo(s.x - cam - Math.cos(s.dir) * 30, s.y - Math.sin(s.dir) * 30);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-  }
-
-  // The knight himself.
   if (k.visible) {
     const entry = sprites.get(k.sprite);
     if (entry) {
-      const kx = k.x - cam;
-      if (k.flip) {
-        ctx.save();
-        ctx.translate(kx + (entry.meta.w ?? 50), 0);
-        ctx.scale(-1, 1);
-        drawSpriteExt(ctx, entry, Math.floor(k.index), 0, k.y, 2, 2, 0, null, 1);
-        ctx.restore();
-      } else {
-        drawSpriteExt(ctx, entry, Math.floor(k.index), kx, k.y, 2, 2, 0, null, 1);
+      const frames = entry.meta.frames ?? 1;
+      const index = Math.min(Math.floor(k.index), frames - 1);
+      let ox = k.jolt[0];
+      let oy = k.jolt[1];
+      if (k.shake > 0) {
+        ox += Math.floor(srand(sc.t, 61) * (k.shake * 2 + 1)) - k.shake;
+        oy += Math.floor(srand(sc.t, 62) * (k.shake * 2 + 1)) - k.shake;
       }
-      // Undyne caught mid-flight, hat and all — the actor's own Draw:
-      // spr_undyne_dw_caught at (x+28, y+26) animating 0.3, the hat at
-      // (x+56, y+30).
-      if (k.undyneCatch) {
-        const caught = sprites.get('spr_undyne_dw_caught');
-        const hat = sprites.get('spr_undyne_dw_hat');
-        if (caught) drawSpriteExt(ctx, caught, Math.floor(k.undyneAnim), kx + 28, k.y + 26, 2, 2, 0, null, 1);
-        if (hat) drawSpriteExt(ctx, hat, 0, kx + 56, k.y + 30, 2, 2, 0, null, 1);
+      // state 3's afterimages: two ghost copies drifting off, every other
+      // frame while the static loops.
+      if (sc.knightStatic) {
+        for (let g = 1; g <= 2; g++) {
+          const gf = sc.t - g * 2;
+          const gx = (srand(gf, 63) - 0.5) * 24;
+          const gy = (srand(gf, 64) - 0.5) * 24;
+          drawSpriteExt(ctx, entry, index, k.x - cam + gx, k.y + gy,
+            2, 2, 0, null, 0.3 / g);
+        }
       }
+      drawSpriteExt(ctx, entry, index, k.x - cam + ox, k.y + oy, 2, 2, 0, null, 1);
     }
   }
 
-  // Susie in the grab — under the look-down pose, her sprite plus the
-  // shuddering hand copy.
-  if (sc.susieGrab) {
-    const g = sc.susieGrab;
-    const noHand = sprites.get('spr_susie_dw_fell_grab_no_hand');
-    const handOnly = sprites.get('spr_susie_dw_fell_grab_hand');
-    if (noHand) drawSpriteExt(ctx, noHand, 0, g.x - cam, g.y, 2, 2, 0, null, 1);
-    if (handOnly) drawSpriteExt(ctx, handOnly, 0, g.x - cam + g.shakeOffset, g.y, 2, 2, 0, null, 1);
+  // 5. The clash fx pair — spr_fx_hitback, index lerping 0 -> 4 over life.
+  const hitback = sprites.get('spr_fx_hitback');
+  if (hitback) {
+    for (const f of sc.hitFx) {
+      const age = sc.t - f.born;
+      const index = Math.min(4, Math.floor((age / f.life) * 5));
+      const alpha = f.alpha * (f.alpha < 1 ? 1 - age / f.life : 1);
+      drawSpriteExt(ctx, hitback, index, f.x - cam, f.y, 2, 2, 0, null,
+        Math.max(0, alpha));
+    }
   }
 
-  // Dialogue — the typer-81 chatbox, same metrics as the fight's talk.
+  ctx.restore(); // the shake does not move the overlays
+
+  // 6. The whiteall fill — white at the start, black for the cuts.
+  if (sc.white.visible && sc.white.alpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, sc.white.alpha);
+    ctx.fillStyle = sc.white.black ? '#000' : '#fff';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.restore();
+  }
+
+  // 7. The slash streak, over the black.
+  if (sc.slash.visible) {
+    const streak = sprites.get('spr_roaringknight_slash_white_horizontal');
+    if (streak) {
+      drawSpriteExt(ctx, streak, 0, sc.slash.x - cam, sc.slash.y, 2, 2, 0, null, 1);
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, sc.slash.y - 4, VIEW_W, 8);
+    }
+  }
+
+  // 8. The clash flash — show_clash_overlay: alpha 0 -> peak over 8 "out",
+  // then back down over 8.
+  if (sc.flash) {
+    const f = sc.flash;
+    const t = f.t <= 8 ? f.t / 8 : Math.max(0, 1 - (f.t - 10) / 8);
+    const eased = 1 - (1 - t) * (1 - t);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, eased * f.peak));
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.restore();
+  }
+
+  // 9. The SWOON writers — spr_battlemsg frame 13 in red, the dmgwriter's
+  // stretch-in approximated over its first 8 frames.
+  const msg = sprites.get('spr_battlemsg');
+  if (msg) {
+    for (const s of sc.swoons) {
+      const age = sc.t - s.born;
+      // The writer's pop-in, simplified to a vertical unsquash over 8 frames;
+      // it holds ~2s then fades out (the original's stretch/kill pair drives
+      // scales and fade through its bounce cycle).
+      if (age > 90) continue;
+      const stretch = Math.min(2, (age / 8) * 2);
+      const alpha = age < 60 ? 1 : 1 - (age - 60) / 30;
+      drawSpriteExt(ctx, msg, 13, s.x - cam + 30, s.y, 2, stretch, 0,
+        [255, 0, 0], alpha);
+    }
+  }
+
+  // 10. Dialogue — the typer-81 chatbox, same metrics as the fight's talk.
   if (sc.dialogue) {
     const font = loadFont('../assets/fonts', 'fnt_dotumche');
     if (font?.ready) {
-      const lines = revealed(formatWriter(sc.dialogue.text, 33), sc.dialogue.timer, 1);
-      drawText(ctx, font, sc.dialogue.speaker === 'susie' ? 'SUSIE' : 'UNDYNE',
+      const line = VICTORY_LINES[sc.dialogue.line];
+      const lines = revealed(formatWriter(line.text, 33), sc.dialogue.timer, 1);
+      drawText(ctx, font, line.speaker === 'susie' ? 'SUSIE' : 'RALSEI',
         40, 318, { color: 'rgb(160,160,170)', xscale: 0.7, yscale: 0.7 });
       for (let i = 0; i < lines.length; i++) {
         drawText(ctx, font, lines[i], 40, 340 + i * 20, { color: 'rgb(255,255,255)', advance: 9 });

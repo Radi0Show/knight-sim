@@ -1,433 +1,610 @@
-// THE POST-FIGHT CUTSCENE — Susie against the Knight, from obj_ch3_PTB02's
-// con 10-12 script and its three helper objects, translated beat for beat:
+// THE ENDING — the fight's true win cutscene. Driver-side like the intro:
+// zero sim contact, byte-identical suites and tokens with or without it.
 //
-//   con 11 (the c_ script):
-//     - the Knight glides in (-347 x over 40 frames, rising to hover y 72)
-//       while the camera pans after him
-//     - THE BEAM: obj_ch3_PTB02_roaringknight_pull_test — his reach base, the
-//       growing hand (spr_roaringknight_arm_reach_grow 0->3 over 16), a purple
-//       additive triangle sweeping off camera-left (triheight 0->100 over 80,
-//       wobbling sin(timer/2)*2), spearappear chords, particles sucked along
-//       it, held 180 frames with two low knight_stretch notes
-//     - the beam stops and retracts — and SUSIE IS IN HIS HAND
-//       (spr_susie_dw_fell_grab under spr_roaringknight_look_down_full,
-//       snd_noise + shake; the hand copy shakes at choose(0, 2) offsets):
-//       "No.. you... you can't..." / "You can't.. take her..."
-//     - UNDYNE arrives (spr_undyne_dw_spear_point), spears fly
-//       (obj_ch3_PTB02_roaringknight_speardodge_sequence: spr_undyne_dw_spear
-//       from camera-right at speed 7 accelerating, friction -1, every 4th
-//       frame with randomised swing sounds) while the Knight dodges as
-//       spr_roaringknight_ball_transition, image_index 3 + sin(timer/2)*1.6.
-//       Susie drops (spr_susieb_defeat)
-//     - the Knight breaks off as spr_roaringknight_ball_fly, turns, crosses
-//       the screen; "Hey!! You!! Stop!! Police!!"
-//     - THE BIRD: spr_roaringknight_fly_transition then spr_roaringknight_fly,
-//       accelerating away — snatching Undyne mid-flight (snd_grab;
-//       spr_undyne_dw_caught animating at 0.3 with her hat still on him):
-//       "Hey, what are you doing!?" / "Put me.. PUT ME DOWN!!!" — with the
-//       wing loop (snd_knight_puff at a falling pitch alternating with
-//       snd_heavy_passing) fading as he goes
-//     - Ralsei kneels (spr_ralsei_kneel_serious), the camera comes back,
-//       Susie crouches (spr_susie_crouch) and tears off after them
-//       (spr_susie_run_serious_right): "Hey, where the hell are you going?!"
-//       Kris lands (spr_kris_dw_landed)
+// WHICH BRANCH THIS IS, because the wrong one shipped once: ending the fight
+// on a hit sets flag[51] = 1 in the battle teardown; obj_knight_enemy's
+// Other_13 tallies that as "violenced" and writes flag[50] = 1; PTB02's con 8
+// reads `defeated = global.flag[50] == 1` — the flag describes what happened
+// to the KNIGHT, not the party — and routes con 49 -> 50: THIS scene. The
+// previously ported con 10-12 chain (the beam grab, Undyne, the bird) is a
+// different aftermath and is gone from the flow.
 //
-// DRIVER-SIDE, like the intro: the real scene runs in the overworld room
-// after the battle objects are destroyed, so it never touches sim state and
-// every token, diff and suite is byte-identical with or without it.
+// SOURCES:
+//   obj_ch3_PTB02 Step con 8 (staging) + con 50 script (lines 814-1004)
+//   roaring_knight_warp block (1006-1060)     — the static destabilise
+//   susie_knight_slash block (1222-1406)      — the clash, parry, shard
+//   big_shake (1204) / swoon_display (Create) — impact + the SWOON writer
+//   obj_ch3_PTB02_roaringknight states 2/3    — the static warp machine
+//   show_clash_overlay (Create)               — the white impact flash
+//   numeric ids resolved: rsprite 686 = spr_susier_dark, 359 =
+//   spr_ralsei_walk_right_unhappy, loopsfx 169 = snd_suslaugh
 //
-// COORDINATES: the original stages this across a 6000px room with absolute
-// camera pans. The sim's stage is the battle view, so the anchoring is
-// RELATIVE — every actor starts where the battle drew them, and the
-// original's relative motions (the -347 glide, the +440 turn, Undyne's
-// entry from the right edge, the flight off it) are kept while the absolute
-// room x's are not. LABELLED APPROXIMATIONS beyond that: Toriel (the beam's
-// story target, staged far off-view in the room) is not shown; the c_ script
-// faces (\EV etc.) are not drawn; dialogue is the chatbox rather than a
-// balloon sprite, same as the fight's own talk.
+// THE SCENE, in order (frame counts are the script's):
+//   the battle's white recedes /60; a long still; the Knight's hover FREEZES
+//   THE WARP: static bursts at timer 1/31/56/69/82 (spr_roaring_knight_
+//   static, position jolts choose(±10, ±20), snd_tv_static), settling at 95
+//   into state 3 — continuous distortion, shake ±2
+//   Susie's disbelief line; the camera pans and she WALKS TOWARD IT
+//   (spr_susier_dark), taunting
+//   THE CLASH: snd_jump, she leaps (vspeed -14, gravity 2, hspeed 0->20/5);
+//   at 10 the Knight catches her mid-swing (spr_roaring_knight_susie_clash,
+//   the locked struggle) under a stack of impact sounds; grinding hits at
+//   shrinking intervals (80, 70, 60, 50, 40 — each a screenshake, a
+//   spr_fx_hitback pair, metal on metal, a half-white flash, afterimages);
+//   at 300 the PARRY throws her off (knight hspeed 8, friction 2); at 320
+//   she leaps back (snd_laz_c, snd_glassbreak, snd_sparkle_glock) and THE
+//   SHARD tumbles off the Black Knife (spr_roaringknight_sword_break_
+//   piece_small: vspeed -8, hspeed -7, gravity 2, spinning 1280deg/20f,
+//   freezing at 16f where it stays, marked by spr_shine_white)
+//   the Knight recovers (ball_transition_sword 8->5/8f, then ball_fly);
+//   Susie laughs (spr_susie_laugh_dw @0.25, snd_suslaugh), taunts, laughs
+//   again — CUT OFF: five snd_knight_cut2 at pitches .06/.1/.12/.18/.24,
+//   the screen SNAPS BLACK with one white streak across it (whiteall
+//   blend-black + spr_roaringknight_slash_white_horizontal at (2420,182)),
+//   the Knight gone off-frame; the reveal: Susie fallen (spr_susie_dw_fell
+//   at 2410, sliding back to 2310/40f "in"), big_shake (six sounds +
+//   obj_shake 10/2), the SWOON writer over her (dmgwriter type 12)
+//   Ralsei: his cry (unskippable in the original), a step closer, his
+//   grief line — then his slash: the same five cuts, black, the streak at
+//   (2408,240), spr_ralsei_defeat at 2328, big_shake, slide to 2280, SWOON
+//   Kris alone for 180 frames; black; THE KNIGHTING — spr_roaring_knight_
+//   kris_knighting at (2326,44) frame 1, Kris hidden (he kneels IN the
+//   art); 90 frames black; revealed; then image 1 -> 4 over 90 frames
+//   easing "in" — the blade lowering onto the shoulder; black; Kris
+//   revealed in spr_krisb_defeat, the Knight restored to 2655 with his
+//   sword, hovering; the last reveal, a beat, and out.
 //
-// Dialogue strings are the dump's, character for character, minus the
-// control codes (\EV, ^1 pauses, / and /% terminators).
+// AFTER IT: THE MAIN MENU (sc.toMenu — player-directed; the game itself
+// rolls into free roam and the later beam scene, out of this tool's scope).
+//
+// LABELLED APPROXIMATIONS: dialogue is the chatbox (no balloons, faces or
+// portrait art); c_talk_wait is a fresh-confirm gate; the wind track
+// (wind_highplace.ogg at pitch 0.5) is cued but plays only if the local
+// audio pack carries it; camera pans use inout easing (c_pan's curve is the
+// cutscene master's default, not re-derived). X skips the whole scene.
 
-const KNIGHT_START_X = 425;
-const KNIGHT_START_Y = 78;
+const CAM_X = 2230;
 
-export const VICTORY_LINES = {
-  susie_cant: "No.. you... you can't...&You can't.. take her...",
-  undyne_stop: "Hey!! You!! Stop!! Police!!&Wh.. What the hell is going&on here!!?",
-  undyne_punk: "You've got some explaining&to do, punk!!",
-  undyne_caught: "Hey, what are you doing!?&Put me.. PUT ME DOWN!!!",
-  susie_hey: 'Hey...',
-  susie_where: 'Hey, where the hell are&you going?!',
-};
+export const VICTORY_LINES = [
+  { speaker: 'susie', text: '* We.. we actually beat it?' },
+  { speaker: 'susie', text: "* What, don't tell me you've had ENOUGH already?" },
+  { speaker: 'susie', text: "* C'mon, we were just getting started!" },
+  { speaker: 'susie', text: '* Heheh...' },
+  { speaker: 'susie', text: '* Not so tough NOW, are you!?' },
+  { speaker: 'ralsei', text: '* S-Susie!!!' },
+  { speaker: 'ralsei', text: '* H.. how could you...' },
+];
 
-export function createVictoryScene(party) {
+function actor(x, y, sprite) {
   return {
-    t: 0,
-    phase: 'approach',
-    phaseT: 0,
-    done: false,
-    camX: 0,
-    // The knight: position, pose, motion targets.
-    knight: {
-      x: KNIGHT_START_X,
-      y: KNIGHT_START_Y,
-      ystart: KNIGHT_START_Y,
-      siner2: 0,
-      hoverPause: false,
-      visible: true,
-      sprite: 'spr_roaringknight_idle_overworld_sword',
-      index: 0,
-      speed: 0,
-      flip: false,
-      undyneCatch: false,
-      undyneAnim: 0,
-    },
-    beam: null,      // { timer, handframe, triheight, con }
-    dodge: null,     // { timer, x, y, xstart, ystart, index, rem1, spears: [] }
-    // The party, standing where the fight left them (screen coords).
-    actors: {
-      kris: { x: party?.[0]?.x ?? 126, y: party?.[0]?.y ?? 104, sprite: 'spr_krisr_dark', index: 0, speed: 0, visible: true },
-      susie: { x: party?.[1]?.x ?? 80, y: party?.[1]?.y ?? 142, sprite: 'spr_susie_walk_right_dw_unhappy', index: 0, speed: 0, visible: true, shake: 0 },
-      ralsei: { x: party?.[2]?.x ?? 58, y: party?.[2]?.y ?? 190, sprite: 'spr_ralsei_walk_right_unhappy', index: 0, speed: 0, visible: true },
-      undyne: { x: 700, y: 100, sprite: 'spr_undyne_dw_spear_point', index: 0, speed: 0, visible: false },
-    },
-    susieGrab: null, // { x, y, shakeOffset, shakeTimer }
-    dialogue: null,  // { speaker, text, timer } — typer-81 chatbox
-    lerps: [],       // active { obj, key, from, to, dur, t, ease }
+    x, y, sprite, index: 0, speed: 0, visible: true, flip: false,
+    hspeed: 0, vspeed: 0, gravity: 0, friction: 0,
+    lerp: null, // { field, from, to, t, dur, curve }
   };
 }
 
-/** `scr_lerpvar`-ish: linear with the two eases the scene uses. */
-function pushLerp(sc, obj, key, to, dur, ease = 'linear') {
-  sc.lerps.push({ obj, key, from: obj[key], to, dur, t: 0, ease });
+export function createVictoryScene() {
+  return {
+    t: 0,
+    done: false,
+    toMenu: false, // the driver reads this: main menu, not a card
+    camX: CAM_X,
+    camLerp: null,
+    bg: { fountain_speed: 0.2 }, // the vista's animated fountain frames
+    // The whiteall marker: the battle's white fill, later the BLACK cuts.
+    white: { alpha: 1, black: false, visible: true, fade: 0 },
+    slash: { x: 0, y: 0, visible: false },
+    actors: {
+      kris: actor(2356, 104, 'spr_krisr_dark'),
+      susie: actor(2310, 142, 'spr_susie_walk_right_dw_unhappy'),
+      ralsei: actor(2288, 190, 'spr_ralsei_walk_right_unhappy'),
+    },
+    knight: {
+      x: 2655, ystart: 78, y: 78, siner2: 0,
+      sprite: 'spr_roaringknight_idle_overworld_sword', index: 0, speed: 0.1,
+      visible: true, hoverPause: false, frozen: false, // reach_interrupt
+      shake: 0, jolt: [0, 0],
+      hspeed: 0, friction: 0,
+      lerpIndex: null, // { from, to, t, dur, curve }
+    },
+    warp: null, // { timer, cache: [x, y] }
+    knightStatic: false, // state 3 — continuous distortion
+    clash: null, // { timer, shakeSeq, shakeTimer, shakeTime }
+    hitFx: [], // spr_fx_hitback { x, y, born, life, alpha }
+    flash: null, // show_clash_overlay { t, peak } — 8 up, 8 down
+    shard: null, // { x, y, hspeed, vspeed, gravity, angle, born, shine }
+    swoons: [], // { x, y, born } — dmgwriter type 12
+    bigShake: 0, // frames left of the impact shake
+    dialogue: null, // { line, timer }
+    lastConfirm: true, // edge detector (starts held: the ending's last press)
+    script: buildScript(),
+    scriptIndex: 0,
+    wait: 0,
+    deferred: [],
+    rng: 12345, // frame-hashed choose() jolts — cosmetic
+  };
 }
 
-function stepLerps(sc) {
-  for (const L of sc.lerps) {
-    L.t += 1;
-    let a = Math.min(1, L.t / L.dur);
-    if (L.ease === 'inout') a = a < 0.5 ? 2 * a * a : 1 - (-2 * a + 2) ** 2 / 2;
-    if (L.ease === 'in') a = a * a;
-    if (L.ease === 'out') a = 1 - (1 - a) ** 2;
-    L.obj[L.key] = L.from + (L.to - L.from) * a;
+function srand(sc) {
+  sc.rng = (Math.imul(sc.rng, 1664525) + 1013904223) >>> 0;
+  return sc.rng / 4294967296;
+}
+const choosePM = (sc) => [-20, -10, 10, 20][Math.floor(srand(sc) * 4)];
+
+const ease = {
+  linear: (t) => t,
+  in: (t) => t * t,
+  out: (t) => 1 - (1 - t) * (1 - t),
+  inout: (t) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t)),
+};
+
+// The con-50 script as [op, ...] steps. `w` waits; `say` gates on a fresh
+// confirm; everything else is instantaneous state.
+function buildScript() {
+  return [
+    ['w', 60],
+    ['whiteFadeOut', 60], ['music', 'wind'],
+    ['w', 120],
+    ['knightFreeze'],
+    ['w', 15], ['music', 'stop'],
+    ['warpStart'],
+    ['w', 125], // c_wait(30) + the warp settles at its own 95
+    ['w', 90],
+    ['say', 0],
+    ['pan', 2400, 30],
+    ['susieWalk', 2510, 30],
+    ['say', 1], ['say', 2],
+    ['w', 30],
+    ['clashStart'],
+    ['waitClash'],
+    ['pan', CAM_X, 60],
+    ['w', 40],
+    ['knightRecover'],
+    ['w', 145],
+    ['susieIdle'],
+    ['say', 3],
+    ['susieLaugh'],
+    ['w', 60],
+    ['say', 4],
+    ['laughAgain'],
+    ['w', 26],
+    ['slashCut', 'susie'],
+    ['w', 55],
+    ['susieSlide'],
+    ['w', 25], ['music', 'wind'],
+    ['reveal', 'susie'],
+    ['w', 60],
+    ['say', 5],
+    ['ralseiApproach'],
+    ['w', 60],
+    ['say', 6],
+    ['music', 'stop'],
+    ['slashCut', 'ralsei'],
+    ['w', 90], ['music', 'wind'],
+    ['reveal', 'ralsei'],
+    ['w', 180],
+    ['music', 'stop'],
+    ['black'],
+    ['knighting'],
+    ['w', 90],
+    ['unblack'], ['music', 'wind'],
+    ['w', 30],
+    ['knightingLower', 90],
+    ['w', 120],
+    ['music', 'stop'], ['black'],
+    ['krisDown'],
+    ['w', 120],
+    ['unblack'],
+    ['w', 120],
+    ['end'],
+  ];
+}
+
+function pushHitFx(sc, kx, ky, life, alpha) {
+  sc.hitFx.push({ x: kx - 90, y: ky - 90, born: sc.t, life, alpha });
+}
+
+function fiveCuts(cues) {
+  for (const p of [0.06, 0.1, 0.12, 0.18, 0.24]) {
+    cues.push({ name: 'snd_knight_cut2', pitch: p, gain: 1 });
   }
-  sc.lerps = sc.lerps.filter((L) => L.t < L.dur);
 }
 
-function say(sc, speaker, text) {
-  sc.dialogue = { speaker, text, timer: 0 };
+function bigShake(sc, cues) {
+  sc.bigShake = 20;
+  cues.push({ name: 'snd_impact', pitch: 1, gain: 1 });
+  cues.push({ name: 'snd_closet_impact', pitch: 1, gain: 1 });
+  cues.push({ name: 'snd_closet_impact', pitch: 0.5, gain: 1 });
+  cues.push({ name: 'snd_bageldefeat', pitch: 0.8, gain: 0.8 });
+  cues.push({ name: 'snd_damage', pitch: 1, gain: 1 });
+  cues.push({ name: 'snd_glassbreak', pitch: 0.4, gain: 0.8 });
+  cues.push({ name: 'snd_glassbreak', pitch: 0.3, gain: 0.6 });
 }
 
-/** frame-seeded random for choose()-style cosmetic picks. */
-function srand(frame, salt) {
-  let t = (frame * 374761393 + salt * 668265263) >>> 0;
-  t = Math.imul(t ^ (t >>> 13), 1274126177) >>> 0;
-  return ((t ^ (t >>> 16)) >>> 0) / 4294967296;
+function setTimeoutStep(sc, frames, fn) {
+  sc.deferred.push({ at: sc.t + frames, fn });
 }
 
-/**
- * One 30Hz tick. `input` is the driver's key state ({confirm}), `cues` the
- * audio out-array. Dialogue advances on a fresh confirm once fully typed
- * (`c_talk_wait`); everything else is the timeline.
- */
+/** One 30Hz tick. Cues use the sim's {name, pitch, gain} shape; the music
+ * ops emit {music: 'wind' | 'stop'} for the driver. */
 export function stepVictoryScene(sc, input, cues) {
   if (sc.done) return;
   sc.t += 1;
-  sc.phaseT += 1;
-  const k = sc.knight;
   const A = sc.actors;
+  const k = sc.knight;
+  const confirmPressed = input.confirm && !sc.lastConfirm;
+  sc.lastConfirm = !!input.confirm;
 
-  // The knight's hover — the actor's own Step, verbatim.
-  k.siner2 += 1;
-  if (!k.hoverPause) k.y = k.ystart + Math.cos(k.siner2 / 8) * 8;
+  // ---- continuous systems -------------------------------------------------
+  if (!k.frozen && !k.hoverPause) {
+    k.siner2 += 1;
+    k.y = k.ystart + Math.cos(k.siner2 / 8) * 8;
+  }
   if (k.speed) k.index += k.speed;
-  for (const name of Object.keys(A)) {
-    if (A[name].speed) A[name].index += A[name].speed;
+  if (k.lerpIndex) {
+    const L = k.lerpIndex;
+    L.t += 1;
+    k.index = L.from + (L.to - L.from) * ease[L.curve](Math.min(1, L.t / L.dur));
+    if (L.t >= L.dur) k.lerpIndex = null;
   }
-  if (k.undyneCatch) k.undyneAnim += 0.3;
-  stepLerps(sc);
-
-  // Dialogue typing + gating.
-  if (sc.dialogue) {
-    sc.dialogue.timer += 1;
-    const len = sc.dialogue.text.replace(/&/g, '').length;
-    const done = sc.dialogue.timer >= len; // typer 81, rate 1
-    const fresh = input?.confirm && !sc.heldConfirm;
-    if (done && fresh) sc.dialogue = null;
+  if (k.hspeed) {
+    k.x += k.hspeed;
+    k.hspeed = Math.max(0, k.hspeed - k.friction);
   }
-  sc.heldConfirm = !!input?.confirm;
-  const talking = !!sc.dialogue;
-
-  const enter = (phase) => {
-    sc.phase = phase;
-    sc.phaseT = 0;
-  };
-
-  switch (sc.phase) {
-    case 'approach': {
-      if (sc.phaseT === 1) {
-        // c_var_lerp x -347 over 40 inout; ystart -> 60 over 40.
-        pushLerp(sc, k, 'x', k.x - 347, 40, 'inout');
-        pushLerp(sc, k, 'ystart', 60, 40);
+  for (const key of Object.keys(A)) {
+    const a = A[key];
+    if (a.speed) a.index += a.speed;
+    if (a.hspeed || a.vspeed) {
+      a.x += a.hspeed;
+      a.y += a.vspeed;
+      a.vspeed += a.gravity;
+      if (a.friction) {
+        const s = Math.sign(a.hspeed);
+        a.hspeed -= s * Math.min(Math.abs(a.hspeed), a.friction);
       }
-      if (sc.phaseT === 10) pushLerp(sc, sc, 'camX', sc.camX - 180, 30);
-      if (sc.phaseT === 130) {
-        k.hoverPause = true;
-        k.y = 72;
-        k.visible = false;
-        sc.beam = { timer: 0, handframe: 0, triheight: 0, con: 1, x: k.x, y: k.y };
-        enter('beam');
-      }
-      break;
     }
-    case 'beam': {
-      const b = sc.beam;
-      b.timer += 1;
-      // con 1: hand 0->3/16 'in'; +12: con 3: chord + triheight 0->100/80.
-      if (b.con === 1) {
-        b.handframe = Math.min(3, 3 * (b.timer / 16) ** 2);
-        if (b.timer === 12) {
-          b.con = 4;
-          cues.push({ name: 'snd_spearappear', pitch: 0.8, gain: 1 });
-          cues.push({ name: 'snd_spearappear', pitch: 0.5, gain: 1 });
-          cues.push({ name: 'snd_spearappear', pitch: 0.6, gain: 1 });
-          pushLerp(sc, b, 'triheight', 100, 80, 'out');
-        }
-      } else {
-        // The crackle: `snd_play_x(snd_spearappear, 0.2, 0.5 + random(0.3))`
-        // EVERY frame in the original; every 3rd here so the mixer survives,
-        // said out loud rather than hidden.
-        if (b.timer % 3 === 0) {
-          cues.push({ name: 'snd_spearappear', pitch: 0.5 + srand(sc.t, 3) * 0.3, gain: 0.2 });
-        }
-        b.triheight += Math.sin(b.timer / 2) * 2;
-      }
-      if (sc.phaseT === 8) {
-        cues.push({ name: 'snd_knight_stretch', pitch: 0.8, gain: 0.6 });
-        cues.push({ name: 'snd_knight_stretch', pitch: 0.8, gain: 0.4 });
-      }
-      if (sc.phaseT === 180) {
-        // Beam stop: retract, and 17 frames later the grab tableau.
-        pushLerp(sc, b, 'triheight', 0, 20, 'in');
-        pushLerp(sc, b, 'handframe', 0, 16);
-        enter('grab');
-      }
-      break;
+    if (a.lerp) {
+      const L = a.lerp;
+      L.t += 1;
+      a[L.field] = L.from + (L.to - L.from) * ease[L.curve](Math.min(1, L.t / L.dur));
+      if (L.t >= L.dur) a.lerp = null;
     }
-    case 'grab': {
-      if (sc.phaseT === 17) {
-        sc.beam = null;
-        k.visible = true;
-        k.sprite = 'spr_roaringknight_look_down_full';
+  }
+  if (sc.camLerp) {
+    const L = sc.camLerp;
+    L.t += 1;
+    sc.camX = L.from + (L.to - L.from) * ease.inout(Math.min(1, L.t / L.dur));
+    if (L.t >= L.dur) sc.camLerp = null;
+  }
+  if (sc.white.fade) {
+    sc.white.alpha = Math.max(0, sc.white.alpha - 1 / sc.white.fade);
+    if (sc.white.alpha === 0) { sc.white.fade = 0; sc.white.visible = false; }
+  }
+  if (sc.flash) {
+    sc.flash.t += 1;
+    if (sc.flash.t > 18) sc.flash = null;
+  }
+  if (sc.bigShake > 0) sc.bigShake -= 1;
+  sc.bg.fountain_speed += 0.1;
+  sc.hitFx = sc.hitFx.filter((f) => sc.t - f.born < f.life);
+  sc.deferred = sc.deferred.filter((d) => {
+    if (sc.t >= d.at) { d.fn(); return false; }
+    return true;
+  });
+
+  // The warp — the destabilise's fixed schedule (roaring_knight_warp).
+  if (sc.warp) {
+    const w = sc.warp;
+    w.timer += 1;
+    if (w.timer === 1) {
+      k.hoverPause = true;
+      w.cache = [k.x, k.y];
+      k.sprite = 'spr_roaring_knight_overworld_warp';
+      k.index = 5;
+      k.speed = 0;
+      k.shake = 4;
+      cues.push({ name: 'snd_tv_static', pitch: 1, gain: 1 });
+    }
+    if (w.timer === 31 || w.timer === 56 || w.timer === 69 || w.timer === 82) {
+      k.sprite = 'spr_roaring_knight_static';
+      k.index = 0;
+      k.x += choosePM(sc);
+      k.y += choosePM(sc);
+      cues.push({ name: 'snd_tv_static', pitch: 0.5 + srand(sc), gain: 1 });
+    }
+    if (w.timer === 95) {
+      k.x = w.cache[0];
+      k.y = w.cache[1];
+      k.sprite = 'spr_roaring_knight_overworld_warp';
+      k.index = 5;
+      k.shake = 2;
+      sc.knightStatic = true; // state 3
+      sc.warp = null;
+    }
+  }
+  if (sc.knightStatic && sc.t % 2 === 0) {
+    // state 3: image 5 + floor(random(3) + 2.8), shake choose(-2..2).
+    k.index = 5 + Math.floor(srand(sc) * 3 + 2.8) - 2;
+    k.jolt = [Math.floor(srand(sc) * 5) - 2, Math.floor(srand(sc) * 5) - 2];
+  }
+
+  // The clash (susie_knight_slash).
+  if (sc.clash) {
+    const c = sc.clash;
+    const su = A.susie;
+    c.timer += 1;
+    if (c.timer === 1) {
+      cues.push({ name: 'snd_jump', pitch: 1, gain: 1 });
+      su.sprite = 'spr_susie_clash_jump';
+      su.index = 1;
+      su.speed = 0;
+      su.vspeed = -14;
+      su.gravity = 2;
+      su.lerp = { field: 'hspeed', from: 0, to: 20, t: 0, dur: 5, curve: 'linear' };
+      sc.flash = { t: 0, peak: 1 };
+    }
+    if (c.timer === 10) {
+      c.shakeSeq = true;
+      sc.bigShake = Math.max(sc.bigShake, 10);
+      cues.push({ name: 'snd_laz_c', pitch: 0.7, gain: 1 });
+      cues.push({ name: 'snd_heavyswing', pitch: 1, gain: 1 });
+      cues.push({ name: 'snd_closet_impact', pitch: 0.9, gain: 1 });
+      cues.push({ name: 'snd_impact', pitch: 0.7, gain: 1 });
+      su.visible = false;
+      su.lerp = null;
+      su.hspeed = 0; su.vspeed = 0; su.gravity = 0;
+      su.x = k.x - 30;
+      su.y = k.y - 40;
+      sc.knightStatic = false;
+      k.jolt = [0, 0];
+      k.sprite = 'spr_roaring_knight_susie_clash';
+      k.index = 0;
+      k.speed = 0.4;
+      k.shake = 2;
+    }
+    if (c.shakeSeq) {
+      c.shakeTimer += 1;
+      if (c.shakeTimer % c.shakeTime === 1) {
+        c.shakeTime -= 10;
+        if (c.shakeTime <= 30) c.shakeSeq = false;
+        sc.bigShake = Math.max(sc.bigShake, 10);
+        pushHitFx(sc, k.x, k.y, 16, 1);
+        pushHitFx(sc, k.x, k.y, 24, 0.5);
+        cues.push({ name: 'snd_damage', pitch: 1, gain: 1 });
+        cues.push({ name: 'snd_metal_hit_strong', pitch: 0.8, gain: 0.5 });
+        cues.push({ name: 'snd_closet_impact', pitch: 0.9, gain: 1 });
+        cues.push({ name: 'snd_impact', pitch: 0.7, gain: 1 });
+        sc.flash = { t: 0, peak: 0.5 };
+      }
+    } else {
+      if (c.timer === 300) {
+        pushHitFx(sc, k.x, k.y, 12, 1);
+        cues.push({ name: 'snd_damage', pitch: 1, gain: 1 });
+        sc.flash = { t: 0, peak: 0.5 };
+        k.hspeed = 8;
+        k.friction = 2;
+        k.shake = 0;
+        k.index = 2;
+        k.speed = 0;
+      }
+      if (c.timer === 320) {
+        cues.push({ name: 'snd_laz_c', pitch: 0.9, gain: 1 });
+        cues.push({ name: 'snd_glassbreak', pitch: 1, gain: 1 });
+        cues.push({ name: 'snd_sparkle_glock', pitch: 1, gain: 1 });
+        su.visible = true;
+        su.sprite = 'spr_susie_clash_jump';
+        su.index = 0;
+        su.vspeed = -4;
+        su.gravity = 2;
+        su.hspeed = -14;
+        k.sprite = 'spr_roaring_knight_clash_pull_back';
         k.index = 0;
         k.speed = 0;
-        // Susie is in his hand — at HER position, per the beam's Draw.
-        sc.susieGrab = { x: A.susie.x, y: A.susie.y, shakeOffset: 0, shakeTimer: 2 };
-        A.susie.visible = false;
-        cues.push({ name: 'snd_noise', pitch: 1, gain: 1 });
-        sc.shake = 8;
-      }
-      if (sc.phaseT === 57) say(sc, 'susie', VICTORY_LINES.susie_cant);
-      if (sc.phaseT > 57 && !talking) enter('undyne');
-      break;
-    }
-    case 'undyne': {
-      if (sc.phaseT === 60) {
-        A.undyne.visible = true;
-        A.undyne.x = sc.camX + 700;
-        A.undyne.speed = 0.2;
-        cues.push({ name: 'snd_spearappear', pitch: 1, gain: 1 });
-        pushLerp(sc, A.undyne, 'x', sc.camX + 480, 40);
-      }
-      if (sc.phaseT === 118) {
-        // The spear barrage: the knight breaks the grab and dodges.
-        k.visible = false;
-        sc.susieGrab = null;
-        A.susie.visible = true;
-        sc.dodge = {
-          timer: 0, x: k.x, y: k.y, xstart: k.x, ystart: k.y,
-          index: 12, rem1: -1, spears: [], makespear: true, rotate: false,
+        setTimeoutStep(sc, 4, () => { k.index = 1; });
+        // THE SHARD, off the Black Knife.
+        sc.shard = {
+          x: k.x, y: k.y, hspeed: -7, vspeed: -8, gravity: 2,
+          angle: 0, born: sc.t, shine: false,
         };
-        enter('spears');
       }
-      break;
+      if (c.timer === 330) {
+        su.sprite = 'spr_susieb_idle_serious';
+        su.index = 0;
+        su.speed = 0;
+        su.vspeed = 0; su.gravity = 0;
+        su.friction = 2;
+      }
+      if (c.timer === 340) {
+        sc.clash = null;
+        if (sc.shard) sc.shard.shine = true;
+      }
     }
-    case 'spears': {
-      const d = sc.dodge;
-      d.timer += 1;
-      // image_index 12 -> 3 over 18 'out', then the sin wobble.
-      if (d.timer <= 18) d.index = 12 + (3 - 12) * (1 - (1 - d.timer / 18) ** 2);
-      else d.index = 3 + Math.sin(d.timer / 2) * 1.6;
-      // Spears from camera-right every 4th frame while the barrage holds.
-      if (d.makespear && d.timer % 4 === 0 && d.timer < 40) {
-        cues.push({ name: 'snd_swing', pitch: 1.1 + srand(sc.t, 5) * 0.4, gain: 0.4 + srand(sc.t, 6) * 0.3 });
-        const sx = sc.camX + 640 + 40 + srand(sc.t, 7) * 200;
-        const sy = -80;
-        const dir = Math.atan2((d.y + 80) - sy, (d.x + 110) - sx);
-        d.spears.push({ x: sx, y: sy, dir, speed: 7, life: 40 });
-      }
-      for (const s of d.spears) {
-        s.speed += 1; // friction -1 accelerates
-        s.x += Math.cos(s.dir) * s.speed;
-        s.y += Math.sin(s.dir) * s.speed;
-        s.life -= 1;
-      }
-      d.spears = d.spears.filter((s) => s.life > 0);
-      // The dodge weave, every 12 frames.
-      if (d.timer % 12 === 0 && d.timer < 40) {
-        const gx = d.xstart + (40 + Math.floor(srand(sc.t, 8) * 4) * 10) * d.rem1;
-        const gy = d.ystart + (20 + Math.floor(srand(sc.t, 9) * 3) * 10) * (srand(sc.t, 10) < 0.5 ? -1 : 1);
-        pushLerp(sc, d, 'x', gx, 12, 'out');
-        pushLerp(sc, d, 'y', gy, 12, 'out');
-        d.rem1 *= -1;
-      }
-      if (d.timer === 18) {
-        // Susie hits the ground.
-        A.susie.sprite = 'spr_susieb_defeat';
-        A.susie.index = 0;
-        A.susie.speed = 0;
-        A.susie.shake = 6;
-        cues.push({ name: 'snd_noise', pitch: 1, gain: 1 });
-      }
-      if (d.timer === 48) {
-        // spear_throw_stop: back to centre, then ball_fly.
-        d.makespear = false;
-        pushLerp(sc, d, 'x', d.xstart, 12, 'out');
-        pushLerp(sc, d, 'y', d.ystart, 12, 'out');
-      }
-      if (d.timer === 61) {
-        k.x = d.x;
-        k.y = d.y;
-        k.ystart = d.y;
-        k.visible = true;
-        k.sprite = 'spr_roaringknight_ball_fly';
-        k.index = 0;
-        k.speed = 0.2;
-        sc.dodge = null;
-        enter('turn');
-      }
-      break;
+  }
+  if (sc.shard) {
+    const s = sc.shard;
+    if (sc.t - s.born <= 16) {
+      s.x += s.hspeed;
+      s.y += s.vspeed;
+      s.vspeed += s.gravity;
+      s.angle += 64; // 1280 degrees over 20 frames
     }
-    case 'turn': {
-      if (sc.phaseT === 60) {
-        k.flip = true;
-        pushLerp(sc, k, 'x', k.x + 440, 40, 'inout');
-      }
-      if (sc.phaseT === 70) pushLerp(sc, sc, 'camX', sc.camX + 220, 30);
-      if (sc.phaseT === 100) {
-        k.sprite = 'spr_roaringknight_ball_transition_sword';
-        k.index = 0;
-        k.speed = 0.4;
-      }
-      if (sc.phaseT === 120) k.speed = 0;
-      if (sc.phaseT === 130) say(sc, 'undyne', VICTORY_LINES.undyne_stop);
-      if (sc.phaseT > 130 && !talking && !sc.saidPunk) {
-        sc.saidPunk = true;
-        say(sc, 'undyne', VICTORY_LINES.undyne_punk);
-      }
-      if (sc.phaseT > 131 && !talking && sc.saidPunk) {
-        k.hoverPause = true;
-        k.sprite = 'spr_roaringknight_fly_transition';
-        k.index = 0;
-        k.speed = 0.6;
-        k.x -= 234 / 2; // the original shifts -234 at xscale 2; ours draws at 2 too
-        cues.push({ name: 'snd_drake_dodge', pitch: 1, gain: 1 });
-        cues.push({ name: 'snd_jump_bc', pitch: 1, gain: 1 });
-        sc.birdPitch = 0.6;
-        sc.birdVol = 1;
-        sc.birdLoopT = 0;
-        enter('bird');
-      }
-      break;
-    }
-    case 'bird': {
-      if (sc.phaseT === 5) {
-        // x -> far off right, 160 frames, accelerating 'in'.
-        pushLerp(sc, k, 'x', k.x + 3500, 160, 'in');
-      }
-      if (k.index >= 16 && k.sprite === 'spr_roaringknight_fly_transition') {
-        k.sprite = 'spr_roaringknight_fly';
-        k.index = 0;
-        k.speed = 0.25;
-      }
-      // The camera chases for a while.
-      if (sc.phaseT === 20) pushLerp(sc, sc, 'camX', sc.camX + 320, 90);
-      // The snatch: Undyne vanishes into his claws.
-      if (!k.undyneCatch && k.x > A.undyne.x - 60 && A.undyne.visible) {
-        A.undyne.visible = false;
-        k.undyneCatch = true;
-        cues.push({ name: 'snd_grab', pitch: 1, gain: 1 });
-        say(sc, 'undyne', VICTORY_LINES.undyne_caught);
-      }
-      // The wing loop, fading with distance.
-      sc.birdLoopT += 1;
-      if (sc.birdLoopT === 6) cues.push({ name: 'snd_knight_puff', pitch: sc.birdPitch, gain: 0.85 * sc.birdVol });
-      if (sc.birdLoopT >= 10) {
-        sc.birdLoopT = 0;
-        cues.push({ name: 'snd_heavy_passing', pitch: 1, gain: sc.birdVol });
-      }
-      if (sc.phaseT > 60) {
-        sc.birdPitch = Math.max(0.1, sc.birdPitch - 0.01);
-        sc.birdVol = Math.max(0, sc.birdVol - 0.02);
-      }
-      if (sc.phaseT === 120) {
-        A.ralsei.sprite = 'spr_ralsei_kneel_serious';
-        A.ralsei.index = 0;
-      }
-      if (sc.phaseT === 150) pushLerp(sc, sc, 'camX', sc.camX - 340, 60);
-      if (sc.phaseT > 210 && !talking) enter('chase');
-      break;
-    }
-    case 'chase': {
-      if (sc.phaseT === 30) {
-        A.susie.shake = 6;
-        cues.push({ name: 'snd_noise', pitch: 1, gain: 1 });
-        say(sc, 'susie', VICTORY_LINES.susie_hey);
-      }
-      if (sc.phaseT > 30 && !talking && !sc.susieUp) {
-        sc.susieUp = true;
-        sc.susieUpT = sc.phaseT;
-        A.susie.sprite = 'spr_susie_crouch';
-        A.susie.index = 0;
-        A.susie.speed = 0;
-        A.susie.shake = 4;
-        cues.push({ name: 'snd_noise', pitch: 1, gain: 1 });
-      }
-      if (sc.susieUp && sc.phaseT === sc.susieUpT + 5) A.susie.index = 1;
-      if (sc.susieUp && sc.phaseT === sc.susieUpT + 20) {
-        cues.push({ name: 'snd_wing', pitch: 1, gain: 1 });
-        A.susie.sprite = 'spr_susie_run_serious_right';
-        A.susie.index = 0;
-        A.susie.speed = 0.4;
-        pushLerp(sc, A.susie, 'x', A.susie.x + 640, 90);
-        say(sc, 'susie', VICTORY_LINES.susie_where);
-      }
-      if (sc.susieUp && sc.phaseT === sc.susieUpT + 80) {
-        A.kris.sprite = 'spr_kris_dw_landed';
-        A.kris.index = 0;
-        A.kris.speed = 0;
-      }
-      if (sc.susieUp && sc.phaseT > sc.susieUpT + 84 && sc.phaseT < sc.susieUpT + 97
-          && (sc.phaseT - sc.susieUpT) % 4 === 0) {
-        A.kris.index = Math.min(2, A.kris.index + 1);
-      }
-      if (sc.phaseT > (sc.susieUpT ?? 999) + 140 && !talking) sc.done = true;
-      break;
-    }
-    default:
-      sc.done = true;
   }
 
-  // Shakes decay.
-  if (sc.shake) sc.shake -= 1;
-  if (A.susie.shake) A.susie.shake -= 1;
-  // The grab hand's shudder: `shake_offset = choose(0, 2)` every 2 frames.
-  if (sc.susieGrab) {
-    sc.susieGrab.shakeTimer -= 1;
-    if (sc.susieGrab.shakeTimer <= 0) {
-      sc.susieGrab.shakeTimer = 2;
-      sc.susieGrab.shakeOffset = srand(sc.t, 20) < 0.5 ? 0 : 2;
+  // ---- dialogue gate ------------------------------------------------------
+  if (sc.dialogue) {
+    const d = sc.dialogue;
+    d.timer += 1;
+    const line = VICTORY_LINES[d.line];
+    const typed = d.timer >= line.text.length; // rate 1
+    if (typed && confirmPressed) sc.dialogue = null;
+    else return; // the script clock pauses on the gate
+  }
+
+  // ---- the script ---------------------------------------------------------
+  if (sc.wait > 0) {
+    sc.wait -= 1;
+    if (sc.wait > 0) return;
+  }
+  while (sc.scriptIndex < sc.script.length) {
+    const [op, a, b] = sc.script[sc.scriptIndex];
+    if (op === 'w') { sc.scriptIndex += 1; sc.wait = a; break; }
+    if (op === 'say') {
+      sc.scriptIndex += 1;
+      sc.dialogue = { line: a, timer: 0 };
+      break;
+    }
+    if (op === 'waitClash') {
+      if (sc.clash) break; // re-checked next frame
+      sc.scriptIndex += 1;
+      continue;
+    }
+    sc.scriptIndex += 1;
+    switch (op) {
+      case 'whiteFadeOut': sc.white.fade = a; break;
+      case 'music': cues.push({ music: a }); break;
+      case 'knightFreeze': k.frozen = true; break;
+      case 'warpStart': sc.warp = { timer: 0, cache: null }; break;
+      case 'pan': sc.camLerp = { from: sc.camX, to: a, t: 0, dur: b }; break;
+      case 'susieWalk': {
+        const su = A.susie;
+        su.sprite = 'spr_susier_dark'; // rsprite 686
+        su.index = 0;
+        su.speed = 0.25;
+        su.lerp = { field: 'x', from: su.x, to: a, t: 0, dur: b, curve: 'linear' };
+        break;
+      }
+      case 'clashStart':
+        sc.clash = { timer: 0, shakeSeq: false, shakeTimer: 0, shakeTime: 80 };
+        break;
+      case 'knightRecover':
+        sc.knightStatic = false;
+        k.jolt = [0, 0];
+        k.shake = 0;
+        k.sprite = 'spr_roaringknight_ball_transition_sword';
+        k.speed = 0;
+        k.lerpIndex = { from: 8, to: 5, t: 0, dur: 8, curve: 'linear' };
+        k.frozen = false;
+        k.hoverPause = false;
+        setTimeoutStep(sc, 8, () => {
+          k.sprite = 'spr_roaringknight_ball_fly';
+          k.index = 0;
+          k.speed = 0.4;
+        });
+        break;
+      case 'susieIdle': {
+        const su = A.susie;
+        su.sprite = 'spr_susieb_idle';
+        su.index = 0;
+        su.speed = 0.334;
+        break;
+      }
+      case 'susieLaugh': {
+        const su = A.susie;
+        su.flip = true;
+        su.sprite = 'spr_susie_laugh_dw';
+        su.index = 0;
+        su.speed = 0.25;
+        cues.push({ name: 'snd_suslaugh', pitch: 1, gain: 1 });
+        break;
+      }
+      case 'laughAgain': {
+        const su = A.susie;
+        su.sprite = 'spr_susie_laugh_dw';
+        su.speed = 0.25;
+        // loopsfx 169 IS snd_suslaugh — she keeps laughing into the cut.
+        cues.push({ name: 'snd_suslaugh', pitch: 1, gain: 1 });
+        break;
+      }
+      case 'slashCut': {
+        fiveCuts(cues);
+        sc.white.black = true;
+        sc.white.alpha = 1;
+        sc.white.visible = true;
+        sc.slash.visible = true;
+        if (a === 'susie') {
+          sc.slash.x = 2420; sc.slash.y = 182;
+          k.x = sc.camX + 640 + 300;
+          k.sprite = 'spr_roaringknight_idle_overworld';
+          k.index = 0;
+          k.speed = 0;
+          const su = A.susie;
+          su.flip = true;
+          su.x = 2410; su.y = 142;
+          su.sprite = 'spr_susie_dw_fell';
+          su.index = 0; su.speed = 0;
+        } else {
+          sc.slash.x = 2408; sc.slash.y = 240;
+          const ra = A.ralsei;
+          ra.x = 2328; ra.y = 190;
+          ra.sprite = 'spr_ralsei_defeat';
+          ra.index = 0; ra.speed = 0;
+        }
+        break;
+      }
+      case 'susieSlide': {
+        const su = A.susie;
+        su.lerp = { field: 'x', from: su.x, to: 2310, t: 0, dur: 40, curve: 'in' };
+        A.ralsei.sprite = 'spr_ralsei_shocked_behind';
+        A.ralsei.index = 0;
+        break;
+      }
+      case 'reveal': {
+        bigShake(sc, cues);
+        sc.white.visible = false;
+        sc.slash.visible = false;
+        const target = a === 'susie' ? A.susie : A.ralsei;
+        sc.swoons.push({ x: target.x + 20, y: target.y + 30, born: sc.t });
+        if (a === 'ralsei') {
+          target.lerp = { field: 'x', from: target.x, to: 2280, t: 0, dur: 30, curve: 'out' };
+        }
+        break;
+      }
+      case 'ralseiApproach': {
+        const ra = A.ralsei;
+        ra.sprite = 'spr_ralsei_walk_right_unhappy'; // rsprite 359
+        ra.speed = 0.25;
+        ra.lerp = { field: 'x', from: ra.x, to: ra.x + 8, t: 0, dur: 10, curve: 'linear' };
+        setTimeoutStep(sc, 10, () => { ra.speed = 0; ra.index = 0; });
+        break;
+      }
+      case 'black':
+        sc.white.black = true;
+        sc.white.alpha = 1;
+        sc.white.visible = true;
+        break;
+      case 'unblack': sc.white.visible = false; break;
+      case 'knighting':
+        sc.knightStatic = false;
+        k.sprite = 'spr_roaring_knight_kris_knighting';
+        k.x = 2326;
+        k.y = 44;
+        k.hoverPause = true;
+        k.index = 1;
+        k.speed = 0;
+        k.hspeed = 0;
+        k.shake = 0;
+        k.jolt = [0, 0];
+        A.kris.visible = false; // Kris kneels IN the art
+        break;
+      case 'knightingLower':
+        k.lerpIndex = { from: 1, to: 4, t: 0, dur: a, curve: 'in' };
+        break;
+      case 'krisDown': {
+        const kr = A.kris;
+        kr.visible = true;
+        kr.sprite = 'spr_krisb_defeat';
+        kr.index = 0;
+        k.sprite = 'spr_roaringknight_idle_overworld_sword';
+        k.index = 0;
+        k.speed = 0.1;
+        k.x = 2655;
+        k.hoverPause = false;
+        break;
+      }
+      case 'end':
+        sc.done = true;
+        sc.toMenu = true;
+        break;
     }
   }
 }

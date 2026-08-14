@@ -113,6 +113,22 @@ window.__intro = {
     return { phase: sc.phase, t: sc.t, done: sc.done };
   },
 };
+// Deterministic single-frame inspection of the ENDING, auto-confirming the
+// dialogue gates. Same hold semantics as __intro.drive.
+window.__cutscene = {
+  drive(t) {
+    window.__intro.hold = true;
+    const sc = createVictoryScene();
+    const cues = [];
+    // Alternate confirm every other frame: gates need a fresh edge.
+    for (let i = 0; i < t; i++) stepVictoryScene(sc, { confirm: i % 2 === 0 }, cues);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    drawVictoryScene(ctx, sc, renderer.sprites);
+    return { t: sc.t, done: sc.done, wait: sc.wait, scriptIndex: sc.scriptIndex };
+  },
+};
 window.__sim = {
   get state() { return state; },
   // The Game Over sequence, for the same reason state is here: it is a
@@ -446,7 +462,11 @@ function frame(now) {
       }
       const cues = [];
       stepVictoryScene(cutsceneSeq, input, cues);
-      if (cues.length) audio.play(cues);
+      // The scene's music ops ride the cue list: the wind track plays only
+      // if the local pack carries it (wind_highplace is not extracted), so
+      // 'wind' is a labelled no-op today; 'stop' quiets any loop.
+      const sound = cues.filter((c) => !c.music);
+      if (sound.length) audio.play(sound);
       if (cutsceneSeq.done) break;
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -464,9 +484,18 @@ function frame(now) {
         ctx.globalAlpha = 1;
       }
     } else {
+      // After the knighting: THE MAIN MENU (player-directed — the game
+      // itself rolls into free roam here, out of this tool's scope).
+      const toMenu = cutsceneSeq.toMenu;
       cutsceneSeq = null;
       maskHeldInput();
-      victory = { timer: 0 };
+      if (toMenu) {
+        title.mode = null;
+        title.pickingAttack = false;
+        reset();
+      } else {
+        victory = { timer: 0 }; // the skip path keeps the card
+      }
     }
     requestAnimationFrame(frame);
     return;
@@ -555,7 +584,7 @@ function frame(now) {
       // first; the card follows it.
       if (!victory && !cutsceneSeq && (state.endFade ?? 0) >= 1) {
         maskHeldInput();
-        cutsceneSeq = createVictoryScene(PARTY_ACTORS.map((p) => ({ x: p.x, y: p.y })));
+        cutsceneSeq = createVictoryScene();
       }
 
       // HITLESS: one hit and it starts over. The restart is instant because

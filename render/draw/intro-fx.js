@@ -202,14 +202,14 @@ function tiledArea(g, entry, phaseX, phaseY, x1, y1, x2, y2) {
   g.restore();
 }
 
-function drawBackdrop(target, sc, sprites) {
-  const g = target.getContext('2d');
-  g.setTransform(1, 0, 0, 1, 0, 0);
+// Exported: the ending plays in this same room and paints the same vista
+// (camera-aware — the world anchors hold under the ending's pans).
+export function drawSnowBackdrop(g, camX, fountainSpeed, sprites) {
   g.fillStyle = '#000'; // the room's BGCOLOR
   g.fillRect(0, 0, VIEW_W, VIEW_H);
   const S = (name) => sprites.get(name);
-  const cam = sc.camX;
-  const fs = sc.bg.fountain_speed;
+  const cam = camX;
+  const fs = fountainSpeed;
   const xo = 1320; // x_offset, clamped (camerax() >= 1320)
   const yo = -10; // y_offset
   const bgH = 480; // layer_1 height * 2
@@ -250,7 +250,9 @@ export function drawIntroScene(ctx, sc, sprites) {
   // (The vista's fountain glow at x 140 and the battle's column at x 138
   // sit in line, so the cross-fade keeps the fountain in place.)
   bgCanvas = getCanvas(bgCanvas, VIEW_W, VIEW_H);
-  drawBackdrop(bgCanvas, sc, sprites);
+  const bgCtx = bgCanvas.getContext('2d');
+  bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+  drawSnowBackdrop(bgCtx, sc.camX, sc.bg.fountain_speed, sprites);
   ctx.save();
   ctx.globalAlpha = Math.max(0, sc.bg.fadeAlpha);
   ctx.drawImage(bgCanvas, 0, 0);
