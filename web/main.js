@@ -10,6 +10,7 @@ import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { createRecorder, recordInput, encodeReplay, decodeReplay } from '../sim/replay.js';
 import { createTitle, stepTitle } from '../sim/modes.js';
 import { drawTitle, drawGameOver, stepGameOver, makeGameOver } from '../render/title.js';
+import { loadFont, drawText } from '../render/font.js';
 import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
@@ -258,6 +259,47 @@ function cueLoopNow(name) {
 }
 
 let over = null;          // the Game Over sequence, once the party is down
+// THE WIN. The game hands the white fade to obj_ch3_PTB02's story cutscene
+// (Susie against the Knight, Undyne, the bird) — overworld actors this build
+// does not ship. The seam is cut at the fade: the tool holds the white, then
+// shows its own card. Tool UI, styled like the title, labelled as the point
+// where the story continues — not a recreation of it.
+let victory = null;       // { timer } once the ending's fade has filled
+
+/**
+ * The card itself: white field easing back to black, the game's own closing
+ * beat named for what it is, and the run's numbers — a practice tool's
+ * scoreboard, in the fight's font.
+ */
+function drawVictory(ctx2, v, st) {
+  const font = loadFont();
+  ctx2.fillStyle = '#000';
+  ctx2.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+  // The white recedes over the first 30 frames of the card.
+  const white = Math.max(0, 1 - v.timer / 30);
+  if (white > 0) {
+    ctx2.globalAlpha = white;
+    ctx2.fillStyle = '#fff';
+    ctx2.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    ctx2.globalAlpha = 1;
+  }
+  if (!font?.ready || v.timer < 20) return;
+  const mid = renderer.VIEW_W / 2;
+  drawText(ctx2, font, 'THE KNIGHT LET DOWN ITS GUARD', mid, 130,
+    { halign: 'center', color: '#ffffff' });
+  drawText(ctx2, font, 'the fight is won', mid, 170,
+    { halign: 'center', color: '#999999', xscale: 0.75, yscale: 0.75 });
+  const mins = Math.floor(simFrames / 30 / 60);
+  const secs = Math.floor((simFrames / 30) % 60);
+  const stats = `${mins}:${String(secs).padStart(2, '0')}   ·   ${st.counters?.collisionHits ?? 0} hits taken`;
+  drawText(ctx2, font, stats, mid, 230, { halign: 'center', color: '#ffffff', xscale: 0.85, yscale: 0.85 });
+  drawText(ctx2, font, 'the story continues in Chapter 3', mid, 300,
+    { halign: 'center', color: '#666666', xscale: 0.7, yscale: 0.7 });
+  if (v.timer > 40 && Math.floor(v.timer / 15) % 2 === 0) {
+    drawText(ctx2, font, 'Z  fight again      X  mode menu', mid, 360,
+      { halign: 'center', color: '#bbbbbb', xscale: 0.7, yscale: 0.7 });
+  }
+}
 let hitlessDeaths = 0;
 
 // THE OPENING ROAR — obj_knight_roaring_fx, run OUT HERE like the title
@@ -343,6 +385,33 @@ function frame(now) {
     return;
   }
 
+  // VICTORY. Held on the ending's full-white fade, then the card. Z fights
+  // again; X returns to the mode menu.
+  if (victory) {
+    const { steps: vs, accumulator: va } = drain(acc, elapsed);
+    acc = va;
+    for (let i = 0; i < vs; i++) {
+      victory.timer += 1;
+      const input = gatedKeys();
+      if (victory.timer > 40 && (input.confirm || input.cancel)) {
+        const toTitle = !!input.cancel;
+        audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
+        victory = null;
+        maskHeldInput();
+        if (toTitle) {
+          title.mode = null;
+          title.pickingAttack = false;
+        }
+        reset();
+        break;
+      }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (victory) drawVictory(ctx, victory, state);
+    requestAnimationFrame(frame);
+    return;
+  }
+
   // GAME OVER. The Knight's own — the soul does not break, it glides away and
   // he talks to you. See render/title.js for why this is not the game over
   // everybody knows: `global.tempflag[93]`, set by his encounter room.
@@ -393,6 +462,13 @@ function frame(now) {
       stepFrame(state, input);
       audio.play(drainCues(state));
       simFrames += 1;
+
+      // The win: the ending's white fade has filled (stepEndCutscene drives
+      // it to 1 over 30 frames from endtimer 32). Hand off to the card.
+      if (!victory && (state.endFade ?? 0) >= 1) {
+        maskHeldInput();
+        victory = { timer: 0 };
+      }
 
       // HITLESS: one hit and it starts over. The restart is instant because
       // the sim is a pure function of (seed, input) — there is nothing to

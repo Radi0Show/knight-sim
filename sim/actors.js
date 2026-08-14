@@ -93,9 +93,16 @@ export const knightActor = {
     // write-only, the same family as `linex` and `splitbox`. Adding fields
     // that are provably always zero would only invite someone to "fix" them.
     e.x = KNIGHT.x + (k?.shakex ?? 0);
+    // THE ENDING STROBES SLOWER. The normal strong-hurt alternates on %2;
+    // the win's block reads `(hurttimer % 3) == 0` for the idle frame — two
+    // ball frames for every idle one, so he reads as losing the shape rather
+    // than as flinching.
+    const strobeMod = k?.endCutscene > 0 ? 3 : 2;
+    const strobing = k?.animState === 3 && k.stronghurtanim
+      && (k.hurttimer % strobeMod) !== 0;
     if (k?.blockanim) {
       e.sprite_index = 'spr_roaringknight_block_ol';
-    } else if (k?.animState === 3 && k.stronghurtanim && k.hurttimer % 2 !== 0) {
+    } else if (strobing) {
       e.sprite_index = 'spr_roaringknight_ball_transition';
       e.image_index = 7;
     } else {

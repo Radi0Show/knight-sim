@@ -53,6 +53,7 @@
 
 import { PARTY, statFor, scrDamage } from './damage.js';
 import { cue, cueStop } from './audio.js';
+import { scrShakescreen } from './shake.js';
 
 export const KNIGHT_MAXHP = 7300;   // scr_monstersetup, monstertype 104
 export const KNIGHT_AT = 40;
@@ -429,11 +430,63 @@ export function startEndCutscene(state) {
   if (k.endCutscene !== 0) return false;
   k.endCutscene = 1;
   k.endcon = 1;
+  k.endtimer = 0;
   k.hurttimer = 999;
   k.stronghurtanim = true;
   k.animState = 3;
-  cue(state, 'snd_knight_hurt');
+  // The ending hit, exactly as the Draw's trigger block plays it:
+  //
+  //     inst = instance_create(x, y, obj_shake);
+  //     inst.shakex = 30; inst.shakey = 8; inst.shakespeed = 2;
+  //     snd_play_x(snd_knight_hurt, 0.8, 1);
+  //     snd_play_x(snd_knight_hurt, 0.8, 0.7);
+  //     snd_play_x(snd_knight_hurt, 0.8, 1.3);
+  //
+  // Three copies of the hurt at three pitches — a chord, not an echo — over
+  // the biggest shake in the fight.
+  scrShakescreen(state, { shakex: 30, shakey: 8, shakespeed: 2 });
+  cue(state, 'snd_knight_hurt', 1, 0.8);
+  cue(state, 'snd_knight_hurt', 0.7, 0.8);
+  cue(state, 'snd_knight_hurt', 1.3, 0.8);
   // `mus_fade(global.batmusic[1], 1)` — the track fades out as the fight ends.
   cueStop(state, 'mus_knight');
   return true;
+}
+
+/**
+ * The ending's own clock — obj_knight_enemy's Step, `end_cutscene_version
+ * == 1`:
+ *
+ *     endtimer++;
+ *     if (endtimer == 32) { scr_fadeout(15); with (obj_fadeout) {
+ *         image_blend = c_white; x -= 40; length *= 2; } }
+ *     if (endcon == 1 && endtimer > 45) { ...destroy obj_attackpress and
+ *         every obj_dmgwriter; tension bar flies off (hspeed -10,
+ *         friction -0.4); global.fighting = 0; endcon = 2; }
+ *
+ * `state.endFade` is the renderer's cue for the WHITE fadeout (0..1 over 30
+ * frames — scr_fadeout(15) with `length *= 2`), and `state.tensionbarFly`
+ * carries the bar's exit motion. The room's story cutscene (Susie, Undyne,
+ * the bird) picks up after this in the game; the tool hands off to its own
+ * win screen instead — that seam is the deliberate cut, not a gap.
+ */
+export function stepEndCutscene(state) {
+  const k = state.knight;
+  if (!k || k.endCutscene !== 1) return;
+  k.endtimer = (k.endtimer ?? 0) + 1;
+  if (k.endtimer === 32) state.endFade = 0.0001;
+  if (state.endFade) state.endFade = Math.min(1, state.endFade + 1 / 30);
+  if (k.endcon === 1 && k.endtimer > 45) {
+    k.endcon = 2;
+    state.fightBar = null;
+    if (state.dmg) state.dmg.list = [];
+    state.tensionbarFly = { hspeed: -10, friction: -0.4, x: 0 };
+    state.fighting = 0;
+  }
+  if (state.tensionbarFly) {
+    const f = state.tensionbarFly;
+    // GML friction reduces speed magnitude; negative friction accelerates.
+    f.hspeed -= -f.friction * Math.sign(f.hspeed);
+    f.x += f.hspeed;
+  }
 }

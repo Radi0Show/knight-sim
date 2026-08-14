@@ -36,7 +36,7 @@ import { castSpell } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
-  endCutsceneReached, startEndCutscene, DR_PHASE4, KNIGHT_MAXHP,
+  endCutsceneReached, startEndCutscene, stepEndCutscene, DR_PHASE4, KNIGHT_MAXHP,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
 import { cueLoop, cue, cueStop } from '../audio.js';
@@ -251,6 +251,9 @@ const director = {
       state.fightBar = null;
       e.bar = null;
     }
+    // The ending's own clock: the white fadeout at 32, the UI teardown and
+    // the tension bar's exit past 45. See stepEndCutscene.
+    stepEndCutscene(state);
 
     // THE BOARD AND THE SOUL ONLY EXIST DURING THE BULLET PHASE.
     //

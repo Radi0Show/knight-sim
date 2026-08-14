@@ -120,7 +120,21 @@ export const shakeObj = {
   },
 };
 
-/** `scr_shakescreen()` — one line in the original: create one of these. */
-export function scrShakescreen(state) {
-  return spawn(state, shakeObj, { x: 0, y: 0 });
+/**
+ * `scr_shakescreen()` — one line in the original: create one of these. The
+ * options mirror the pattern of `inst = instance_create(...); inst.shakex =
+ * ...` that the fight's ending uses (30 / 8 / speed 2 — the biggest shake in
+ * the fight, on the hit that ends it).
+ */
+export function scrShakescreen(state, opts = null) {
+  // Suites drive damage with minimal states that have no entity list; a
+  // shake with nowhere to live is simply skipped, like a view with no room.
+  if (!state.entities) return null;
+  const e = spawn(state, shakeObj, { x: 0, y: 0 });
+  if (opts && e) {
+    if (opts.shakex !== undefined) e.shakex = opts.shakex;
+    if (opts.shakey !== undefined) e.shakey = opts.shakey;
+    if (opts.shakespeed !== undefined) e.shakespeed = opts.shakespeed;
+  }
+  return e;
 }

@@ -546,6 +546,18 @@ export async function createRenderer(canvas) {
         }
       }
     }
+
+    // THE ENDING'S WHITE FADEOUT — `scr_fadeout(15)` with `image_blend =
+    // c_white; length *= 2` at endtimer 32 of the win. Over everything,
+    // soul included: the game's fadeout object draws above the whole room.
+    if (state.endFade) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = Math.min(1, state.endFade);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.restore();
+    }
   }
 
   // Frame counts for the sim's animation phase. sim/ must not read the
