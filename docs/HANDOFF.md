@@ -191,3 +191,33 @@ tolerance for hit-frame trickle timing, like the trig 0.02px carve-out;
 (3) if bit-exactness on collision internals is ever really needed, the
 next tool is disassembling the runner's collision routine, not more
 black-box probing (same conclusion CLAUDE.md reached for ds_list_shuffle).
+
+## 2026-08-14 (later) — player-reported fidelity pass
+
+Five reports from actually playing it, all root-caused in the dump rather
+than tuned by eye. Suites now 42/43 (verify-fullfight is still #28).
+
+1. Charboxes vanished during target select — scr_charbox's mmy = -170 slide
+   belongs to the rouxlsgrid branch, which this fight never enables.
+2. Chatbox text cut off / cramped / popping — the renderer had invented its
+   layout. obj_writer's formatter (charline 33, last-space break, `||` hang)
+   and scr_texttype's real metrics (typer 6: mainbig/16/36; typer 81:
+   dotumche/9/20) are ported. fnt_main + fnt_dotumche extracted.
+3. HP showed 0 instead of -999 — the swoon system is in: scr_dead's five
+   globals, scr_revive's three, both floors (-80 Kris / -999 allies) and
+   scr_heal's revive gate. New suite verify-swoon.
+4. "Buffered ~10 seconds, usually later attacks" — a missed bolt never
+   expired (`boltframe - boltx < -5`), so the bar could never finish.
+5. "Stars is missing sounds" — snd_stardrop per star spawn, plus the
+   charge-up's powerup and the block bell. New suite verify-audio-coverage
+   re-derives the expected sound set from the dump every run.
+
+NOT STARTED, both real content: the opening roar animation (task #4) and the
+Susie-vs-Knight ending cutscene (task #5). Sources identified: obj_ch3_PTB02's
+battle-start path for the intro, and the end_cutscene_version gate in
+obj_knight_enemy's Draw (already stubbed as endCutsceneReached /
+startEndCutscene) for the ending.
+
+Also open, found while auditing audio: `blockanim = 1` is never armed — the
+Knight's BLOCK (obj_heroparent's knightblock) is not modelled. The bell is
+wired behind it so landing the mechanic is one assignment.
