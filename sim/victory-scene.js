@@ -269,6 +269,12 @@ export function stepVictoryScene(sc, input, cues) {
       a[L.field] = L.from + (L.to - L.from) * ease[L.curve](Math.min(1, L.t / L.dur));
       if (L.t >= L.dur) a.lerp = null;
     }
+    if (a.landing && a.y >= 142) {
+      a.y = 142;
+      a.vspeed = 0;
+      a.gravity = 0;
+      a.landing = false;
+    }
   }
   if (sc.camLerp) {
     const L = sc.camLerp;
@@ -292,25 +298,52 @@ export function stepVictoryScene(sc, input, cues) {
     return true;
   });
 
-  // The warp — the destabilise's fixed schedule (roaring_knight_warp).
+  // The warp — the destabilise's fixed schedule (roaring_knight_warp), each
+  // burst running the actor's state-2 machine: the warp sheet's frames are
+  // horizontal SHREDS of the silhouette, so a burst must ANIMATE 5 -> 6 ->
+  // 7 -> 8 then flicker choose(6,7,8) before settling back to frame 0 —
+  // holding one shred draws a lone floating fragment (reported from play).
   if (sc.warp) {
     const w = sc.warp;
     w.timer += 1;
     if (w.timer === 1) {
       k.hoverPause = true;
       w.cache = [k.x, k.y];
-      k.sprite = 'spr_roaring_knight_overworld_warp';
-      k.index = 5;
       k.speed = 0;
-      k.shake = 4;
+      w.burstT = 0; // the first burst starts immediately (state 2)
       cues.push({ name: 'snd_tv_static', pitch: 1, gain: 1 });
     }
     if (w.timer === 31 || w.timer === 56 || w.timer === 69 || w.timer === 82) {
+      // warp_start: one frame of spr_roaring_knight_static, a position jolt,
+      // then state 2 again.
       k.sprite = 'spr_roaring_knight_static';
-      k.index = 0;
+      k.index = Math.floor(srand(sc) * 3);
       k.x += choosePM(sc);
       k.y += choosePM(sc);
+      w.burstT = -1; // the static flash frame; the burst machine starts next
       cues.push({ name: 'snd_tv_static', pitch: 0.5 + srand(sc), gain: 1 });
+    }
+    if (w.burstT !== undefined && w.burstT !== null) {
+      w.burstT += 1;
+      if (w.burstT >= 1) {
+        // state 2's static_timer: 1..4 step frames 5..8, 5+ flicker, 10
+        // settles, 12 back to rest frame 0.
+        const st = w.burstT;
+        k.sprite = 'spr_roaring_knight_overworld_warp';
+        k.shake = 4;
+        if (st === 1) k.index = 5;
+        else if (st === 2) k.index = 6;
+        else if (st === 3) k.index = 7;
+        else if (st === 4) k.index = 8;
+        else if (st < 10) k.index = 6 + Math.floor(srand(sc) * 3);
+        else if (st === 10) k.index = 6;
+        else if (st === 11) k.index = 5;
+        else {
+          k.index = 0;
+          k.shake = 0;
+          w.burstT = null;
+        }
+      }
     }
     if (w.timer === 95) {
       k.x = w.cache[0];
@@ -323,8 +356,9 @@ export function stepVictoryScene(sc, input, cues) {
     }
   }
   if (sc.knightStatic && sc.t % 2 === 0) {
-    // state 3: image 5 + floor(random(3) + 2.8), shake choose(-2..2).
-    k.index = 5 + Math.floor(srand(sc) * 3 + 2.8) - 2;
+    // state 3: image 5 + floor(random(3) + 2.8) — frames 7..10 of the warp
+    // sheet — shake choose(-2..2).
+    k.index = 5 + Math.floor(srand(sc) * 3 + 2.8);
     k.jolt = [Math.floor(srand(sc) * 5) - 2, Math.floor(srand(sc) * 5) - 2];
   }
 
@@ -411,8 +445,11 @@ export function stepVictoryScene(sc, input, cues) {
         su.sprite = 'spr_susieb_idle_serious';
         su.index = 0;
         su.speed = 0;
-        su.vspeed = 0; su.gravity = 0;
+        // She keeps falling until her row — the script's literal numbers
+        // freeze her ~50px above the ground (the room floors its actors
+        // elsewhere); landing at y 142 is what the scene shows. LABELLED.
         su.friction = 2;
+        su.landing = true;
       }
       if (c.timer === 340) {
         sc.clash = null;

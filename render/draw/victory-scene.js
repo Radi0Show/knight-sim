@@ -152,33 +152,88 @@ export function drawVictoryScene(ctx, sc, sprites) {
     ctx.restore();
   }
 
-  // 9. The SWOON writers — spr_battlemsg frame 13 in red, the dmgwriter's
-  // stretch-in approximated over its first 8 frames.
+  // 9. The SWOON writers — spr_battlemsg frame 13 in red, obj_dmgwriter's
+  // real dynamics: stretch starts 0.2 and climbs 0.4/frame, clamped to 1 —
+  // so it RESTS at xscale (2 - stretch) = 1, yscale = 1, NOT 2x2 (the
+  // oversized first pass, reported from play). killtimer > 35 starts the
+  // kill: alpha 1 - kill, the y growing by it (kill rate approximated 0.1).
   const msg = sprites.get('spr_battlemsg');
   if (msg) {
     for (const s of sc.swoons) {
       const age = sc.t - s.born;
-      // The writer's pop-in, simplified to a vertical unsquash over 8 frames;
-      // it holds ~2s then fades out (the original's stretch/kill pair drives
-      // scales and fade through its bounce cycle).
-      if (age > 90) continue;
-      const stretch = Math.min(2, (age / 8) * 2);
-      const alpha = age < 60 ? 1 : 1 - (age - 60) / 30;
-      drawSpriteExt(ctx, msg, 13, s.x - cam + 30, s.y, 2, stretch, 0,
-        [255, 0, 0], alpha);
+      let stretch = Math.min(1, 0.2 + 0.4 * age);
+      const kill = age > 35 ? Math.min(1, (age - 35) * 0.1) : 0;
+      if (kill >= 1) continue;
+      drawSpriteExt(ctx, msg, 13, s.x - cam + 30, s.y, 2 - stretch,
+        stretch + kill, 0, [255, 0, 0], 1 - kill);
     }
   }
 
-  // 10. Dialogue — the typer-81 chatbox, same metrics as the fight's talk.
+  // 10. Dialogue — THE DARK-WORLD TEXTBOX, scr_darkbox_black's geometry
+  // verbatim for the dialoguer's dark-zone defaults (xoff 0, boxheight 3,
+  // side 1): the box spans (24, 312)-(616, 478), a black fill inset 20 with
+  // the white border pieces — spr_textbox_top stretched along the top and
+  // mirrored on the bottom, spr_textbox_left doubled on the sides, and the
+  // animated spr_textbox_topleft corner jewels (cur_jewel/10) mirrored into
+  // all four corners. The face is obj_face's: spr_face_susie_alt with the
+  // expression as the frame (\E letters decode A-Z -> 10.., a-z -> 36..),
+  // spr_face_r_nohat for Ralsei, at scale 2, with their per-character draw
+  // offsets. LABELLED: the writer's text inset is derived from the box
+  // rather than the c_talk chain, wrap at 26 columns fits the faced width,
+  // and the mouth-flap animation is not staged.
   if (sc.dialogue) {
-    const font = loadFont('../assets/fonts', 'fnt_dotumche');
+    const line = VICTORY_LINES[sc.dialogue.line];
+    const bx0 = 24;
+    const by0 = 312;
+    const bx2 = 616;
+    const by3 = 478;
+    // The black interior.
+    ctx.fillStyle = '#000';
+    ctx.fillRect(bx0 + 20, by0 + 20, bx2 - 20 - (bx0 + 20), by3 - 20 - (by0 + 20));
+    const top = sprites.get('spr_textbox_top');
+    const left = sprites.get('spr_textbox_left');
+    const corner = sprites.get('spr_textbox_topleft');
+    const bw = bx2 - bx0 - 63;
+    const bh = by3 - by0 - 63;
+    if (top) {
+      drawSpriteExt(ctx, top, 0, bx0 + 32, by0, bw, 2, 0, null, 1);
+      drawSpriteExt(ctx, top, 0, bx0 + 32, by3 + 1, bw, -2, 0, null, 1);
+    }
+    if (left) {
+      drawSpriteExt(ctx, left, 0, bx2 + 1, by0 + 32, -2, bh, 0, null, 1);
+      drawSpriteExt(ctx, left, 0, bx0, by0 + 32, 2, bh, 0, null, 1);
+    }
+    if (corner) {
+      const jewel = Math.floor(sc.t / 10) % (corner.meta.frames ?? 8);
+      drawSpriteExt(ctx, corner, jewel, bx0, by0, 2, 2, 0, null, 1);
+      drawSpriteExt(ctx, corner, jewel, bx2 + 1, by0, -2, 2, 0, null, 1);
+      drawSpriteExt(ctx, corner, jewel, bx0, by3 + 1, 2, -2, 0, null, 1);
+      drawSpriteExt(ctx, corner, jewel, bx2 + 1, by3 + 1, -2, -2, 0, null, 1);
+    }
+    // The face — obj_face at (writer + 16, writer + 10), each character's
+    // sprite with its own draw offset (Susie -5,0; Ralsei -15,-10).
+    const writerX = bx0 + 36;
+    const writerY = by0 + 26;
+    const faceX = writerX + 16;
+    const faceY = writerY + 10;
+    // The \E letters used by these lines, decoded per the writer's parser.
+    const FACE_FRAME = { 0: 40, 1: 32, 2: 34, 3: 33, 4: 34, 5: 34, 6: 35 };
+    const frame = FACE_FRAME[sc.dialogue.line] ?? 0;
+    if (line.speaker === 'susie') {
+      const face = sprites.get('spr_face_susie_alt');
+      if (face) drawSpriteExt(ctx, face, frame, faceX - 5, faceY, 2, 2, 0, null, 1);
+    } else {
+      const face = sprites.get('spr_face_r_nohat');
+      if (face) drawSpriteExt(ctx, face, frame, faceX - 15, faceY - 10, 2, 2, 0, null, 1);
+    }
+    // The text — fnt_mainbig at the dark typer's metrics (advance 16, line
+    // height 36), shifted right of the face (writingx += 58 * f, f = 2).
+    const font = loadFont('../assets/fonts', 'fnt_mainbig');
     if (font?.ready) {
-      const line = VICTORY_LINES[sc.dialogue.line];
-      const lines = revealed(formatWriter(line.text, 33), sc.dialogue.timer, 1);
-      drawText(ctx, font, line.speaker === 'susie' ? 'SUSIE' : 'RALSEI',
-        40, 318, { color: 'rgb(160,160,170)', xscale: 0.7, yscale: 0.7 });
+      const lines = revealed(formatWriter(line.text, 26), sc.dialogue.timer, 1);
       for (let i = 0; i < lines.length; i++) {
-        drawText(ctx, font, lines[i], 40, 340 + i * 20, { color: 'rgb(255,255,255)', advance: 9 });
+        drawText(ctx, font, lines[i], writerX + 116, writerY + 8 + i * 36,
+          { color: 'rgb(255,255,255)', advance: 16 });
       }
     }
   }
