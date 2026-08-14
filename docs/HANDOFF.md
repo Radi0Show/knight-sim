@@ -221,3 +221,17 @@ startEndCutscene) for the ending.
 Also open, found while auditing audio: `blockanim = 1` is never armed — the
 Knight's BLOCK (obj_heroparent's knightblock) is not modelled. The bell is
 wired behind it so landing the mechanic is one assignment.
+
+## TRAP: the preview pane's server is NOT the devserver
+
+The in-app preview starts a PLAIN `python3 -m http.server` on the
+launch.json port, ignoring runtimeExecutable — no no-store headers and no
+module stamping. The browser then reuses its instantiated ES-module graph
+across reloads, and every edit looks like it did nothing (or throws errors
+from code that no longer exists — `process is not defined` from a debug
+line deleted an hour earlier). This burned most of a browser-verification
+session TWICE.
+
+Check `lsof -nP -iTCP:8177 -sTCP:LISTEN` + `ps` for `-m http.server` vs
+`devserver.py`. The reliable setup: run `python3 tools/devserver.py 8178`
+yourself and point the preview tab at :8178.

@@ -14,6 +14,9 @@ import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
 import { createRenderer } from '../render/canvas.js';
+import { createIntroFx, stepIntroFx } from '../sim/intro.js';
+import { drawIntroFx } from '../render/draw/intro-fx.js';
+import { KNIGHT } from '../sim/actors.js';
 import { createAudio } from '../render/audio.js';
 import { drainCues } from '../sim/audio.js';
 import { resetTensionBar } from '../render/tensionbar.js';
@@ -257,8 +260,21 @@ function cueLoopNow(name) {
 let over = null;          // the Game Over sequence, once the party is down
 let hitlessDeaths = 0;
 
+// THE OPENING ROAR — obj_knight_roaring_fx, run OUT HERE like the title
+// screen, never inside the sim. The real one plays in the overworld before
+// scr_battle exists, and keeping it driver-side means replay tokens, the
+// whole-fight diff and every suite are byte-identical with or without it.
+// The fight is already built and sits at frame 0 underneath; recording
+// starts when the fight's own loop does.
+let introSeq = null;
+
 function startRun() {
   runMode = title.mode;
+  // Entering from the title gets the roar; ENDLESS and SINGLE skip it (one
+  // is a treadmill, the other a lab). R-reset never replays it.
+  if (runMode === 'normal' || runMode === 'hitless') {
+    introSeq = createIntroFx(KNIGHT.x + 20, KNIGHT.ystart - 20);
+  }
   // The director reads this: ENDLESS must not reach the ending.
   state.runMode = runMode;
   mode = runMode === 'single' ? 'practice' : 'fight';
@@ -290,6 +306,39 @@ function frame(now) {
     ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
     drawBackground(ctx, state, renderer.sprites);
     drawTitle(ctx, title, renderer.sprites, ATTACK_MENU);
+    requestAnimationFrame(frame);
+    return;
+  }
+
+  // THE OPENING ROAR, between the title and the fight — the fx runs on the
+  // same 30Hz clock as everything else and draws over the dark background,
+  // which is what the encounter's own room looks like at that moment.
+  // Confirm or cancel skips it; the fight underneath has not stepped once.
+  if (introSeq && !introSeq.done) {
+    const { steps: is, accumulator: ia } = drain(acc, elapsed);
+    acc = ia;
+    for (let i = 0; i < is; i++) {
+      const input = gatedKeys();
+      if (input.confirm || input.cancel) {
+        introSeq.done = true;
+        // The skip press must not fire FIGHT on the other side (the same
+        // held-across-a-transition rule the title uses).
+        maskHeldInput();
+        break;
+      }
+      const cues = [];
+      stepIntroFx(introSeq, cues);
+      if (cues.length) audio.play(cues);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    drawBackground(ctx, state, renderer.sprites);
+    drawIntroFx(ctx, introSeq, renderer.sprites);
+    if (introSeq.done) {
+      introSeq = null;
+      maskHeldInput();
+    }
     requestAnimationFrame(frame);
     return;
   }
