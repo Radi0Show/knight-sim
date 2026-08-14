@@ -149,6 +149,26 @@ if (boltScreenX(geo3, geo3.bolts[0], 0) !== 80 + 3 * BOLT_SPEED) {
   failures.push('bolt spacing is not boltspeed per frame');
 }
 
+// A BAR NOBODY PRESSES MUST STILL END. `boltalive[i] = 0` at
+// `boltframe - boltx < -5` is what retires a missed bolt, and `attacked[i]`
+// latches when a character has no live bolts left — scored or swept past.
+// Without the expiry an unpressed bolt stayed alive, `done` never flipped and
+// the bar hung until something else ended the turn: the "the fight is
+// buffered too long, it takes like 10 seconds" report, worse later in the
+// fight because more bolts mean a likelier miss.
+{
+  const idle = createFightBar({ havechar: [1, 1, 1], seed: 7 });
+  let f = 0;
+  while (!idle.holdDone && f < 2000) { stepFightBar(idle, false); f += 1; }
+  if (!idle.holdDone) failures.push('a bar with no presses never finished (missed bolts never expire)');
+  const lastBolt = Math.max(...idle.bolts.map((b) => b.frame));
+  // last bolt + 5 frames of grace + the 50-frame posttimer (> 50, so 51).
+  const want = lastBolt + 5 + 51;
+  if (Math.abs(f - want) > 2) {
+    failures.push(`unpressed bar ended at ${f}, expected ~${want} (last bolt ${lastBolt} + 5 + 51)`);
+  }
+}
+
 // The corroboration. `round`, not a bare divide.
 if (fightTp(150) !== 15) failures.push(`a critical gives ${fightTp(150)} TP, expected 15`);
 if (fightTp(94) !== 9) failures.push(`fightTp(94) = ${fightTp(94)}, expected round(9.4) = 9`);

@@ -258,6 +258,43 @@ export function stepKnightAnim(state) {
       k.stronghurtanim = false;
     }
   }
+  // THE CHARGE-UP TURN'S OWN CLOCK — `obj_knight_enemy`'s Step:
+  //
+  //     if (chargeupcon == 1) {
+  //         chargeuptimer++;
+  //         if (chargeuptimer == 1) snd_play(snd_knight_powerup_white);
+  //         if ((chargeuptimer % 4) == 0 && chargeuptimer > 10) { ...white
+  //             afterimages... }
+  //
+  // Phase 4's middle turn spawns no bullets at all (ac -1), so this ONE
+  // sound is the whole audible content of "The Knight's hands glow a strange
+  // color..." — without it the wind-up plays in silence. Found by auditing
+  // every snd_play in the live knight objects against the sim's cues.
+  if (k.chargeupcon === 1) {
+    k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
+    if (k.chargeuptimer === 1) cue(state, 'snd_knight_powerup_white');
+  } else if (k.chargeuptimer) {
+    k.chargeuptimer = 0;
+  }
+
+  // `blockanim == 1` — the Knight BLOCKS, and the bell is its whole audio:
+  //
+  //     if (blockanim == 1) { snd_stop(snd_bell); snd_play(snd_bell);
+  //                           idlesprite = spr_roaringknight_block_ol;
+  //                           whiteflash = 2; blockanim = 2; ... }
+  //
+  // `blockanim = 1` is armed by obj_heroparent when a party attack is blocked
+  // (`knightblock == 1`), which this sim does not yet decide — so the arm
+  // never fires today and this is the sound waiting at the end of it. Wired
+  // here rather than left out so that landing the block mechanic is one
+  // assignment, not an audio hunt.
+  if (k.blockanim === 1) {
+    cueStop(state, 'snd_bell');
+    cue(state, 'snd_bell');
+    k.blockanim = 2;
+    k.blocktimer = 0;
+  }
+
   if (k.blockanim === 2) {
     k.blocktimer += 1;
     if (k.blocktimer >= 15) {

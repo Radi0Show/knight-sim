@@ -24,6 +24,7 @@
 // recording grows at the same 0.02.
 
 import { spawn } from '../entity.js';
+import { cue } from '../audio.js';
 import { scrMovetowards, scrEaseOut, lerp } from '../gml.js';
 import { gmlRandomRange, gmlChoose, gmlRandom } from '../rng.js';
 import { pointingStar } from './pointing-star.js';
@@ -101,6 +102,19 @@ export const starsController = {
       const d = spawn(state, pointingStar, { x: cone.x + 22, y: cone.y + 56 });
       d.difficulty = e.difficulty ?? 0;
       d.side = e.side ?? 1;
+
+      // EVERY STAR DROPS WITH A SOUND, and Stars was silent without it:
+      //
+      //     starsound = snd_play_pitch(snd_stardrop, 0.5);
+      //     snd_volume(starsound, 0.5, 0);
+      //
+      // Pitched down half and at half volume, once per spawn — roughly every
+      // four frames while the cone is open, so it is the attack's whole
+      // texture as the fan fills up. Reported from play as "stars is missing
+      // some sounds"; an audit of every snd_play in the live knight objects
+      // against the sim's cues (the same sweep that found the tunnel sword's
+      // jump and the charge-up's powerup) is what confirmed which.
+      cue(state, 'snd_stardrop', 0.5, 0.5);
 
       let direction;
       let speed;

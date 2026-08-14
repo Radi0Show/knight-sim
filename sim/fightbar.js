@@ -295,6 +295,25 @@ export function stepFightBar(bar, press = false, perChar = [false, false, false]
     }
   }
 
+  // A MISSED BOLT DIES ON ITS OWN, five frames past the line:
+  //
+  //     if ((boltframe[i] - boltx) < -5) boltalive[i] = 0;
+  //
+  // and `attacked[i]` latches when that character has no live bolts left —
+  // whether they were SCORED or simply swept past. Without the expiry a bolt
+  // nobody pressed stayed alive forever, so `attacked[]` never completed,
+  // `done` never flipped, `posttimer` never started and THE BAR NEVER ENDED.
+  // The turn only moved on when something else ended it, which is the "the
+  // fight is buffered too long and it just takes like 10 seconds" report —
+  // and it happens on the attacks with the most bolts, later in the fight,
+  // because the more bolts a bar has the likelier one is left unpressed.
+  //
+  // The window that SCORES is `close < 15 && close > -5`; a bolt therefore
+  // dies on exactly the frame it leaves that window, never before.
+  for (const b of bar.bolts) {
+    if (b.alive && b.frame - bar.boltx < -5) b.alive = false;
+  }
+
   for (let i = 0; i < 3; i++) {
     if (!bar.havechar[i] || bar.attacked[i]) continue;
     if (!bar.bolts.some((b) => b.alive && b.char === i)) bar.attacked[i] = true;
