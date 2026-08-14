@@ -273,7 +273,14 @@ export function drawIntroScene(ctx, sc, sprites) {
       drawSpriteExt(ctx, entry, sc.marker.index, k.x - cam, k.y, 2, 2, 0, null, 1);
     }
   } else if (k.visible) {
-    // The rising sword draws BEHIND him (the actor's Draw does sword first).
+    // THE ACTOR'S DRAW ORDER, which a first pass had backwards: the MAIN
+    // SPRITE paints first, the sword AFTER — the blade sits OVER him — and
+    // grab_hand over both (obj_ch3_PTB02_roaringknight Draw, state 0).
+    const entry = sprites.get(k.sprite);
+    if (entry) {
+      const frames = entry.meta.frames ?? 1;
+      drawSpriteExt(ctx, entry, Math.floor(k.index) % frames, k.x - cam, k.y, 2, 2, 0, null, 1);
+    }
     if (k.sword_active) {
       const sword = sprites.get('spr_roaringknight_sword');
       if (sword) {
@@ -281,7 +288,10 @@ export function drawIntroScene(ctx, sc, sprites) {
         const sy = k.y + k.y_base_pos;
         if (k.sword_appear) {
           // Flashing in: alpha sword_alpha + sin(alpha_siner), with the
-          // original's below-hand slot cut out (header note).
+          // original's below-hand region cut out — draw_rectangle is
+          // INCLUSIVE of both corners, so x+34..x+75 is 42 columns; a
+          // 41-wide rect left a 2px blade sliver visibly rising from the
+          // void below (reported from play as "coming from below").
           const alpha = Math.max(0, Math.min(1,
             k.sword_flash ? k.sword_alpha + Math.sin(k.alpha_siner) : 1));
           swordCanvas = getCanvas(swordCanvas, VIEW_W, VIEW_H);
@@ -291,8 +301,7 @@ export function drawIntroScene(ctx, sc, sprites) {
           drawSpriteExt(sg, sword, 0, sx, sy, 2, 2, 0, null, 1);
           sg.globalCompositeOperation = 'destination-out';
           sg.fillStyle = '#000';
-          // ossafe_fill_rectangle(x+34 .. x+75, y+58 .. bottom) alpha-zeroed.
-          sg.fillRect(sx + 34, k.y + 58, 41, VIEW_H);
+          sg.fillRect(sx + 34, k.y + 58, 42, VIEW_H);
           sg.globalCompositeOperation = 'source-over';
           ctx.save();
           ctx.globalAlpha = alpha;
@@ -303,16 +312,11 @@ export function drawIntroScene(ctx, sc, sprites) {
         }
       }
     }
-    const entry = sprites.get(k.sprite);
-    if (entry) {
-      const frames = entry.meta.frames ?? 1;
-      drawSpriteExt(ctx, entry, Math.floor(k.index) % frames, k.x - cam, k.y, 2, 2, 0, null, 1);
-      if (k.grab_hand) {
-        const hand = sprites.get('spr_roaringknight_sword_grab_hand_new');
-        if (hand) {
-          drawSpriteExt(ctx, hand, Math.floor(k.index) % (hand.meta.frames ?? 1),
-            k.x - cam, k.y, 2, 2, 0, null, 1);
-        }
+    if (k.grab_hand && entry) {
+      const hand = sprites.get('spr_roaringknight_sword_grab_hand_new');
+      if (hand) {
+        drawSpriteExt(ctx, hand, Math.floor(k.index) % (hand.meta.frames ?? 1),
+          k.x - cam, k.y, 2, 2, 0, null, 1);
       }
     }
   }

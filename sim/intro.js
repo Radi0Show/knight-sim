@@ -383,12 +383,17 @@ export function stepIntroScene(sc, cues) {
           sc.phase = 'fade';
           sc.phaseT = 0;
           // The glide's endpoints: from the overworld anchor to the battle
-          // actor's (sim/actors.js KNIGHT), converted to this scene's world.
+          // actor's (sim/actors.js KNIGHT) — and onto its exact FIRST-FRAME
+          // hover: the fight's siner2 starts at 0, so its opening y is
+          // 78 + cos(0)*8 = 86. Handing off mid-bob popped the swap frame
+          // by up to 16px (reported from play). The intro's own hover
+          // pauses here and the glide drives y directly to 86.
+          k.hoverPause = true;
           sc.glide = {
             fromX: k.x,
-            fromY: k.ystart,
+            fromY: k.y,
             toX: sc.camX + 425,
-            toY: 78,
+            toY: 86,
           };
         } else {
           m.timer = MARKER_DELAYS[m.delayIndex];
@@ -403,8 +408,10 @@ export function stepIntroScene(sc, cues) {
       const t = Math.min(1, sc.phaseT / 45);
       const out = 1 - (1 - t) * (1 - t);
       sc.bg.fadeAlpha = 1 - t;
+      // The hover is paused (marker handoff); y is driven directly onto the
+      // fight's deterministic opening hover position (86 — see the glide).
       k.x = sc.glide.fromX + (sc.glide.toX - sc.glide.fromX) * out;
-      k.ystart = sc.glide.fromY + (sc.glide.toY - sc.glide.fromY) * out;
+      k.y = sc.glide.fromY + (sc.glide.toY - sc.glide.fromY) * out;
       if (sc.phaseT >= 50) {
         sc.done = true;
       }
