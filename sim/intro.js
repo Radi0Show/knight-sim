@@ -226,8 +226,12 @@ export function createIntroScene() {
 // The actor stamps: spr_roaringknight_sword_appear_new frames 0..7 on
 // tick-counted delays (the whole block sits inside `aetimer % move_speed`).
 const ACTOR_STAMPS = [2, 2, 2, 2, 2, 4, 2, 2];
-// The room marker's per-frame delays for frames 7 -> 11
-// (sword_draw_timestamps[0..3] of [8, 1, 6, 6, 6, 6, 1, 2, 2, 6, 2, 8]).
+// The room marker's per-frame delays, [8, 1, 6, 6, ...] — but PTB02's
+// sword_draw_timer field starts at 0 (Create), so the FIRST decrement fires
+// immediately: frame 7 shows for one frame, then index 1 (the SLASH, frame 8)
+// for timestamps[1] = 1 frame, then 9 and 10 for 6 each, then 11 -> ready.
+// timestamps[0] = 8 is never consumed. Holding frame 7 for those 8 frames
+// (the earlier reading) stalled the flourish, reported from play.
 const MARKER_DELAYS = [8, 1, 6, 6];
 
 /** One 30Hz tick of the whole scene. */
@@ -279,8 +283,11 @@ export function stepIntroScene(sc, cues) {
       // c_wait(30), then state 99 + visible 0 + the fx one frame later.
       if (sc.phaseT >= 31) {
         k.visible = false;
-        // The fx lives in SCREEN space (its draw has no camera term).
-        sc.fx = createIntroFx(k.x - sc.camX + 20, k.ystart - 20);
+        // The fx lives in SCREEN space (its draw has no camera term), and is
+        // created at the knight's LIVE hover y — the original passes
+        // roaring_knight.y, so the swap inherits the hover phase instead of
+        // snapping to ystart (which popped up to 8px).
+        sc.fx = createIntroFx(k.x - sc.camX + 20, k.y - 20);
         sc.phase = 'roar';
         sc.phaseT = 0;
       }
@@ -296,8 +303,9 @@ export function stepIntroScene(sc, cues) {
       }
       break;
     case 'reappear':
-      // The script rolls straight into con 3.1 -> 4: draw_sword.
-      if (sc.phaseT >= 16) {
+      // The script rolls straight into con 3.1 -> 4: draw_sword — the block
+      // handoff is a c_waitcustom cycle, two frames, not a held beat.
+      if (sc.phaseT >= 2) {
         k.draw_sword = true;
         sc.phase = 'sword';
         sc.phaseT = 0;
@@ -355,9 +363,11 @@ export function stepIntroScene(sc, cues) {
         }
       }
       if (k.battle_ready) {
-        // The room takes over: knight hidden, the marker at frame 7.
+        // The room takes over: knight hidden, the marker at frame 7, timer 0
+        // — the first decrement advances it on the very next frame (header
+        // note on MARKER_DELAYS).
         k.visible = false;
-        sc.marker = { index: 7, delayIndex: 0, timer: MARKER_DELAYS[0] };
+        sc.marker = { index: 7, delayIndex: 0, timer: 0 };
         sc.phase = 'marker';
         sc.phaseT = 0;
       }

@@ -20,6 +20,8 @@ import { drawIntroScene } from '../render/draw/intro-fx.js';
 import { createVictoryScene, stepVictoryScene } from '../sim/victory-scene.js';
 import { drawVictoryScene } from '../render/draw/victory-scene.js';
 import { KNIGHT, PARTY as PARTY_ACTORS } from '../sim/actors.js';
+import { damageKnight } from '../sim/knight.js';
+import { spawnDmgNumber } from '../sim/dmgnumbers.js';
 import { createAudio } from '../render/audio.js';
 import { drainCues } from '../sim/audio.js';
 import { resetTensionBar } from '../render/tensionbar.js';
@@ -221,6 +223,14 @@ window.addEventListener('keydown', (e) => {
   }
   // B — copy a replay token for a bug report.
   if (e.code === 'KeyB') copyReplay();
+  // E — DEBUG HIT: 1000 through the real damage path (scr_damage_enemy's
+  // anim/state effects included), so the ending is reachable in seconds when
+  // bug-fixing it. A practice-tool tool, shown in the HUD like every key.
+  // 1000 >= 100 so it strobes like any heavy hit, and the number is drawn.
+  if (e.code === 'KeyE' && mode === 'fight' && !introSeq && !victory && !cutsceneSeq) {
+    const dealt = damageKnight(state, 1000);
+    if (dealt > 0) spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, 1);
+  }
 });
 
 // ---- BUG REPORTS --------------------------------------------------------
@@ -622,7 +632,7 @@ function frame(now) {
     ` · HP ${state.partyHp.join('/')}` +
     ` · TP ${Math.floor((state.tension / 250) * 100)}%` +
     ` · sprites ${renderer.spriteCount}` +
-    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · <b style="color:#e0a">B report a bug</b>`;
+    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · E debug-hit 1000 · <b style="color:#e0a">B report a bug</b>`;
 
   requestAnimationFrame(frame);
 }
