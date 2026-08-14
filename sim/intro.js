@@ -9,9 +9,9 @@
 //   obj_afterimage_screen Create/Draw           — the screen-copy ghosts
 //   obj_ch3_PTB02 Create/Step (cons 3..4)       — staging, timing, sword draw
 //   obj_ch3_PTB02_roaringknight Create/Step/Draw — hover, draw_sword sequence
-//   obj_dw_snow_zone_battle_bg Create/Draw      — the snow backdrop + the
-//                                                 split that slides it off the
-//                                                 screen edges
+//   obj_dw_snow_zone_parallax Create/Draw       — the room's vista (the room
+//                                                 itself is black, no tiles;
+//                                                 see dump_room.csx)
 //
 // THE TIMELINE, per the room's cutscene script (con 3 -> 3.1 -> 4):
 //   30f    the tableau — snow zone backdrop, the party halted at the fountain
@@ -34,9 +34,10 @@
 //                  grab_hand, frames 0..7 on stamps [2,2,2,2,2,4,2,2] (ticks)
 //            room: marker takes over, frames 7..11 on delays [8,1,6,6]
 //                  (sword_draw_timestamps[0..3]), ready at frame 11
-//   then   the handoff: the snow backdrop SPLITS and both halves slide off
-//          the screen edges at 15px/frame (obj_dw_snow_zone_battle_bg's
-//          split_screen) — and the fight is underneath
+//   then   the handoff: the scenery FADES out over 45 frames while the
+//          Knight glides from his overworld anchor to the battle's
+//          (425, 78) — the fight is underneath, its fountain already in
+//          line with the vista's (battle column x 138, vista glow x 140)
 //
 // THE RED LAYER (obj_knight_circle, created white at the climax): its Step
 // walks g and b toward 0 at 255/28 a frame but never walks r — the approach
@@ -46,13 +47,15 @@
 // frame toward radius 960 — the whole screen layered red until the fx dies,
 // then image_alpha -= 0.1 fades it out.
 //
-// LABELLED APPROXIMATIONS: the screen ghosts snapshot the canvas rather than
-// GameMaker's application surface (same effect, different plumbing); the
-// in-rush particles keep counts/ring/pull but not scr_lerpvar's exact curves;
-// the sword materialise uses canvas compositing against spr_roaringknight_
-// sword_mask's alpha rather than dest-alpha GPU blending; the final handoff
-// borrows the snow zone's own battle-entry split (the Knight's entry proper
-// is scr_battle's swirl, which the sim does not stage). Skippable with
+// LABELLED APPROXIMATIONS: the screen ghosts mirror the canvas rather than
+// GameMaker's application surface (the original's Draw re-copies the live
+// screen EVERY frame — a scaled, fading echo of the current frame, never a
+// frozen snapshot); the in-rush particles keep counts/ring/pull but not
+// scr_lerpvar's exact curves; the sword materialise uses canvas compositing
+// with the original's below-hand slot cut out rather than dest-alpha GPU
+// blending; the final handoff fades the scenery over 45 frames and glides
+// the Knight to his battle anchor (the real entry is scr_battle's swirl +
+// darkener, not staged — this stand-in is player-directed). Skippable with
 // confirm/cancel — a practice-tool addition.
 
 /** The fx at the knight's overworld offset. */
@@ -172,7 +175,7 @@ const CAM_X = 2230;
 export function createIntroScene() {
   return {
     t: 0,
-    phase: 'tableau', // tableau -> roar -> reappear -> sword -> marker -> split -> done
+    phase: 'tableau', // tableau -> roar -> reappear -> sword -> marker -> fade -> done
     phaseT: 0,
     camX: CAM_X,
     done: false,
@@ -216,7 +219,7 @@ export function createIntroScene() {
     circle: null, // the red layer
     ghosts: [], // { born, faderate } — renderer snapshots the canvas at birth
     ghostSchedule: [], // climax repeats not yet born
-    bg: { fountain_speed: 0.2, splitOffset: 0, split: false },
+    bg: { fountain_speed: 0.2, fadeAlpha: 1 },
   };
 }
 
@@ -367,21 +370,35 @@ export function stepIntroScene(sc, cues) {
         m.delayIndex += 1;
         m.index = 7 + m.delayIndex;
         if (m.index >= 11) {
-          sc.bg.split = true;
-          sc.phase = 'split';
+          sc.phase = 'fade';
           sc.phaseT = 0;
+          // The glide's endpoints: from the overworld anchor to the battle
+          // actor's (sim/actors.js KNIGHT), converted to this scene's world.
+          sc.glide = {
+            fromX: k.x,
+            fromY: k.ystart,
+            toX: sc.camX + 425,
+            toY: 78,
+          };
         } else {
           m.timer = MARKER_DELAYS[m.delayIndex];
         }
       }
       break;
     }
-    case 'split':
-      // obj_dw_snow_zone_battle_bg: bg_pos_offset -> 320 at 15/frame.
-      sc.bg.splitOffset = Math.min(320, sc.bg.splitOffset + 15);
-      if (sc.bg.splitOffset >= 320 && sc.phaseT >= 30) {
+    case 'fade': {
+      // The player-directed handoff: scenery fades over 45 frames while the
+      // Knight eases onto the battle anchor, so the fight's first frame draws
+      // him where the intro left him. (The real entry is scr_battle's swirl.)
+      const t = Math.min(1, sc.phaseT / 45);
+      const out = 1 - (1 - t) * (1 - t);
+      sc.bg.fadeAlpha = 1 - t;
+      k.x = sc.glide.fromX + (sc.glide.toX - sc.glide.fromX) * out;
+      k.ystart = sc.glide.fromY + (sc.glide.toY - sc.glide.fromY) * out;
+      if (sc.phaseT >= 50) {
         sc.done = true;
       }
       break;
+    }
   }
 }

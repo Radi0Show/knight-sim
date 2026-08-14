@@ -17,10 +17,11 @@
 // make_color_rgb(r, g, b) at the edge. The sim steps g/b down and leaves r
 // (the original's missing line), so this paints white -> red.
 //
-// THE SCREEN GHOSTS: obj_afterimage_screen copies the application surface and
-// redraws it growing 0.01/frame around its anchor at alpha 0.5, fading by its
-// faderate. Here the canvas itself is snapshot at ghost birth — same effect,
-// different plumbing (labelled in sim/intro.js).
+// THE SCREEN GHOSTS: obj_afterimage_screen re-copies the application surface
+// EVERY frame and redraws it growing 0.01/frame around its anchor, fading by
+// its faderate — a live radial echo of the current frame. The canvas stands
+// in for the application surface (labelled in sim/intro.js); a frozen-at-
+// birth snapshot is WRONG and smears stale frames into a screenwide blur.
 //
 // LABELLED APPROXIMATIONS: the in-rush particles and sprite afterimages are
 // recreated from frame-seeded randoms with the original's counts, spawn ring
@@ -159,7 +160,7 @@ const VIEW_H = 480;
 // Offscreen canvases, created lazily (renderer-owned pixels, no sim contact).
 let bgCanvas = null;
 let swordCanvas = null;
-const ghostCache = new Map(); // born frame -> snapshot canvas
+let ghostScratch = null; // per-ghost live copy of the canvas
 
 function getCanvas(ref, w, h) {
   if (!ref || ref.width !== w || ref.height !== h) {
@@ -244,17 +245,16 @@ function drawActor(ctx, sprites, a, camX) {
 export function drawIntroScene(ctx, sc, sprites) {
   const cam = sc.camX;
 
-  // 1. The backdrop — rendered to an offscreen so the split can slide two
-  // halves apart (bg_pos_offset), revealing what main.js drew underneath.
+  // 1. The backdrop — rendered to an offscreen so the handoff can fade the
+  // whole scenery as one layer over the fight's own background underneath.
+  // (The vista's fountain glow at x 140 and the battle's column at x 138
+  // sit in line, so the cross-fade keeps the fountain in place.)
   bgCanvas = getCanvas(bgCanvas, VIEW_W, VIEW_H);
   drawBackdrop(bgCanvas, sc, sprites);
-  if (sc.bg.split) {
-    const off = sc.bg.splitOffset;
-    ctx.drawImage(bgCanvas, 0, 0, VIEW_W / 2, VIEW_H, -off, 0, VIEW_W / 2, VIEW_H);
-    ctx.drawImage(bgCanvas, VIEW_W / 2, 0, VIEW_W / 2, VIEW_H, VIEW_W / 2 + off, 0, VIEW_W / 2, VIEW_H);
-  } else {
-    ctx.drawImage(bgCanvas, 0, 0);
-  }
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, sc.bg.fadeAlpha);
+  ctx.drawImage(bgCanvas, 0, 0);
+  ctx.restore();
 
   // 2. The party — depth order is -y (autodepth): higher on screen is
   // further back, so Kris (y 104) paints first and Ralsei (y 190) last.
@@ -337,34 +337,28 @@ export function drawIntroScene(ctx, sc, sprites) {
     ctx.restore();
   }
 
-  // 6. THE SCREEN GHOSTS — snapshot the canvas at birth, redraw growing
-  // 0.01/frame around the fx anchor at alpha 0.5 - age * faderate.
+  // 6. THE SCREEN GHOSTS — obj_afterimage_screen's Draw re-copies the LIVE
+  // application surface EVERY frame and redraws it scaled and fading: a
+  // radial echo of the current frame, never a frozen snapshot (the frozen
+  // version smeared stale frames — reported from play as blur). Each ghost
+  // in depth order copies the canvas as it stands, so the within-frame
+  // feedback compounds exactly like the original's surface chain.
   const anchorX = sc.fx ? sc.fx.x + 128 * 0.42 : VIEW_W / 2;
   const anchorY = sc.fx ? sc.fx.y + 128 * 0.5 : VIEW_H / 2;
   for (const g of sc.ghosts) {
-    let snap = ghostCache.get(g.born);
-    if (!snap && g.born === sc.t) {
-      snap = document.createElement('canvas');
-      snap.width = VIEW_W;
-      snap.height = VIEW_H;
-      snap.getContext('2d').drawImage(ctx.canvas, 0, 0);
-      ghostCache.set(g.born, snap);
-    }
-    if (!snap) continue;
     const age = sc.t - g.born;
     const alpha = 0.5 - age * g.faderate;
     if (alpha <= 0) continue;
     const scale = 1 + age * 0.01;
+    ghostScratch = getCanvas(ghostScratch, VIEW_W, VIEW_H);
+    const gg = ghostScratch.getContext('2d');
+    gg.clearRect(0, 0, VIEW_W, VIEW_H);
+    gg.drawImage(ctx.canvas, 0, 0);
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(anchorX, anchorY);
     ctx.scale(scale, scale);
-    ctx.drawImage(snap, -anchorX, -anchorY);
+    ctx.drawImage(ghostScratch, -anchorX, -anchorY);
     ctx.restore();
-  }
-  // Purge snapshots for ghosts the sim has retired.
-  const live = new Set(sc.ghosts.map((g) => g.born));
-  for (const key of ghostCache.keys()) {
-    if (!live.has(key)) ghostCache.delete(key);
   }
 }
