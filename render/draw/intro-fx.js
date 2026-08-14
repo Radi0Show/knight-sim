@@ -139,9 +139,10 @@ export function drawIntroFx(ctx, e, sprites) {
     drawSpriteExt(ctx, entry, e.image_index, e.x - 20 + xoff, e.y + 20 + yoff,
       e.image_xscale, e.image_yscale, 0, null, e.image_alpha ?? 1);
     if (e.whiteout) {
-      // tinted() takes the [r,g,b] ARRAY — a string silently no-ops (gm.js).
+      // The original's gpu fog: a SOLID WHITE copy, not a tint — a white
+      // multiply-tint is a no-op on this dark art (gm.js, fogged).
       drawSpriteExt(ctx, entry, e.image_index, e.x - 20 + xoff, e.y + 20 + yoff,
-        e.image_xscale, e.image_yscale, 0, c_white, e.whiteout_counter);
+        e.image_xscale, e.image_yscale, 0, c_white, e.whiteout_counter, true);
     }
   } else {
     const bob = Math.sin(e.frame * 0.2) * 2;

@@ -89,11 +89,41 @@ export function tinted(img, color) {
  * ORIGIN, scale is about that origin, and image_angle is counter-clockwise
  * degrees. `color` multiplies the texture; pass null to leave it alone.
  */
-export function drawSpriteExt(ctx, entry, sub, x, y, xs, ys, angleDeg, color, alpha) {
+/**
+ * GameMaker's FOG (`d3d_set_fog(true, colour, 0, 1)`): every pixel REPLACED
+ * by the colour, alpha kept — a solid silhouette. This is NOT what the
+ * draw-colour argument does (that multiplies; see tinted above), and a white
+ * `tinted` is a silent no-op on dark art — which is why the fog draws (the
+ * intro's whiteout copy, the charge-up's white knight) need this instead.
+ */
+export function fogged(img, color) {
+  if (!img) return null;
+  if (!Array.isArray(color)) {
+    throw new TypeError(`fogged() needs an [r,g,b] array, got ${JSON.stringify(color)}`);
+  }
+  const key = img.src ? `fog|${img.src}|${color[0]},${color[1]},${color[2]}` : null;
+  if (key) {
+    const hit = tintCache.get(key);
+    if (hit) return hit;
+  }
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = rgb(color);
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(img, 0, 0);
+  if (key) tintCache.set(key, c);
+  return c;
+}
+
+export function drawSpriteExt(ctx, entry, sub, x, y, xs, ys, angleDeg, color, alpha, fog = false) {
   if (!entry || !entry.frames.length) return;
   const img = entry.frames[((sub | 0) % entry.frames.length + entry.frames.length) % entry.frames.length];
   if (!img) return;
-  const src = color ? tinted(img, color) : img;
+  const src = color ? (fog ? fogged(img, color) : tinted(img, color)) : img;
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
   ctx.translate(x, y);

@@ -12,7 +12,7 @@ import { drawPointingStar } from './draw/pointing-star.js';
 import { drawPointingStarchild } from './draw/pointing-starchild.js';
 import { drawRoaring, drawScreenPiece, resetScreenCut, roaringCover, drawRoaringCover } from './draw/roaring.js';
 import { drawRoaringknightSlash } from './draw/slash.js';
-import { drawGrowtangle, tinted } from './draw/gm.js';
+import { drawGrowtangle, tinted, fogged } from './draw/gm.js';
 import { drawSplitCut } from './draw/splitcut.js';
 import { drawMenu } from './menu.js';
 import { drawTensionBar } from './tensionbar.js';
@@ -223,11 +223,63 @@ export async function createRenderer(canvas) {
      * change. The cone does the opposite and really does set visible.
      */
     obj_knight_enemy(ctx, e, state) {
+      const k = state.knight;
+      // ROARING's launch (chargeupcon 2+): he is gone until the CleanUp
+      // hands him back — the intended 10-frame fade is dead code (see
+      // sim/knight.js), so this is simply invisible.
+      if (k?.chargeupcon >= 2) return true;
+      // THE CHARGE-UP TURN (chargeupcon 1) — the Draw's two layers:
+      //
+      //     d3d_set_fog(true, c_white, 0, 1);
+      //     draw_sprite_ext(idlesprite, siner, x, y, ..., chargeuptimer / 10);
+      //     d3d_set_fog(false, ...);
+      //
+      // a SOLID WHITE copy fading in over the normal sprite in 10 frames —
+      // and, from the Step, obj_afterimage_fade_to_white copies every 4th
+      // frame past timer 10 (speed 4, random direction, alpha 0.6): the
+      // white trails shedding off him. The trails here are frame-seeded
+      // renderer ghosts (Draw-random rule; the oracle's RNG draws for them
+      // are covered by the per-launch re-anchor) with the drift and count
+      // kept and the fade rate approximated — LABELLED.
+      if (k?.chargeupcon === 1) {
+        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
+        if (!entry || !entry.frames.length) return false;
+        const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
+        const t = k.chargeuptimer ?? 0;
+        // The trails, oldest first: one born every 4th frame past 10, each
+        // drifting speed 4 along a seeded direction, fading over ~12 frames.
+        for (let back = 12; back >= 1; back--) {
+          const bf = t - back;
+          if (bf <= 10 || bf % 4 !== 0) continue;
+          const dir = frandCanvas(bf, 71) * Math.PI * 2;
+          const dist = back * 4;
+          const alpha = Math.max(0, 0.6 - back * 0.05);
+          if (alpha <= 0) continue;
+          // FOGGED, not tinted — a white multiply is a no-op on dark art.
+          blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
+            e.x + Math.cos(dir) * dist, e.y + Math.sin(dir) * dist,
+            e.image_xscale ?? 1, e.image_yscale ?? 1, 0, alpha);
+        }
+        // The base sprite, then the white silhouette fading in over it.
+        blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y,
+          e.image_xscale ?? 1, e.image_yscale ?? 1, 0, e.image_alpha ?? 1, e.image_blend);
+        blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
+          e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, 0,
+          Math.min(1, t / 10));
+        return true;
+      }
       return state.entities.some(
         (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
       );
     },
   };
+
+  /** Frame-seeded random for the charge trails (the 30Hz Draw-random rule). */
+  function frandCanvas(frame, salt) {
+    let t = (frame * 374761393 + salt * 668265263) >>> 0;
+    t = Math.imul(t ^ (t >>> 13), 1274126177) >>> 0;
+    return ((t ^ (t >>> 16)) >>> 0) / 4294967296;
+  }
 
   // One reusable offscreen buffer for the compositing the Draw ports need.
   let scratchCanvas = null;

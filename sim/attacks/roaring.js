@@ -61,6 +61,11 @@ export const roaring2 = {
     e.image_speed = 0;
     e.image_index = 0;
 
+    // `obj_knight_enemy.chargeupcon = 2` — the launch hides the white
+    // charged knight (instantly, in effect: sim/knight.js has the dead-fade
+    // note). The CleanUp below restores him.
+    if (state.knight) state.knight.chargeupcon = 2;
+
     e.timer = 0;
     e.intensity = 1.5;
     e.attack_timer = 0;
@@ -513,6 +518,9 @@ export const roaring2 = {
           (x) => x.alive && x.type.name === 'obj_knight_enemy',
         );
         if (knight) knight.image_alpha = 1;
+        // CleanUp also hands the knight back: `chargeupcon = 0` — he was
+        // hidden from ROARING's launch (con 2, see create below).
+        if (state.knight) state.knight.chargeupcon = 0;
 
         // `with (obj_growtangle) { growcon = 3; timer = 0; }` — the arena
         // collapses instead of just vanishing when the turn is swept.

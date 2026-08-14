@@ -274,9 +274,18 @@ export function stepKnightAnim(state) {
   if (k.chargeupcon === 1) {
     k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
     if (k.chargeuptimer === 1) cue(state, 'snd_knight_powerup_white');
-  } else if (k.chargeuptimer) {
-    k.chargeuptimer = 0;
+    // `if (chargeuptimer == 60) global.turntimer = 1;` — THE CHARGE TURN IS
+    // SHORT. The wind-up ends itself two seconds in; without this the empty
+    // turn ran the default 90 and the finale arrived a second late.
+    if (k.chargeuptimer === 60) state.turntimer = 1;
   }
+  // chargeupcon 2 is ROARING's launch (obj_knight_roaring2's Create sets
+  // it). The Draw's intended 10-frame white fade-out is dead code in the
+  // real sequence — chargeuptimer is already ~60+, so `(10 - t) / 10` is
+  // negative (invisible at once) and the `== 10` handoff to con 3 never
+  // fires. The effective behaviour, ported as such: he vanishes instantly
+  // and stays gone until the roar's CleanUp restores him (chargeupcon = 0,
+  // image_alpha = 1). The renderer reads chargeupcon >= 2 as hidden.
 
   // `blockanim == 1` — the Knight BLOCKS, and the bell is its whole audio:
   //
