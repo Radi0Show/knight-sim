@@ -309,3 +309,22 @@ __cutscene.drive(t) inspects any ending frame; drawSnowBackdrop is shared
 intro/ending and camera-aware. Ids resolved: rsprite 686 =
 spr_susier_dark, loopsfx 169 = snd_suslaugh, dmgwriter type 12 =
 spr_battlemsg frame 13 in c_red.
+
+## 2026-08-14 (last) — THE TRIM: csx-extracted sprites lost their margins
+
+extract_sprite.csx exported the texture-page item UNPADDED: the PNG is
+trimmed to inked content while the manifest carries full-sprite dims and
+origins, so every csx-extracted sprite drew shifted by its (TargetX,
+TargetY) — 38 sprites across the intro/victory/ending/backdrop/textbox,
+reported from play as "the sword is not in the correct spot" (28px).
+The script now passes includePadding; all 38 re-exported. RULE: any new
+extraction must verify PNG dims == manifest w/h (the check is three
+lines of node; the mismatch is the whole bug).
+
+Diagnosed statically after a failed detour: a capture bundle that stages
+the real intro cutscene (tools/patches/intro_capture.csx — screen_save
+every 2nd frame; needs the instrumented LAUNCHER game.ios copied in,
+the stock one sits at chapter select) is built and works up to the
+chapter boot, kept for future ground-truth needs. macOS screencapture
+needs a Screen Recording permission this process lacks; screen_save
+avoids it.
