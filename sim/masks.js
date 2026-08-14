@@ -251,15 +251,25 @@ export function masksOverlap(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   const top = Math.floor(py + miny);
   const bottom = Math.ceil(py + maxy) - 1;
 
+  // MASK A'S ORIGIN IS SUBTRACTED. Every caller before the graze box passed
+  // the heart (origin 0,0), so `ax + cx` happened to be right and the origin
+  // term was invisible — until GRAZE_MASK, whose (25,25) origin makes the
+  // box CENTRED on its position. Without the subtraction the graze area sat
+  // 25px down-right of the soul, and the whole-fight diff caught it as a
+  // graze on a star with twenty pixels of clear air between it and the real
+  // box. The calibrated A-side of every earlier verification is untouched:
+  // subtracting zero changes nothing.
+  const aox = maskA.originX ?? 0;
+  const aoy = maskA.originY ?? 0;
   for (let cy = at; cy <= ab; cy++) {
     const rowA = maskA.px[cy];
-    const wy = ay + cy;
+    const wy = ay + cy - aoy;
     if (wy < top || wy > bottom) continue;
     const dy = wy - py;
 
     for (let cx = al; cx <= ar; cx++) {
       if (!rowA[cx]) continue;
-      const wx = ax + cx;
+      const wx = ax + cx - aox;
       if (wx < left || wx > right) continue;
       const dx = wx - px;
 

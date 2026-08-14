@@ -68,8 +68,10 @@ export function tensionPercent(state) {
 export function stepGraze(state, grazes) {
   if (!state.soul) return;
   let grazeNoise = false;
-  const cx = state.soul.x + 10;
-  const cy = state.soul.y + 10;
+  // The END-STEP lag — see runCollisions. The box tests at last frame's
+  // heart position, not this frame's.
+  const cx = state.grazePrev ? state.grazePrev.x : state.soul.x + 10;
+  const cy = state.grazePrev ? state.grazePrev.y : state.soul.y + 10;
 
   for (const e of state.entities) {
     if (!e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;

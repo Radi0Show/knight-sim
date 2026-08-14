@@ -79,6 +79,21 @@ function gtMaxX(gt) {
 
 export const pointingCone = {
   name: 'obj_knight_pointing_cone',
+  // THE MIXED STEP ORDER, fitted to two exact measurements the pure orders
+  // cannot both satisfy:
+  //
+  //  * frame 145 (the first star): size = us[38] of the anchored stream
+  //    requires the CONTROLLER's rolls before the cone's two drag draws;
+  //  * frame 160 (the squeeze release): the soul leaves the pinned clamp at
+  //    365 = (new box clamp 369, applied first) - 4, requiring the cone's
+  //    drag-and-clamp before the HEART's movement — while the heart is the
+  //    OLDER instance.
+  //
+  // [dc, cone, heart] is the one order satisfying both. The same knob the
+  // sword vortex already needs (its sword steps before its older manager);
+  // GameMaker's real cross-object scheduling remains unexplained, these
+  // measurements are not.
+  stepOrder: -1,
 
   create(e, state) {
     // MEASURED from the recording, like the star's. Not in the GML dump.

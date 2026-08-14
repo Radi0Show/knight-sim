@@ -148,9 +148,17 @@ function runCollisions(state) {
   const heart = state.soul;
   if (!heart || !heart.alive) return;
 
-  // THE GRAZE runs before the hit test, as obj_grazebox's collision event does
-  // — it is gated on `global.inv < 0` and so cannot pay out on a frame the
-  // player is already invulnerable from a hit taken earlier.
+  // THE GRAZE BOX IS ONE FRAME BEHIND THE HEART. obj_grazebox repositions in
+  // its END STEP (`x = obj_heart.x + 10`), and GameMaker runs collision
+  // events BEFORE End Steps — so the box a bullet collides with this frame
+  // sits where the heart was LAST frame. Using the live position made the
+  // sim's box lead the game's by one movement step (4px at full speed),
+  // which the whole-fight diff caught as a graze at f156 that the recording
+  // never pays: the sim clipped a passing star the real box never reaches.
+  //
+  // `grazePrev` is refreshed after the collision phase each frame, and
+  // seeded from the heart's spawn position the frame it is born.
+  if (!state.grazePrev) state.grazePrev = { x: heart.x + 10, y: heart.y + 10 };
   stepGraze(state, grazes);
 
   for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
@@ -266,6 +274,14 @@ export function stepFrame(state, input) {
   runMotion(state);
   runCollisions(state);
   runPhase(state, 'endStep');
+
+  // obj_grazebox's End Step: the box moves to the heart NOW, after this
+  // frame's collisions already tested against where it was. See runCollisions.
+  if (state.soul && state.soul.alive) {
+    state.grazePrev = { x: state.soul.x + 10, y: state.soul.y + 10 };
+  } else {
+    state.grazePrev = null;
+  }
 
   // Destroyed entities disappear before the row is written, matching GML
   // instance_destroy() taking effect immediately.

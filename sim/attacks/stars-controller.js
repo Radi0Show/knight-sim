@@ -31,6 +31,9 @@ import { heartFollower } from './pointing-starchild.js';
 
 export const starsController = {
   name: 'obj_dbulletcontroller',
+  // See pointingCone's stepOrder note. The controller precedes the cone,
+  // which precedes the heart: [-2, -1, 0].
+  stepOrder: -2,
 
   create(e, state) {
     e.btimer = 0;
