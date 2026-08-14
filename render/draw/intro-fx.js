@@ -1,23 +1,33 @@
-// obj_knight_roaring_fx's Draw — the opening roar. See sim/intro.js for the
-// state machine and the sourcing; this file is the Draw event plus the three
-// helper objects the sequence spawns (crush ring, white circle, particles),
-// drawn from fields rather than instances.
+// The pre-fight sequence's Draw — the snow-zone tableau, the roar fx, the red
+// circle layer, the screen-copy ghosts, the sword draw and the backdrop split.
+// State machine and sourcing in sim/intro.js; this file only paints.
 //
+// The fx portion keeps the original Draw's shape:
 //     if (bar) draw_line_width_color(px, py - bar*40, px, py + bar*40, bar, white)
 //     shift_ol: drawn at (x - 20 + jitter, y + 20 + jitter), and while
 //               `whiteout` a WHITE copy on top at whiteout_counter alpha
-//               (gpu_set_fog(true, c_white) around a second draw)
 //     pose_ol:  drawn at (x, y + sin(time * 0.2) * 2) — the settled bob
 //
 // The jitter is `irandom_range(-1, 1)` per axis in the original's Draw — a
 // Draw-event random, so here it is a pure function of the sim frame (the
 // 30Hz-vs-monitor rule; CLAUDE.md has the session the distinction cost).
 //
-// LABELLED APPROXIMATIONS: the in-rush particles (obj_particle_generic with
-// scr_lerpvar easings) and the screen afterimages are recreated from
-// frame-seeded randoms with the original's counts, spawn ring (40..240) and
-// inward pull, but not its exact easing curves; obj_knight_crush's hsv ramp
-// is drawn as a white ring fading with the same radius/alpha/timing.
+// THE RED LAYER: obj_knight_circle's Draw with draw_in_box false — additive
+// (`bm_add`), a gradient circle from color_1 (black) at the centre to
+// make_color_rgb(r, g, b) at the edge. The sim steps g/b down and leaves r
+// (the original's missing line), so this paints white -> red.
+//
+// THE SCREEN GHOSTS: obj_afterimage_screen copies the application surface and
+// redraws it growing 0.01/frame around its anchor at alpha 0.5, fading by its
+// faderate. Here the canvas itself is snapshot at ghost birth — same effect,
+// different plumbing (labelled in sim/intro.js).
+//
+// LABELLED APPROXIMATIONS: the in-rush particles and sprite afterimages are
+// recreated from frame-seeded randoms with the original's counts, spawn ring
+// (40..240) and inward pull, but not its exact easing curves; the crush ring
+// stands in for obj_knight_crush's hsv ramp; the materialising sword is drawn
+// at its flashing alpha with the original's below-hand slot cut out rather
+// than through spr_roaringknight_sword_mask's dest-alpha pass.
 
 import { drawSpriteExt, c_white } from './gm.js';
 
@@ -78,7 +88,7 @@ export function drawIntroFx(ctx, e, sprites) {
     }
   }
 
-  // Screen afterimages once the roar accelerates: ghost copies around the
+  // Sprite afterimages once the roar accelerates: ghost copies around the
   // pose, every 3rd frame while attack_speed is up.
   if (e.fxState === 'roaring' && e.attack_speed > 0 && entry) {
     for (let g = 1; g <= 3; g++) {
@@ -90,8 +100,8 @@ export function drawIntroFx(ctx, e, sprites) {
     }
   }
 
-  // The white circle at the roar itself — obj_knight_circle in pure white,
-  // reusing its own growth feel: a fast-expanding fading ring.
+  // The white circle FLASH at the roar itself (the persistent red layer is
+  // drawn by the scene, over everything).
   if (e.circleFlash > 0 && e.circleFlash < 30) {
     const t = e.circleFlash / 30;
     ctx.save();
@@ -138,4 +148,223 @@ export function drawIntroFx(ctx, e, sprites) {
       e.image_xscale, e.image_yscale, 0, null, e.image_alpha ?? 1);
   }
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// The scene.
+
+const VIEW_W = 640;
+const VIEW_H = 480;
+
+// Offscreen canvases, created lazily (renderer-owned pixels, no sim contact).
+let bgCanvas = null;
+let swordCanvas = null;
+const ghostCache = new Map(); // born frame -> snapshot canvas
+
+function getCanvas(ref, w, h) {
+  if (!ref || ref.width !== w || ref.height !== h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+  return ref;
+}
+
+// The snow-zone backdrop — obj_dw_snow_zone_parallax's Draw (the ROOM's own
+// vista object; the room itself is a black void with no tile layers — dumped
+// via dump_room.csx: room_dw_snow_zone, 2960x480, BGCOLOR black, zero tiles).
+// Every anchor below is the original's WORLD coordinate; with camerax() past
+// the 1320/860/2100 clamps the whole composition is STATIC in world space,
+// so screen = world - camX. The load-bearing beat for this camera: a solid
+// black fill from world x 2600 rightward — the void the Knight hovers in.
+// The fountain-hills draws sit far left of this camera and never show.
+const ROOM_W = 2960;
+
+// scr_draw_sprite_tiled_area: sprite tiled from a phase anchor, clipped to an
+// area. Single-frame layers only (index 0 everywhere here).
+function tiledArea(g, entry, phaseX, phaseY, x1, y1, x2, y2) {
+  const tw = entry.meta.w * 2;
+  const th = entry.meta.h * 2;
+  let startX = phaseX + Math.ceil((x1 - phaseX) / tw - 1) * tw;
+  let startY = phaseY + Math.ceil((y1 - phaseY) / th - 1) * th;
+  g.save();
+  g.beginPath();
+  g.rect(x1, y1, x2 - x1, y2 - y1);
+  g.clip();
+  for (let y = startY; y < y2; y += th) {
+    for (let x = startX; x < x2; x += tw) {
+      if (x + tw < 0 || x > VIEW_W || y + th < 0 || y > VIEW_H) continue;
+      drawSpriteExt(g, entry, 0, x, y, 2, 2, 0, null, 1);
+    }
+  }
+  g.restore();
+}
+
+function drawBackdrop(target, sc, sprites) {
+  const g = target.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#000'; // the room's BGCOLOR
+  g.fillRect(0, 0, VIEW_W, VIEW_H);
+  const S = (name) => sprites.get(name);
+  const cam = sc.camX;
+  const fs = sc.bg.fountain_speed;
+  const xo = 1320; // x_offset, clamped (camerax() >= 1320)
+  const yo = -10; // y_offset
+  const bgH = 480; // layer_1 height * 2
+
+  const l1 = S('spr_dw_snow_zone_bg_parallax_layer_1');
+  if (l1) tiledArea(g, l1, xo - cam, yo + 20, xo * 0.9 - cam, yo + 20, xo * 0.9 + ROOM_W + 200 - cam, yo + 20 + bgH);
+  const tall = S('spr_dw_fountain_tall');
+  if (tall) drawSpriteExt(g, tall, Math.floor(fs) % (tall.meta.frames ?? 6), 2200 - cam, -120, 2, 2, 0, null, 1);
+  const l2 = S('spr_dw_snow_zone_bg_parallax_layer_2_test');
+  if (l2) tiledArea(g, l2, xo * 0.9 - 40 - cam, yo + 20, xo * 0.9 - cam, yo + 20, xo * 0.9 + ROOM_W + 200 - cam, yo + 20 + bgH);
+  const l3 = S('spr_dw_snow_zone_bg_parallax_layer_3_test');
+  if (l3) tiledArea(g, l3, xo * 0.6 - cam, yo, xo * 0.6 - cam, yo, xo * 0.6 + ROOM_W + 200 - cam, yo + bgH);
+  const l4 = S('spr_dw_snow_zone_bg_parallax_layer_4_test');
+  if (l4) tiledArea(g, l4, 40 - cam, yo, 0 - cam, yo, ROOM_W - cam, yo + bgH);
+  const l5 = S('spr_dw_snow_zone_bg_parallax_layer_5_test');
+  if (l5) tiledArea(g, l5, 0 - cam, yo - 180, 0 - cam, yo - 180, ROOM_W - cam, yo - 180 + bgH);
+  const end = S('spr_dw_snow_zone_end');
+  if (end) drawSpriteExt(g, end, 0, 1998 - cam, yo - 66, 2, 2, 0, null, 1);
+  // The void: black from world 2600 to the far right.
+  g.fillStyle = '#000';
+  g.fillRect(2600 - cam, 0, VIEW_W - (2600 - cam), VIEW_H);
+  const cc = S('spr_cc_fountainbg');
+  if (cc) drawSpriteExt(g, cc, Math.floor(fs) % (cc.meta.frames ?? 4), 2370 - cam, 0, 2, 2, 0, null, 1);
+}
+
+function drawActor(ctx, sprites, a, camX) {
+  const entry = sprites.get(a.sprite);
+  if (!entry) return;
+  const frames = entry.meta.frames ?? 1;
+  drawSpriteExt(ctx, entry, Math.floor(a.index) % frames, a.x - camX, a.y, 2, 2, 0, null, 1);
+}
+
+export function drawIntroScene(ctx, sc, sprites) {
+  const cam = sc.camX;
+
+  // 1. The backdrop — rendered to an offscreen so the split can slide two
+  // halves apart (bg_pos_offset), revealing what main.js drew underneath.
+  bgCanvas = getCanvas(bgCanvas, VIEW_W, VIEW_H);
+  drawBackdrop(bgCanvas, sc, sprites);
+  if (sc.bg.split) {
+    const off = sc.bg.splitOffset;
+    ctx.drawImage(bgCanvas, 0, 0, VIEW_W / 2, VIEW_H, -off, 0, VIEW_W / 2, VIEW_H);
+    ctx.drawImage(bgCanvas, VIEW_W / 2, 0, VIEW_W / 2, VIEW_H, VIEW_W / 2 + off, 0, VIEW_W / 2, VIEW_H);
+  } else {
+    ctx.drawImage(bgCanvas, 0, 0);
+  }
+
+  // 2. The party — depth order is -y (autodepth): higher on screen is
+  // further back, so Kris (y 104) paints first and Ralsei (y 190) last.
+  drawActor(ctx, sprites, sc.actors.kris, cam);
+  drawActor(ctx, sprites, sc.actors.susie, cam);
+  drawActor(ctx, sprites, sc.actors.ralsei, cam);
+
+  // 3. The knight, his sword, or the room's marker.
+  const k = sc.knight;
+  if (sc.marker) {
+    const entry = sprites.get('spr_roaringknight_sword_appear_new');
+    if (entry) {
+      drawSpriteExt(ctx, entry, sc.marker.index, k.x - cam, k.y, 2, 2, 0, null, 1);
+    }
+  } else if (k.visible) {
+    // The rising sword draws BEHIND him (the actor's Draw does sword first).
+    if (k.sword_active) {
+      const sword = sprites.get('spr_roaringknight_sword');
+      if (sword) {
+        const sx = k.x - cam;
+        const sy = k.y + k.y_base_pos;
+        if (k.sword_appear) {
+          // Flashing in: alpha sword_alpha + sin(alpha_siner), with the
+          // original's below-hand slot cut out (header note).
+          const alpha = Math.max(0, Math.min(1,
+            k.sword_flash ? k.sword_alpha + Math.sin(k.alpha_siner) : 1));
+          swordCanvas = getCanvas(swordCanvas, VIEW_W, VIEW_H);
+          const sg = swordCanvas.getContext('2d');
+          sg.setTransform(1, 0, 0, 1, 0, 0);
+          sg.clearRect(0, 0, VIEW_W, VIEW_H);
+          drawSpriteExt(sg, sword, 0, sx, sy, 2, 2, 0, null, 1);
+          sg.globalCompositeOperation = 'destination-out';
+          sg.fillStyle = '#000';
+          // ossafe_fill_rectangle(x+34 .. x+75, y+58 .. bottom) alpha-zeroed.
+          sg.fillRect(sx + 34, k.y + 58, 41, VIEW_H);
+          sg.globalCompositeOperation = 'source-over';
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(swordCanvas, 0, 0);
+          ctx.restore();
+        } else {
+          drawSpriteExt(ctx, sword, 0, sx, sy, 2, 2, 0, null, 1);
+        }
+      }
+    }
+    const entry = sprites.get(k.sprite);
+    if (entry) {
+      const frames = entry.meta.frames ?? 1;
+      drawSpriteExt(ctx, entry, Math.floor(k.index) % frames, k.x - cam, k.y, 2, 2, 0, null, 1);
+      if (k.grab_hand) {
+        const hand = sprites.get('spr_roaringknight_sword_grab_hand_new');
+        if (hand) {
+          drawSpriteExt(ctx, hand, Math.floor(k.index) % (hand.meta.frames ?? 1),
+            k.x - cam, k.y, 2, 2, 0, null, 1);
+        }
+      }
+    }
+  }
+
+  // 4. The roar fx.
+  if (sc.fx && !sc.fx.done) drawIntroFx(ctx, sc.fx, sprites);
+
+  // 5. THE RED LAYER — additive gradient circle, black centre to (r,g,b)
+  // edge, over the whole scene.
+  if (sc.circle) {
+    const c = sc.circle;
+    const fx = sc.fx;
+    const cx = fx ? fx.x + 128 * 0.42 : k.x - cam;
+    const cy = fx ? fx.y + 128 * 0.5 : k.y;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.max(0, Math.min(1, c.alpha));
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, c.size));
+    grad.addColorStop(0, 'rgb(0,0,0)');
+    grad.addColorStop(1, `rgb(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(1, c.size), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 6. THE SCREEN GHOSTS — snapshot the canvas at birth, redraw growing
+  // 0.01/frame around the fx anchor at alpha 0.5 - age * faderate.
+  const anchorX = sc.fx ? sc.fx.x + 128 * 0.42 : VIEW_W / 2;
+  const anchorY = sc.fx ? sc.fx.y + 128 * 0.5 : VIEW_H / 2;
+  for (const g of sc.ghosts) {
+    let snap = ghostCache.get(g.born);
+    if (!snap && g.born === sc.t) {
+      snap = document.createElement('canvas');
+      snap.width = VIEW_W;
+      snap.height = VIEW_H;
+      snap.getContext('2d').drawImage(ctx.canvas, 0, 0);
+      ghostCache.set(g.born, snap);
+    }
+    if (!snap) continue;
+    const age = sc.t - g.born;
+    const alpha = 0.5 - age * g.faderate;
+    if (alpha <= 0) continue;
+    const scale = 1 + age * 0.01;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(anchorX, anchorY);
+    ctx.scale(scale, scale);
+    ctx.drawImage(snap, -anchorX, -anchorY);
+    ctx.restore();
+  }
+  // Purge snapshots for ghosts the sim has retired.
+  const live = new Set(sc.ghosts.map((g) => g.born));
+  for (const key of ghostCache.keys()) {
+    if (!live.has(key)) ghostCache.delete(key);
+  }
 }

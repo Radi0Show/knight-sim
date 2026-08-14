@@ -15,8 +15,8 @@ import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
 import { createRenderer } from '../render/canvas.js';
-import { createIntroFx, stepIntroFx } from '../sim/intro.js';
-import { drawIntroFx } from '../render/draw/intro-fx.js';
+import { createIntroScene, stepIntroScene } from '../sim/intro.js';
+import { drawIntroScene } from '../render/draw/intro-fx.js';
 import { createVictoryScene, stepVictoryScene } from '../sim/victory-scene.js';
 import { drawVictoryScene } from '../render/draw/victory-scene.js';
 import { KNIGHT, PARTY as PARTY_ACTORS } from '../sim/actors.js';
@@ -91,6 +91,26 @@ if (skip > 0) {
 // Exposed for debugging and for automated screenshots; nothing in sim/ reads
 // it back.
 window.__audio = audio;
+window.__intro = {
+  get seq() { return introSeq; },
+  skips: 0,
+  // Deterministic single-frame inspection: build a scene, step to t, paint.
+  // Same modules, same draw — throttle-immune (screenshot tooling stalls the
+  // rAF clock, and the drain then blows through the timeline in one burst).
+  hold: false, // freezes the rAF loop so a drive() paint stays on screen
+  drive(t) {
+    this.hold = true;
+    const sc = createIntroScene();
+    const cues = [];
+    for (let i = 0; i < t; i++) stepIntroScene(sc, cues);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    drawBackground(ctx, state, renderer.sprites);
+    drawIntroScene(ctx, sc, renderer.sprites);
+    return { phase: sc.phase, t: sc.t, done: sc.done };
+  },
+};
 window.__sim = {
   get state() { return state; },
   // The Game Over sequence, for the same reason state is here: it is a
@@ -321,7 +341,11 @@ function startRun() {
   // Entering from the title gets the roar; ENDLESS and SINGLE skip it (one
   // is a treadmill, the other a lab). R-reset never replays it.
   if (runMode === 'normal' || runMode === 'hitless') {
-    introSeq = createIntroFx(KNIGHT.x + 20, KNIGHT.ystart - 20);
+    introSeq = createIntroScene();
+    // The title's confirm is still DOWN on the intro's first frames — an
+    // ordinary ~100ms press spans four 30Hz steps — and the skip check would
+    // read it as a fresh press (the held-across-a-transition rule).
+    maskHeldInput();
   }
   // The director reads this: ENDLESS must not reach the ending.
   state.runMode = runMode;
@@ -335,6 +359,12 @@ let runMode = title.mode ?? 'normal';
 function frame(now) {
   const elapsed = now - last;
   last = now;
+
+  // Debug freeze: a __intro.drive() paint stays on screen until released.
+  if (window.__intro.hold) {
+    requestAnimationFrame(frame);
+    return;
+  }
 
   // THE TITLE SCREEN runs on the same clock as everything else, so its cursor
   // bobs at 30Hz like the battle menu's rather than at the monitor's rate.
@@ -368,6 +398,7 @@ function frame(now) {
     for (let i = 0; i < is; i++) {
       const input = gatedKeys();
       if (input.confirm || input.cancel) {
+        window.__intro.skips += 1;
         introSeq.done = true;
         // The skip press must not fire FIGHT on the other side (the same
         // held-across-a-transition rule the title uses).
@@ -375,14 +406,16 @@ function frame(now) {
         break;
       }
       const cues = [];
-      stepIntroFx(introSeq, cues);
+      stepIntroScene(introSeq, cues);
       if (cues.length) audio.play(cues);
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
+    // The fight's own backdrop underneath — the split slides the snow scene
+    // off the edges and this is what it reveals.
     drawBackground(ctx, state, renderer.sprites);
-    drawIntroFx(ctx, introSeq, renderer.sprites);
+    drawIntroScene(ctx, introSeq, renderer.sprites);
     if (introSeq.done) {
       introSeq = null;
       maskHeldInput();
