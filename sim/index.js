@@ -9,7 +9,7 @@ import { runPhase, runAlarms, reap } from './entity.js';
 import { traceRow } from './trace.js';
 import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK } from './masks.js';
 import { stepGraze } from './tension.js';
-import { freshParty } from './damage.js';
+import { freshParty, scrRevive } from './damage.js';
 
 export { createState } from './state.js';
 export { spawn, destroy, ALARM_COUNT } from './entity.js';
@@ -309,6 +309,11 @@ export function stepFrame(state, input) {
   // dmgwriter, TP all keep their effects; only the resulting HP is unpinned.
   if (state.keepAlive) {
     state.partyHp = freshParty();
+    // AND STAND THEM BACK UP. The oracle patch pairs its HP refill with
+    // scr_revive per slot precisely because HP alone leaves them swooned —
+    // full health, no menu, no attacks, and Kris the only one still fighting
+    // (CLAUDE.md, "Restoring HP does not stand anyone up").
+    for (let i = 0; i < 3; i++) scrRevive(state, i);
     state.gameOver = false;
   }
 

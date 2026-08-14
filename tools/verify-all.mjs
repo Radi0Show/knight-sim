@@ -75,6 +75,7 @@ const SUITES = [
   ['verify-spells.mjs', 'MAGIC and ACT — lists, TP costs, HoldBreath'],
   ['verify-dmgnumbers.mjs', 'damage numbers + impacts — stack, squash, bounces'],
   ['verify-animation.mjs', 'party + knight animation — poses, timers, hurt strobe'],
+  ['verify-swoon.mjs', 'the swoon system — scr_dead/scr_revive, both floors, the heal gate'],
   ['verify-dialogue.mjs', 'the fight dialogue — the two-beat exchange'],
   ['verify-battlemsg.mjs', 'the battle message box — 15 lines, phase 4 gates, down messages'],
   // The whole-fight diff. Skips loudly without ~/knight-research/traces, so on

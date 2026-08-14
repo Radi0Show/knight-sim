@@ -225,7 +225,7 @@ function drawTargetPicker(ctx, state, sprites, font) {
     ctx.globalAlpha = down ? 0.55 : 1;
     drawText(ctx, font, PARTY[c].name.toUpperCase(), x + 40, 385,
       { color: down ? '#ff0000' : '#ffffff' });
-    drawText(ctx, font, `${Math.max(hp, 0)} / ${PARTY[c].maxhp}`, x + 40, 415,
+    drawText(ctx, font, `${hp} / ${PARTY[c].maxhp}`, x + 40, 415,
       { color: down ? '#ff0000' : '#ffffff' });
     ctx.globalAlpha = 1;
     if (menu.targetIndex === c && heart) {
@@ -371,7 +371,13 @@ export function drawMenu(ctx, state, sprites) {
     //
     // The colour is a threshold, not a gradient: white normally, YELLOW at or
     // under a quarter health, RED at zero.
-    const shown = Math.max(hp, 0);
+    // RAW, INCLUDING THE NEGATIVE. scr_charbox draws
+    // `string(global.hp[c + 1])` with no clamp, so a swooned ally reads -999
+    // and a downed Kris reads -80 — that number IS the fight telling you who
+    // can still be brought back (see scr_heal's revive gate). Clamping it to
+    // 0 hid the whole swoon economy; reported as "the health is going to
+    // zero, but it should go to -999".
+    const shown = hp;
     let hpColor = '#ffffff';
     if (hp / maxhp <= 0.25) hpColor = '#ffff00'; // c_yellow
     if (hp <= 0) hpColor = '#ff0000'; // c_red

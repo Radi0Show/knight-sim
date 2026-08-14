@@ -21,7 +21,7 @@
 // the remaining slots DeluxeDinners — which can be bought without limit, so
 // they are what fills whatever is left of the twelve.
 
-import { PARTY } from './damage.js';
+import { PARTY, scrRevive } from './damage.js';
 import { MAX_TENSION } from './tension.js';
 import { cue, cueStop } from './audio.js';
 
@@ -91,6 +91,12 @@ export function applyHeal(state, target, amount, healPlusMult = 1) {
   if (belowZero && hp[target] >= 0) {
     const floor6 = Math.ceil(maxhp / 6);
     if (hp[target] < floor6) hp[target] = floor6;
+    // THE REVIVE IS HERE AND NOWHERE ELSE, and its gate is the reason a
+    // swooned ally stays swooned: `belowzero == 1 && global.hp >= 0`. Healing
+    // a -999 Susie by 200 leaves her at -799, still negative, so scr_revive
+    // never runs — the heal is absorbed by the hole. Kris at -80 clears zero
+    // with one item and stands up at ceil(maxhp / 6).
+    scrRevive(state, target);
   }
 
   cueStop(state, 'snd_power');

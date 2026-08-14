@@ -413,7 +413,10 @@ function frame(now) {
     // The Game Over SCREEN says this now, in the game own font.
 
     `frame ${state.frame} · sim ${fps}/30 Hz · hits ${state.counters.collisionHits}` +
-    ` · HP ${state.partyHp.map((h) => Math.max(h, 0)).join('/')}` +
+    // Raw, negatives included — the charbox prints them and so does this: a
+    // swooned -999 and a downed -80 are different situations and the readout
+    // that flattens both to 0 is the one that hides the difference.
+    ` · HP ${state.partyHp.join('/')}` +
     ` · TP ${Math.floor((state.tension / 250) * 100)}%` +
     ` · sprites ${renderer.spriteCount}` +
     ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · <b style="color:#e0a">B report a bug</b>`;

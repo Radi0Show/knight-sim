@@ -168,7 +168,35 @@ export function partyStatus(state) {
 
 /** Fallen allies are skipped by the COMMAND phase and by enemy targeting. */
 export function isUp(state, target) {
+  // `global.chardead[]` IS the state, and HP is only how you get there. A
+  // heal that lifts a -999 ally to -899 leaves them DOWN with more HP, and
+  // an HP-sign test would call that standing.
+  if (state.chardead) return !state.chardead[target];
   return state.partyHp[target] > 0;
+}
+
+/**
+ * `scr_dead(slot)` — the five globals, all of them:
+ *
+ *     charmove[i] = 0; charcantarget[i] = 0; chardead[i] = 1;
+ *     charaction[i] = 0; charspecial[i] = 0;
+ *
+ * Restoring HP does NOT undo this (CLAUDE.md has the session it cost): the
+ * harness pinned global.hp and the party stayed swooned at full health.
+ */
+export function scrDead(state, slot) {
+  if (state.charmove) state.charmove[slot] = 0;
+  if (state.charcantarget) state.charcantarget[slot] = 0;
+  if (state.chardead) state.chardead[slot] = 1;
+  if (state.charaction) state.charaction[slot] = 0;
+  if (state.charspecial) state.charspecial[slot] = 0;
+}
+
+/** `scr_revive(slot)` — THREE of the five; charaction/charspecial stay 0. */
+export function scrRevive(state, slot) {
+  if (state.charmove) state.charmove[slot] = 1;
+  if (state.charcantarget) state.charcantarget[slot] = 1;
+  if (state.chardead) state.chardead[slot] = 0;
 }
 
 /**
@@ -322,7 +350,17 @@ export function scrDamage(state, damage, target, opts = {}) {
 
   hp[target] -= t;
   if (hp[target] <= 0) {
+    // KRIS AND THE OTHERS SWOON DIFFERENTLY, and the numbers are the point:
+    //
+    //     if (target == 0) { doomtype = 4;  hp = round(-maxhp / 2); }   // -80
+    //     else             { doomtype = 12; hp = -999; }
+    //
+    // -80 is inside one heal item's reach, so Kris can be brought back;
+    // -999 cannot be (scr_heal only revives if the result reaches >= 0), so
+    // a downed ally stays down for the rest of the fight. That asymmetry is
+    // the fight's real difficulty curve, and clamping either to 0 erases it.
     hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+    scrDead(state, target);
   }
   // THE FLINCH. `obj_heroparent`'s Step gates every other state behind
   // `hurt == 0`, so a character being hit stops whatever pose or animation

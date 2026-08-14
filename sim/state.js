@@ -62,6 +62,18 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     loadout: { shadowMantle: true },
     /** `global.charaction[]` — 10 is DEFEND, which the menu sets. */
     charaction: [0, 0, 0],
+
+    // BEING DOWN IS FIVE GLOBALS, not an HP sign. scr_dead sets all of
+    // charmove / charcantarget / chardead / charaction / charspecial;
+    // scr_revive clears the first three. HP alone cannot represent "healed
+    // but still down", which is exactly the state scr_heal produces when a
+    // heal lands on a -999 ally and leaves them negative.
+    //
+    // SLOT-indexed (0..2), unlike global.hp which is CHARACTER-indexed.
+    chardead: [0, 0, 0],
+    charmove: [1, 1, 1],
+    charcantarget: [1, 1, 1],
+    charspecial: [0, 0, 0],
     gameOver: false,
     /** The Knight — HP 7300, and the outgoing multipliers. */
     knight: createKnight(),

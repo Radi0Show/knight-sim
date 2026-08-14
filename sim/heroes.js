@@ -245,6 +245,12 @@ function stepHero(h, spec, down) {
 export function stepHeroes(state) {
   if (!state.heroes) return;
   for (let c = 0; c < 3; c++) {
+    // THE POSE GATE IS THE HP SIGN, not `chardead` — obj_heroparent reads
+    // `global.hp[global.char[myself]] > 0` in both its Step and its Draw. So a
+    // character healed from -999 to -899 keeps the defeat pose (still
+    // negative) while `chardead` is what keeps them out of the menu and off
+    // the target list. Two different gates on purpose; verify-animation
+    // catches a swap in either direction.
     stepHero(state.heroes[c], HERO_SPRITES[c], (state.partyHp?.[c] ?? 1) <= 0);
   }
 }
