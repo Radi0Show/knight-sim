@@ -269,5 +269,10 @@ export function starOther15(e, state) {
   e.damage = 75;
   e.target = 3;
   scrDamageAll(state, e.damage, { aoe: true, element: 5 });
-  if (e.destroyonhit === 1) destroy(state, e);
+  // `destroy` takes THE ENTITY — `destroy(state, e)` marked the state object
+  // dead and left the bullet alive. Invisible until the whole-fight diff
+  // counted bullets on a hit frame: starchildren keep destroyonhit=1 from
+  // scr_bullet_init, so the game's hitter died at f296 while the sim's flew
+  // on (79 live vs the recording's 78).
+  if (e.destroyonhit === 1) destroy(e);
 }

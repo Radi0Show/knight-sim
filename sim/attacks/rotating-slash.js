@@ -163,8 +163,35 @@ export const rotatingSlash = {
   },
 
   alarm: {
-    /** Alarm_3: `instance_destroy()`. */
-    3(e) {
+    /** Alarm_3: `instance_destroy()` — which fires the CleanUp below. */
+    3(e, state) {
+      // CleanUp: the turn-CLOSING instance hands the clock its -1 —
+      //
+      //     if (turn_type != "start" && turn_type != "short start"
+      //         && turn_type != "short mid" && scr_bulletparent_count() < 2) {
+      //         with (obj_knight_enemy) image_alpha = 1;
+      //         global.turntimer = -1;
+      //     }
+      //
+      // The controller runs this whole turn at turntimer 999999, so WITHOUT
+      // this line the turn cannot end at all: the strict clock rule (sweep at
+      // turntimer <= 0, no manager-death shortcut) hung the fight-order suite
+      // on turn 5 forever. The chained "start"/"short" instances from the
+      // combination attack leave the clock alone — their successor closes it.
+      const closing =
+        e.turn_type !== 'start' &&
+        e.turn_type !== 'short start' &&
+        e.turn_type !== 'short mid';
+      const bullets = state.entities.filter(
+        (x) => x.alive && x.isBullet && x.type.name !== 'obj_heart',
+      ).length;
+      if (closing && bullets < 2) {
+        const knight = state.entities.find(
+          (x) => x.alive && x.type.name === 'obj_knight_enemy',
+        );
+        if (knight) knight.image_alpha = 1;
+        state.turntimer = -1;
+      }
       destroy(e);
     },
   },

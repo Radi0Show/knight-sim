@@ -124,7 +124,8 @@ export const roaringStar = {
     if (e.active !== 1 && e.active !== true) return;
     if (state.roaringActive) knightCatch(state);
     else collidebulletOther15(e, state);
-    if (e.destroyonhit === 1) destroy(state, e);
+    // destroy takes the entity — see the note in pointing-star's other15.
+    if (e.destroyonhit === 1) destroy(e);
   },
 
   step(e, state) {

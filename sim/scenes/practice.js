@@ -96,8 +96,7 @@ const ATTACKPRESS_FADE = 13;
  */
 const TURN_GAP = 1;
 
-/** How long bullets get to leave on their own before the sweep. */
-const DRAIN_FRAMES = 90;
+
 
 /**
  * obj_moveheart — the soul flying to the board. Create aims it and arms
@@ -327,23 +326,24 @@ const director = {
       // spawning on `turntimer`, and the turn ends once the last bullet they
       // launched has cleared. A manager that DOES tear itself down early ends
       // the turn early too.
-      const ownerAlive = e.owner && e.owner.alive;
-      const bulletsLeft = state.entities.some(
-        (x) => x.alive && x.isBullet && x.type.name !== 'obj_heart',
-      );
-      // THE CLOCK IS THE AUTHORITY, and waiting for the arena to empty is
-      // not a substitute for it. Requiring `!bulletsLeft` hung the Stars turn
-      // for 1,500 frames: 96 starchildren home in on the soul and simply hover
-      // there, so they never leave the screen and the turn could never end.
-      // In the game the battle controller ends the turn when `turntimer` runs
-      // out and sweeps whatever is still flying — that sweep is `clearTurn`.
+      // THE CLOCK IS THE WHOLE RULE — obj_battlecontroller's Step:
       //
-      // The DRAIN is the small piece of grace that costs nothing: once the
-      // clock is out, give bullets a moment to fly off on their own so the
-      // sweep is invisible in the common case, then end the turn regardless.
-      const timeUp = state.turntimer <= 0 || !ownerAlive;
-      if (timeUp) e.drain += 1;
-      const finished = timeUp && (!bulletsLeft || e.drain >= DRAIN_FRAMES);
+      //     if (global.mnfight == 2 && timeron == 1) {
+      //         global.turntimer -= 1;
+      //         if (global.turntimer <= 0 && reset == 0) {
+      //             with (obj_bulletparent) instance_destroy();   // sweep NOW
+      //             with (obj_heart) { instance_create(x, y, obj_returnheart);
+      //                                instance_destroy(); }      // soul NOW
+      //             reset = 1;
+      //             if (noreturn == 0) alarm[2] = 15;             // then wait
+      //
+      // No drain, no waiting for bullets to leave, no manager-death shortcut
+      // — the sweep lands ON the frame the clock reaches zero, with whatever
+      // is still flying (the anchor recording drops 33 live bullets and the
+      // soul on f345 exactly). The sim's old grace period held the soul for
+      // eleven extra frames every turn, which shifted every later turn's
+      // menus, bars and attacks — the f345/f357 group in the triage map.
+      const finished = state.turntimer <= 0;
       if (!finished) return;
 
       e.started = false;
@@ -355,7 +355,12 @@ const director = {
         state.soul.alive = false;
         state.soul = null;
       }
-      e.gap = TURN_GAP;
+      // `alarm[2] = 15` — the beat between the sweep and anything else
+      // appearing. The recording tears down on f345 and shows its first
+      // post-turn state on f360, fifteen frames later, exactly the alarm the
+      // battle controller arms next to the sweep. TURN_GAP (the one-frame
+      // myfightreturntimer) still applies after it inside the menu flow.
+      e.gap = 15;
       e.spawnDelay = RTIMER_SPAWN;
       e.turnsRun += 1;
       clearTurn(state);
