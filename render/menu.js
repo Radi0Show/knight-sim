@@ -15,6 +15,7 @@
 // `chartotal == 3`).
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
+import { formatWriter, revealed } from '../sim/dialogue.js';
 import { PARTY } from '../sim/damage.js';
 import { BUTTONS, CHAR_COLOR, PARTY_SPRITES, listRows } from '../sim/menu.js';
 import { SPELLS, spellCost } from '../sim/spells.js';
@@ -345,17 +346,15 @@ export function drawMenu(ctx, state, sprites) {
 
     // ---- the portrait / name / HP strip -------------------------------------
     //
-    // HIDDEN WHILE THE BAND IS IN USE. `scr_charbox` slides `mmy[c]` to
-    // **-170** in its else branch — the strip travels up and off the band
-    // entirely — and that is what makes room for the two things that occupy
-    // the same pixels:
-    //
-    //   * the ITEM list, whose third row sits at y 435
-    //   * the FIGHT bar, whose third row sits at y 441
-    //
-    // The strip is y 430-449, so it collides with both. The game is never
-    // showing the strip and either of them at once.
-    if ((menu.open && menu.submenu) || state.fightBar) continue;
+    // ALWAYS DRAWN. This used to `continue` whenever a submenu or the FIGHT
+    // bar was up, on a misread of scr_charbox: the mmy = -170 slide that
+    // empties the band belongs to the ROUXLS-GRID branch
+    // (`rouxlsgridenabled`), which this fight never enables. Here the active
+    // character's panel rises 32px (mmy -> -32) and everyone's strip keeps
+    // drawing at its mmy offset — which is why selecting FIGHT in the real
+    // game leaves the portraits, names, HP and button icons all on screen.
+    // The player report was exact: "during selecting attacks the icons and
+    // menu stuff disappear".
 
     const stats = PARTY_SPRITES[c];
     const head = sprites.get(stats.head);
@@ -456,10 +455,30 @@ function drawBattleMsg(ctx, state, font) {
   // second line straight through the party's names — which is what the
   // spacing is chosen to avoid. The game's own number for this message is the
   // one that clears the strip.
-  const lh = 18;
-  const lines = state.battlemsg.split('&');
+  // TYPER 6 — the battle message's writer, from scr_texttype:
+  //
+  //     case 6: scr_textsetup(scr_84_get_font("mainbig"), c_white, x, y,
+  //                           33, 0, 1, snd_text, 16, 36, 1);
+  //
+  // charline 33, rate 1 (one character a frame), hspace 16, vspace 36 —
+  // scr_textsetup runs at the writer's birth and OVERRIDES the Create
+  // defaults this block used to quote (vspace 18 was the pre-override
+  // default, and 18px lines under 26px glyphs is exactly the "text is too
+  // close together" a player reported). The advance is the writer's fixed
+  // hspace, not the glyph's shift — obj_writer moves `wx += hspace` per
+  // character — which is the letter-spacing the same report called out.
+  //
+  // The string is wrapped by the writer's own formatter (charline 33, last
+  // space becomes the break, `||` hangs the continuation under the "* ") —
+  // the dump's strings arrive unsplit and were drawn off the canvas edge.
+  const lh = 36;
+  const formatted = formatWriter(state.battlemsg, 33);
+  // Typed, not shown: one character a frame from the moment the message was
+  // set. The director owns the clock (state.battlemsgTimer).
+  // rate 1: ONE character a frame (scr_textsetup arg 6), not the balloons' 2.
+  const lines = revealed(formatted, state.battlemsgTimer ?? 1e9, 1);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i]) continue;
-    drawText(ctx, font, lines[i], 30, 376 + i * lh, { color: rgb(c_white) });
+    drawText(ctx, font, lines[i], 30, 376 + i * lh, { color: rgb(c_white), advance: 16 });
   }
 }

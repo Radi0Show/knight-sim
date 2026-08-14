@@ -15,7 +15,7 @@
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
 // The typing logic is PURE and lives in sim/ — the turn loop needs it too.
-import { revealed, dialogueDone } from '../sim/dialogue.js';
+import { revealed, dialogueDone, formatWriter } from '../sim/dialogue.js';
 
 
 const DIM = [160, 160, 170];
@@ -30,14 +30,23 @@ const DIM = [160, 160, 170];
 export function drawDialogue(ctx, state, sprites) {
   const dlg = state.dialogue;
   if (!dlg?.text) return;
-  const font = loadFont();
+  const font = loadFont('../assets/fonts', 'fnt_dotumche');
   if (!font?.ready) return;
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  const lines = revealed(dlg.text, dlg.timer);
-  const lh = textHeight(font) || 26;
+  // TYPER 81 — the Susie/Knight exchange's writer, from scr_texttype:
+  //
+  //     case 81: scr_textsetup(scr_84_get_font("dotumche"), c_black, x, y,
+  //                            33, 0, 1, snd_tv_voice_short, 9, 20, 0);
+  //
+  // charline 33, hspace 9, vspace 20, fnt_dotumche. DEVIATION, labelled: the
+  // real text is BLACK on a white speech balloon; until the balloon sprite is
+  // drawn (the Susie-dialogue task) black-on-arena would be unreadable, so
+  // the colour stays white here. Metrics are the game's.
+  const lines = revealed(formatWriter(dlg.text, 33), dlg.timer);
+  const lh = 20;
   const top = 340;
 
   // The speaker's face colour tints nothing — DELTARUNE draws the text plain
@@ -49,7 +58,7 @@ export function drawDialogue(ctx, state, sprites) {
   }
 
   for (let i = 0; i < lines.length; i++) {
-    drawText(ctx, font, lines[i], 40, top + i * lh, { color: rgb(c_white) });
+    drawText(ctx, font, lines[i], 40, top + i * lh, { color: rgb(c_white), advance: 9 });
   }
 
   // The prompt only appears once the line has finished typing — pressing

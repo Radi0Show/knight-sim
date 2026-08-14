@@ -169,6 +169,17 @@ const director = {
   },
 
   endStep(e, state) {
+    // THE BATTLE MESSAGE'S TYPEWRITER CLOCK. obj_writer reveals one character
+    // a frame (typer 6, rate 1); the renderer reads this timer and the sim
+    // resets it whenever a new message is set, so text scrolls in rather than
+    // popping whole — the writer is created fresh per message in the game.
+    if (state.battlemsg !== e.lastBattlemsg) {
+      e.lastBattlemsg = state.battlemsg;
+      state.battlemsgTimer = 0;
+    } else {
+      state.battlemsgTimer = (state.battlemsgTimer ?? 0) + 1;
+    }
+
     // THE FIGHT IS LOST when all three are down. The real game goes to its
     // Game Over screen; here the run simply stops and the HUD says so, which
     // is the honest stand-in — the retry flow is turn-system machinery.

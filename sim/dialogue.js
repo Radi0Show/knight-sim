@@ -75,6 +75,70 @@ export const ACT_TEXT = {
 /** `msgsetloc` uses `&` for a line break. */
 export const msgLines = (s) => String(s).split('&');
 
+/**
+ * obj_writer's FORMATTER (Other_15), the part our strings exercise: wrap at
+ * `charline` characters per line, breaking at the LAST SPACE (the space
+ * itself becomes the `&`), force-breaking mid-word when a line has no space
+ * past position 2, and indenting the continuation of a `*` line with `||`
+ * (each `|` is one hspace-wide skip in the writer's Draw, so the wrapped
+ * text hangs under the message rather than under the asterisk).
+ *
+ * `charline` comes from scr_texttype: 33 for the battle message (typer 6)
+ * and the balloons (81) both. The dump's own battle strings arrive UNSPLIT —
+ * "* You felt something hovering close behind your head..." is one 55-char
+ * line — and the game wraps them here at draw time, which is why copying the
+ * strings verbatim and skipping the formatter cut them off at the canvas
+ * edge instead.
+ */
+export function formatWriter(text, charline = 33) {
+  let s = String(text);
+  let charpos = 0;
+  let remspace = -1;
+  let aster = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '&') {
+      charpos = 0;
+      remspace = -1;
+      // The explicit-break indent checks the next char; a wrap's (below,
+      // scr_asterskip) does not. Faithful to both.
+      if (aster && s[i + 1] !== '*') {
+        s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+        charpos = 2;
+        i += 2;
+      }
+      continue;
+    }
+    if (ch === ' ') remspace = i;
+    if (ch === '*') aster = true;
+    charpos += 1;
+    if (charpos >= charline) {
+      if (remspace > 2) {
+        s = `${s.slice(0, remspace)}&${s.slice(remspace + 1)}`;
+        i = remspace;
+        charpos = 1;
+        remspace = -1;
+        if (aster) {
+          s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+          i += 2;
+          charpos = 2;
+        }
+      } else {
+        s = `${s.slice(0, i + 1)}&${s.slice(i + 1)}`;
+        i += 1;
+        charpos = 1;
+        remspace = -1;
+        if (aster) {
+          s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+          i += 2;
+          charpos = 2;
+        }
+      }
+    }
+  }
+  return s;
+}
+
 /** The first turn a taunt appears. */
 export const FIRST_BALLOON_TURN = 6;
 
@@ -132,8 +196,10 @@ export function clearDialogue(dlg) {
  */
 export const CHARS_PER_FRAME = 2;
 
-export function revealed(text, timer) {
-  const n = Math.floor(timer * CHARS_PER_FRAME);
+/** Characters revealed after `timer` frames at `cps` characters a frame. */
+
+export function revealed(text, timer, cps = CHARS_PER_FRAME) {
+  const n = Math.floor(timer * cps);
   const lines = msgLines(text);
   let left = n;
   const out = [];

@@ -103,9 +103,6 @@ export function stepGraze(state, grazes) {
     const gf = grazeFactors(gearOf(state));
     const tp = (e.grazepoints ?? 0) * gf.tp;
     const time = (e.timepoints ?? 0) * gf.time;
-    if (process.env.KNIGHT_GRAZE_DEBUG && state.frame >= 290 && state.frame <= 296) {
-      console.error('GRZ f' + state.frame, e.type?.name, 'seq', e.seq, e.grazed === 1 ? 'TRICKLE' : 'FRESH', 'gt', e.grazetimer, 'x', e.x?.toFixed(2), 'y', e.y?.toFixed(2), 'act', e.active);
-    }
     if (e.grazed === 1) {
       scrTensionheal(state, tp / 30);
       if (state.turntimer >= 10) state.turntimer -= time / 30;

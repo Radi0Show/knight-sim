@@ -26,7 +26,7 @@
 // under 200 at this size so it never triggers, but the rule is cheap to honour
 // and the alternative is text quietly overflowing into the next column.
 
-let fontCache = null;
+const fontCaches = new Map();
 
 /**
  * Load the font once. Returns null until it resolves, and the caller draws
@@ -34,9 +34,9 @@ let fontCache = null;
  * than no font, because it looks deliberate.
  */
 export function loadFont(base = '../assets/fonts', name = 'fnt_mainbig') {
-  if (fontCache) return fontCache;
-  fontCache = { ready: false, glyphs: new Map(), img: null, meta: null };
-  const f = fontCache;
+  if (fontCaches.has(name)) return fontCaches.get(name);
+  const f = { ready: false, glyphs: new Map(), img: null, meta: null };
+  fontCaches.set(name, f);
 
   fetch(new URL(`${base}/${name}.json`, import.meta.url))
     .then((r) => r.json())
@@ -85,6 +85,11 @@ export function textHeight(font) {
  */
 export function drawText(ctx, font, text, x, y, {
   xscale = 1, yscale = 1, color = null, alpha = 1, halign = 'left',
+  // obj_writer's layout, not draw_text's: a FIXED advance per character
+  // (`wx += hspace` — 16 for the battle message's typer 6, 9 for the
+  // balloons' 81) instead of the glyph's own shift, and `|` consumed as an
+  // hspace-wide skip (the formatter's continuation indent under a "* ").
+  advance = null,
 } = {}) {
   if (!font || !font.ready || !font.img) return;
 
@@ -100,6 +105,10 @@ export function drawText(ctx, font, text, x, y, {
 
   let prev = null;
   for (const ch of String(text)) {
+    if (advance != null && ch === '|') {
+      pen += advance * xscale;
+      continue;
+    }
     const code = ch.codePointAt(0);
     const g = font.glyphs.get(code);
     if (!g) continue;
@@ -111,7 +120,7 @@ export function drawText(ctx, font, text, x, y, {
         pen + g.offset * xscale, y, g.w * xscale, g.h * yscale,
       );
     }
-    pen += g.shift * xscale;
+    pen += (advance != null ? advance : g.shift) * xscale;
     prev = g;
   }
   ctx.restore();
