@@ -164,3 +164,30 @@ Oracle (private repo, ~90s per run, re-sign after every rebuild):
   that is what happened.
 - Not shipping invented content. If something must be a placeholder, it is
   labelled where the player sees it.
+
+## 2026-08-14 — f177 -> f296; the method's margin has shifted
+
+Byte-exact through f295 on fullfight-anchor2. Eight mechanics landed (see
+the commit); the two collision calibrations (rect-probe/rect2-probe,
+graze-probe) and the rectA/precise masksOverlap split are the load-bearing
+ones. Every divergence this session turned out to be a REAL mechanic, not
+noise — including a 0.07px star cull that was the camera shake moving the
+despawn boundary.
+
+OPEN at f296: on a hit frame the oracle pays the four NON-hitting bullets'
+graze trickles but not the hitter's own, while the sim (damage-then-graze)
+pays none. The grazebox-vs-heart collision-event order that explains BOTH
+f201 and f296 is not yet found; the unconditional graze logger is already
+in oracle_fullfight.csx (inv column added) — one re-record answers it.
+
+STRATEGY NOTE, agreed with the user: the recordings are DETERMINISTIC (same
+token, same trace — anchor2/4/5 differ only in instrumentation), so the
+target is stable. But the marginal first-divergence now costs hours and
+sits in runner-quantization minutiae. Before burning more on frame-exact
+graze timing: (1) read the differ's LATER groups too — it already compares
+all 9000 frames; fix structural divergences anywhere in the fight first
+(they are cheap and matter to play); (2) consider a narrow documented
+tolerance for hit-frame trickle timing, like the trig 0.02px carve-out;
+(3) if bit-exactness on collision internals is ever really needed, the
+next tool is disassembling the runner's collision routine, not more
+black-box probing (same conclusion CLAUDE.md reached for ds_list_shuffle).
