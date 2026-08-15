@@ -12,7 +12,9 @@
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth } from './font.js';
-import { MODES } from '../sim/modes.js';
+import { MODES, SETTINGS_PAGES, pocketOf, previewStats } from '../sim/modes.js';
+import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
+import { PARTY } from '../sim/damage.js';
 
 const BG = [0x27, 0x29, 0x3f];
 const DIM = [128, 128, 138];
@@ -43,6 +45,12 @@ export function drawTitle(ctx, title, sprites, attacks) {
     return;
   }
 
+  if (title.settings) {
+    drawSettings(ctx, title, sprites, font);
+    ctx.restore();
+    return;
+  }
+
   centred(ctx, font, 'THE ROARING KNIGHT', 60, c_white, 1.6);
   centred(ctx, font, 'practice', 100, DIM);
 
@@ -69,10 +77,166 @@ export function drawTitle(ctx, title, sprites, attacks) {
     drawText(ctx, font, rows[i].name, x, y, { color: rgb(on ? HILITE : c_white) });
   }
 
+  // SETTINGS — the extra row, visually separated from the modes.
+  if (!title.pickingAttack) {
+    const y = top + MODES.length * pitch + 30;
+    const on = title.index === MODES.length;
+    if (on && heart) {
+      const bob = Math.sin(title.siner / 6) * 1.5;
+      drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+    }
+    drawText(ctx, font, 'SETTINGS', 190, y, { color: rgb(on ? HILITE : DIM) });
+  }
+
   centred(ctx, font, title.pickingAttack
     ? 'Z  choose      X  back'
     : 'arrows  move      Z  choose', 448, DIM, 0.75);
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// SETTINGS — the hub and its pages, in the menu's own idiom (mainbig, the
+// heart, c_yellow selection).
+
+const SLOT_NAMES = ['WEAPON', 'ARMOR 1', 'ARMOR 2'];
+
+function drawSettings(ctx, title, sprites, font) {
+  const s = title.settings;
+  const heart = sprites.get('spr_heart');
+  const bob = Math.sin(title.siner / 6) * 1.5;
+
+  if (s.page === null) {
+    centred(ctx, font, 'SETTINGS', 60, c_white, 1.4);
+    for (let i = 0; i < SETTINGS_PAGES.length; i++) {
+      const y = 170 + i * 40;
+      const on = i === s.cursor;
+      const unused = SETTINGS_PAGES[i].id === 'unused';
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+      drawText(ctx, font, SETTINGS_PAGES[i].name, 190, y,
+        { color: rgb(on ? HILITE : (unused ? DIM : c_white)) });
+    }
+    centred(ctx, font, 'Z  open      X  back', 448, DIM, 0.75);
+    return;
+  }
+
+  if (s.page === 'items') {
+    centred(ctx, font, 'ITEMS', 60, c_white, 1.4);
+    centred(ctx, font, 'Not built yet — the bag is fixed for now.', 220, DIM, 0.85);
+    centred(ctx, font, 'Z / X  back', 448, DIM, 0.75);
+    return;
+  }
+
+  if (s.page === 'audio') {
+    centred(ctx, font, 'MUSIC / SFX', 60, c_white, 1.4);
+    const rows = [
+      { name: 'MUSIC', value: title.volumes.music },
+      { name: 'SFX', value: title.volumes.sfx },
+    ];
+    for (let i = 0; i < rows.length; i++) {
+      const y = 190 + i * 60;
+      const on = i === s.cursor;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 110 + bob, y + 4, 1, 1, 0, null, 1);
+      drawText(ctx, font, rows[i].name, 140, y, { color: rgb(on ? HILITE : c_white) });
+      // The slider: a trough with a fill and the value.
+      ctx.fillStyle = 'rgb(64,64,72)';
+      ctx.fillRect(280, y + 4, 200, 14);
+      ctx.fillStyle = on ? 'rgb(255,255,0)' : 'rgb(255,255,255)';
+      ctx.fillRect(280, y + 4, rows[i].value * 2, 14);
+      drawText(ctx, font, String(rows[i].value), 500, y, { color: rgb(on ? HILITE : c_white) });
+    }
+    centred(ctx, font, 'arrows  adjust      X  back', 448, DIM, 0.75);
+    return;
+  }
+
+  // ---- equip ----
+  const eq = s.equip;
+  centred(ctx, font, 'WEAPONS / ARMOR', 40, c_white, 1.2);
+
+  // The party heads as the character tabs.
+  const HEADS = ['spr_headkris', 'spr_headsusie', 'spr_headralsei'];
+  for (let c = 0; c < 3; c++) {
+    const x = 200 + c * 90;
+    const head = sprites.get(HEADS[c]);
+    const on = eq.char === c;
+    if (head) {
+      ctx.save();
+      ctx.globalAlpha = on ? 1 : 0.45;
+      drawSpriteExt(ctx, head, 0, x, 80, 2, 2, 0, null, 1);
+      ctx.restore();
+    }
+    drawText(ctx, font, PARTY[c].name, x - 4, 130, {
+      color: rgb(on ? HILITE : DIM), xscale: 0.75, yscale: 0.75,
+    });
+    if (on && eq.stage === 'char' && heart) {
+      drawSpriteExt(ctx, heart, 0, x + 8, 158 + bob, 1, 1, 0, null, 1);
+    }
+  }
+
+  // The three slot rows with what is equipped.
+  const gear = title.gear[eq.char];
+  for (let r = 0; r < 3; r++) {
+    const y = 190 + r * 34;
+    const id = r === 0 ? gear.weapon : gear.armor[r - 1] ?? 0;
+    const it = r === 0 ? itemOf('weapon', id) : itemOf('armor', id);
+    const on = eq.stage !== 'char' && eq.row === r;
+    if (on && eq.stage === 'slot' && heart) {
+      drawSpriteExt(ctx, heart, 0, 120 + bob, y + 4, 1, 1, 0, null, 1);
+    }
+    drawText(ctx, font, SLOT_NAMES[r], 150, y, { color: rgb(on ? HILITE : DIM), xscale: 0.85, yscale: 0.85 });
+    drawText(ctx, font, it?.name ?? '(Nothing)', 300, y, { color: rgb(on ? HILITE : c_white), xscale: 0.85, yscale: 0.85 });
+  }
+
+  // The stat line — base plus slots, exactly what battleat/df/mag will be.
+  const st = previewStats(title, eq.char);
+  drawText(ctx, font, `AT ${st.at}   DF ${st.df}   MG ${st.magic}`, 150, 300,
+    { color: rgb(DIM), xscale: 0.85, yscale: 0.85 });
+
+  // The pocket, when a slot is open: every piece in the chapter's table
+  // (BlackShard excluded), the unequippable greyed by the char flags.
+  if (eq.stage === 'pocket') {
+    const kind = eq.row === 0 ? 'weapon' : 'armor';
+    const pocket = pocketOf(kind);
+    const table = kind === 'weapon' ? WEAPONS : ARMOR;
+    // A scrolling window of 7 rows.
+    const win = 7;
+    let first = Math.max(0, Math.min(eq.pocket - 3, pocket.length - win));
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(360, 150, 260, 270);
+    for (let i = 0; i < Math.min(win, pocket.length); i++) {
+      const idx = first + i;
+      const id = pocket[idx];
+      const y = 160 + i * 34;
+      const on = idx === eq.pocket;
+      const name = id === 0 ? '(Nothing)' : table[id]?.name ?? '?';
+      const ok = id === 0 || canEquip(kind, id, eq.char);
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 370 + bob, y + 4, 1, 1, 0, null, 1);
+      // `min(1, 200 / width)` — the item menu's squeeze, never a clip.
+      const w = textWidth(font, name) * 0.85;
+      const squeeze = Math.min(1, 200 / w);
+      drawText(ctx, font, name, 400, y, {
+        color: rgb(on ? HILITE : (ok ? c_white : DIM)),
+        xscale: 0.85 * squeeze, yscale: 0.85,
+      });
+    }
+    // The selected piece's stats, under the list.
+    const selId = pocket[eq.pocket];
+    if (selId !== 0) {
+      const it = table[selId];
+      const bits = [];
+      if (it.at) bits.push(`AT ${it.at > 0 ? '+' : ''}${it.at}`);
+      if (it.df) bits.push(`DF ${it.df > 0 ? '+' : ''}${it.df}`);
+      if (it.magic) bits.push(`MG ${it.magic > 0 ? '+' : ''}${it.magic}`);
+      if (it.ability) bits.push(it.ability);
+      drawText(ctx, font, bits.join('  ') || '—', 400, 424,
+        { color: rgb(DIM), xscale: 0.7, yscale: 0.7 });
+    }
+  }
+
+  centred(ctx, font,
+    eq.stage === 'char' ? 'arrows  pick character      Z  edit      X  back'
+      : eq.stage === 'slot' ? 'arrows  pick slot      Z  change      X  back'
+        : 'arrows  pick      Z  equip      X  back',
+    448, DIM, 0.75);
 }
 
 /**

@@ -178,6 +178,22 @@ export function createAudio() {
     loops.delete(name);
   }
 
+  // MASTER VOLUMES — the settings sliders. Loops are the music channel (the
+  // track is the only sustained loop the driver starts), one-shots are SFX.
+  // Live gain nodes are tracked so a slider move retunes what is already
+  // playing rather than only the next cue.
+  let musicVol = 1;
+  let sfxVol = 1;
+  const liveGains = new Set();
+
+  function setVolumes(music, sfx) {
+    musicVol = music;
+    sfxVol = sfx;
+    for (const entry of liveGains) {
+      entry.g.gain.value = Math.min(1, entry.base) * (entry.loop ? musicVol : sfxVol);
+    }
+  }
+
   function fire(name, pitch, gain, loop) {
     const buf = buffer(name);
     const c = audioCtx();
@@ -191,7 +207,11 @@ export function createAudio() {
     src.playbackRate.value = pitch ?? 1;
     src.loop = !!loop;
     const g = c.createGain();
-    g.gain.value = Math.min(1, gain ?? 1);
+    const base = gain ?? 1;
+    g.gain.value = Math.min(1, base) * (loop ? musicVol : sfxVol);
+    const entry = { g, base, loop: !!loop };
+    liveGains.add(entry);
+    src.onended = () => liveGains.delete(entry);
     src.connect(g).connect(c.destination);
     src.start();
     return src;
@@ -248,6 +268,8 @@ export function createAudio() {
     // Exposed so the Q key can silence the MUSIC without touching the SFX —
     // the effects are feedback and muting them makes the fight harder to read.
     stopLoop,
+    // The settings sliders (0..1 each) — retunes live sources too.
+    setVolumes,
     get enabled() {
       return enabled;
     },

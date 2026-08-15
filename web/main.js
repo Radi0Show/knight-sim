@@ -215,6 +215,9 @@ function reset() {
   resetTensionBar();
   state = createState({ seed: (Math.floor(performance.now()) % 100000) + 1, traceBulletSlots: 0 });
   state.runMode = runMode;
+  // THE LOADOUT COMES FROM SETTINGS. The title's equip menu edits title.gear;
+  // every fresh fight is built with a copy of it (sim/damage.js gearOf).
+  state.loadout.gear = title.gear.map((g) => ({ weapon: g.weapon, armor: [...g.armor] }));
   // A reset starts a new recording — a token must describe exactly one run.
   recorder = createRecorder({ seed: state.seed, mode, attack: attackId, difficulty });
   state.spriteFrames = renderer.spriteFrames;
@@ -299,6 +302,27 @@ function showReplay(token, copied) {
 // `title.mode` is null while the menu is up. A URL that names a mode skips it
 // entirely, which is what keeps ?attack= links working.
 const title = createTitle();
+
+// SETTINGS PERSISTENCE — the loadout and the volumes survive reloads.
+const SETTINGS_KEY = 'knightsim.settings';
+try {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
+  if (saved?.gear?.length === 3) {
+    title.gear = saved.gear.map((g) => ({ weapon: g.weapon | 0, armor: (g.armor ?? []).map((a) => a | 0) }));
+  }
+  if (saved?.volumes) {
+    title.volumes.music = Math.max(0, Math.min(100, saved.volumes.music | 0));
+    title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
+  }
+} catch { /* a corrupt entry falls back to the defaults */ }
+
+function persistSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ gear: title.gear, volumes: title.volumes }));
+  } catch { /* private mode etc. — the session still works, unsaved */ }
+  audio.setVolumes(title.volumes.music / 100, title.volumes.sfx / 100);
+}
+persistSettings();
 if (replay || params.get('mode')) title.mode = mode === 'practice' ? 'single' : 'normal';
 
 let musicOn = true;
@@ -401,6 +425,12 @@ function frame(now) {
       const r = stepTitle(title, gatedKeys(), ATTACK_MENU.length);
       if (r.moved) audio.play([{ name: 'snd_menumove', pitch: 1, gain: 1 }]);
       if (r.selected) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
+      // The equip menu's refusal, and UNUSED's whole personality.
+      if (r.error) audio.play([{ name: 'snd_error', pitch: 1, gain: 1 }]);
+      if (title.dirty) {
+        title.dirty = false;
+        persistSettings();
+      }
       if (r.chosen) { startRun(); break; }
     }
     // The fountain only. Drawing the fight under the menu made the party, the
