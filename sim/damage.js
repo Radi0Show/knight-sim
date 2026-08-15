@@ -250,11 +250,23 @@ export function knightTarget(state, target, opts = {}) {
   }
 
   // 2. The ShadowMantle brunt. `myattackchoice != 13` — not the sword tunnel.
-  // WHO WEARS IT comes from the gear, not a flag. `scr_damage` tests
-  // `chararmor1[i] == 23 || chararmor2[i] == 23` per character — EITHER slot,
-  // same behaviour. The handoff spec claims slot 1 and slot 2 differ (a
-  // persistent cycle against only the first two hits of the battle); no such
-  // distinction exists in the code, and it is modelled as the dump has it.
+  // WHO WEARS IT comes from the gear: the redirect branch tests EITHER slot
+  // per character. THE RESET DOES NOT — and an earlier note here claiming
+  // "no slot distinction exists" mis-read the parentheses. The original's
+  // reset-skip chain is, verbatim in shape:
+  //
+  //     if ((target == 0 && chararmor1[K] == 23) || chararmor2[K] == 23) {}
+  //     else if ((target == 1 && chararmor1[S] == 23) || chararmor2[S] == 23) {}
+  //     else if ((target == 2 && chararmor1[R] == 23) || chararmor2[R] == 23) {}
+  //     else damagecounter = 0;
+  //
+  // The SLOT-2 test sits OUTSIDE the target conjunction (ORIGINAL BUG — the
+  // intended reading is plainly `target == i && (slot1 || slot2)`), so a
+  // mantle worn in ARMOR 2 skips the reset on EVERY hit: the counter passes
+  // 3 after two redirects and never comes back — only the first two hits of
+  // the whole fight go to the wearer, then pure random forever. Worn in
+  // ARMOR 1 it is the documented two-of-three cycle. Both placements are
+  // reachable from the equip menu, so both behaviours ship.
   const gear = gearOf(state);
   const wearer = gear.findIndex((g) => (g.armor ?? []).includes(23));
   const mantle = wearer >= 0;
@@ -274,7 +286,13 @@ export function knightTarget(state, target, opts = {}) {
         if (pick > 2) pick = 0;
       }
       t = pick;
-      if (t !== wearer) k.damagecounter = 0;
+      // The original's chain, precedence and all.
+      const a1 = (i) => (gear[i]?.armor ?? [])[0] === 23;
+      const a2 = (i) => (gear[i]?.armor ?? [])[1] === 23;
+      const skipReset = ((t === 0 && a1(0)) || a2(0))
+        || ((t === 1 && a1(1)) || a2(1))
+        || ((t === 2 && a1(2)) || a2(2));
+      if (!skipReset) k.damagecounter = 0;
     }
   }
   return t;

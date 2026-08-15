@@ -134,6 +134,41 @@ if (CHAPTER !== 3) failures.push('this fight is chapter 3');
   if (sh[1] < 15) failures.push(`the mantle on Susie pulled only ${sh[1]}/30 onto her`);
 }
 
+// ── BlueRibbon's real math: + ceil(amount/8) PER ribbon, spells only ─────
+// scr_heal_amount_modify_by_equipment's only callers are the SPELL path's
+// wrappers (scr_healitemspell/scr_healallitemspell, from scr_spell). Items
+// heal their printed amount. Asserted at 100, where the flattened x1.125
+// this replaces disagrees with the ceil (112 vs 113).
+{
+  const one = statsOf(PARTY[2], { weapon: 0, armor: [26] });
+  const two = statsOf(PARTY[2], { weapon: 0, armor: [26, 26] });
+  if (one.healRibbons !== 1) failures.push(`one ribbon counts ${one.healRibbons}`);
+  if (two.healRibbons !== 2) failures.push('two ribbons do not stack');
+  const heal = (amt, r) => amt + Math.ceil(amt / 8) * r;
+  if (heal(100, 1) !== 113) failures.push(`ribbon math ${heal(100, 1)}, expected 113`);
+  if (heal(100, 2) !== 126) failures.push(`stacked ribbon math ${heal(100, 2)}, expected 126`);
+}
+
+// ── The mantle reset chain's SLOT precedence (ORIGINAL BUG, ported) ──────
+// `(target == i && chararmor1 == 23) || chararmor2 == 23` — the slot-2 test
+// sits outside the target conjunction, so a mantle in ARMOR 2 skips the
+// counter reset on every hit: two redirects at the start of the fight and
+// never again. ARMOR 1 is the documented two-of-three cycle.
+{
+  const hitsOnWearer = (armor) => {
+    const s = st([{ weapon: 0, armor }, { weapon: 0, armor: [] }, { weapon: 0, armor: [] }]);
+    let n = 0;
+    for (let i = 0; i < 10; i++) {
+      if (knightTarget(s, 1, { choose: () => 1 }) === 0) n += 1;
+    }
+    return n;
+  };
+  const slot1 = hitsOnWearer([23]);
+  const slot2 = hitsOnWearer([0, 23]);
+  if (slot1 !== 7) failures.push(`mantle in slot 1 redirected ${slot1}/10, expected the 2-of-3 cycle (7)`);
+  if (slot2 !== 2) failures.push(`mantle in slot 2 redirected ${slot2}/10, expected the first-2 latch`);
+}
+
 // ── The default build is the one the spec recommends ─────────────────────
 {
   const g = gearOf(st());
@@ -149,8 +184,9 @@ console.log('equipped: ' + [0, 1, 2].map((c) => {
   const q = statFor(s, c);
   return `${PARTY[c].name} AT${q.at} DF${q.df} MAG${q.magic}`;
 }).join(' · '));
+const hpBase = statFor(s, 2).magic * 5;
 console.log(`Rude Buster ${spellDamage(s, 1)} for ${spellCost(s, 1, 4)} TP · Heal Prayer `
-  + `${Math.floor(statFor(s, 2).magic * 5 * statFor(s, 2).healMult)}`);
+  + `${hpBase + Math.ceil(hpBase / 8) * statFor(s, 2).healRibbons}`);
 console.log('ribbons COST graze TP (Pink -20%, Twin -25%); LodeStone is +5%, TensionBow +10%');
 
 if (failures.length) {

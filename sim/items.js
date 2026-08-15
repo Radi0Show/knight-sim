@@ -75,12 +75,14 @@ export function freshInventory() {
  *    that `scr_healitem` plays nothing — true, but it delegates to `scr_heal`,
  *    which does.
  *
- * `healPlusMult` (BlueRibbon's Heal+) multiplies the amount BEFORE any of this.
+ * `healRibbons` — BlueRibbon's Heal+, scr_heal_amount_modify_by_equipment
+ * verbatim: each equipped ribbon on the CASTER adds `ceil(amount / 8)`,
+ * slot-checked separately so two stack.
  */
-export function applyHeal(state, target, amount, healPlusMult = 1) {
+export function applyHeal(state, target, amount, healRibbons = 0) {
   const hp = state.partyHp;
   const maxhp = PARTY[target].maxhp;
-  const amt = Math.floor(amount * healPlusMult);
+  const amt = amount + Math.ceil(amount / 8) * healRibbons;
   const before = hp[target];
   const belowZero = hp[target] <= 0;
 
@@ -104,15 +106,22 @@ export function applyHeal(state, target, amount, healPlusMult = 1) {
   return hp[target] - before;
 }
 
-/** `scr_healitem` — scr_heal plus the floating green number. */
-export function scrHealitem(state, target, amount, m = 1) {
-  return applyHeal(state, target, amount, m);
+/**
+ * `scr_healitem` — scr_heal plus the floating green number.
+ *
+ * NO RIBBON BONUS HERE: scr_heal_amount_modify_by_equipment's only callers
+ * are the SPELL path's wrappers (scr_healitemspell / scr_healallitemspell,
+ * called from scr_spell alone). scr_itemuse heals through plain scr_healitem
+ * — items heal their printed amount, ribbons or not.
+ */
+export function scrHealitem(state, target, amount) {
+  return applyHeal(state, target, amount, 0);
 }
 
 /** `scr_healitem_all(amount)` — EVERY member, the fallen included. */
-export function scrHealitemAll(state, amount, m = 1) {
+export function scrHealitemAll(state, amount) {
   let total = 0;
-  for (let i = 0; i < 3; i++) total += applyHeal(state, i, amount, m);
+  for (let i = 0; i < 3; i++) total += applyHeal(state, i, amount, 0);
   return total;
 }
 

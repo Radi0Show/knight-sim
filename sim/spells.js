@@ -173,14 +173,14 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     // `magic * 5`, off the EQUIPPED magic — Dealmaker's +5 is most of
     // Ralsei's healing. BlueRibbon's Heal+ multiplies what the WEARER heals.
     const st = statFor(state, slot);
-    const did = applyHeal(state, target, st.magic * 5, st.healMult);
+    const did = applyHeal(state, target, st.magic * 5, st.healRibbons);
     return `Heal Prayer: +${did}`;
   }
   if (spellId === 11) {
     // UltraHeal's cost is `225 - round(global.flag[1045] * 2.5)`; flag 1045 is
     // 0 in this fight's state, so it is the flat 225.
     const st2 = statFor(state, slot);
-    const did = applyHeal(state, target, st2.magic * 5 + 100, st2.healMult);
+    const did = applyHeal(state, target, st2.magic * 5 + 100, st2.healRibbons);
     return `UltraHeal: +${did}`;
   }
   if (spellId === 3) {

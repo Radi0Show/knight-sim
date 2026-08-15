@@ -221,10 +221,10 @@ eq(total, 56, 'a perfect three-bolt turn');
   if (ralsei.magic !== 19) failures.push(`equipped Ralsei MAG ${ralsei.magic}, expected 19`);
   if (!kris.mantle) failures.push('the mantle is not on Kris in the default build');
   if (susie.rudeBusterCost !== 100) failures.push("Devilsknife did not cut Rude Buster's cost");
-  if (ralsei.healMult !== 1.125) failures.push('BlueRibbon Heal+ is not on Ralsei');
+  if (ralsei.healRibbons !== 1) failures.push('BlueRibbon Heal+ is not on Ralsei');
   const rb = spellDamage(g, 1);
   console.log(`equipped: Kris AT ${kris.at} · Susie AT ${susie.at} MAG ${susie.magic} · `
-    + `Ralsei MAG ${ralsei.magic} heal x${ralsei.healMult} · Rude Buster ${rb} for ${susie.rudeBusterCost} TP`);
+    + `Ralsei MAG ${ralsei.magic} heal +ceil/8 x${ralsei.healRibbons} · Rude Buster ${rb} for ${susie.rudeBusterCost} TP`);
 }
 
 console.log(`knight 7300 HP / AT ${KNIGHT_AT} / DF ${KNIGHT_DF}, reduction ${DR_BASE} +${DR_PER_TURN}/turn to ${DR_CAP}`);

@@ -39,6 +39,39 @@
 // wear it, so every graze factor scales with the number wearing — two
 // TensionBows is +20%.
 
+// ── The special-effect audit (player request: "make sure all special armor
+// and weapons do their special things") ─────────────────────────────────────
+//
+// Every battle-side equipment conditional in the dump was swept
+// (scr_armor/weaponcheck callers + direct chararmor/charweapon reads).
+// The complete list for THIS fight:
+//
+//   IMPLEMENTED, verbatim:
+//   - ShadowMantle 23: x0.33 taken, the two-of-three redirect, and the
+//     reset chain's slot-2 precedence quirk (sim/damage.js knightTarget).
+//   - Graze set (grazebox AND the tracking-slash extra graze): TensionBow
+//     +10% TP, LodeStone +5% TP, SilverWatch +10% time, PinkRibbon
+//     -20% TP/-20% time/+20% size, TwinRibbon -25% TP/+25% size, size
+//     capped at 3 (grazeFactors below).
+//   - BlueRibbon 26: heals BY the wearer get + ceil(amount/8) PER equipped
+//     ribbon (scr_heal_amount_modify_by_equipment; stacks across slots).
+//   - Devilsknife 7 on Susie: Rude Buster 125 -> 100 (scr_spellinfo).
+//   - Stats (at/df/mag): every piece, summed base + slots = battleat/df/mag.
+//
+//   AUDITED NO-OPS for this fight, so nobody "fixes" them in later:
+//   - Elements: the knight's bullets all carry element 5, the mantle's own —
+//     and scr_damage routes the mantle by ID, skipping the generic
+//     scr_element_damage_reduction. No other chapter armour resists
+//     element 5, so the generic path cannot fire here. The element fields
+//     ride along as data.
+//   - Silver Card / Dealmaker money bonuses: no money in the sim.
+//   - White Ribbon "Cuteness", CheerScarf "Smiley", MechaSaber "Annoying",
+//     AutoAxe "BadIdea", Spookysword/Brave Ax/DaintyScarf flavour abilities:
+//     no battle-side reads in the dump for this encounter (ACT/overworld
+//     flavour); their stats still apply.
+//   - TwistedSwd/ThornRing "Trance": reads only on charweapon[4] (Noelle),
+//     who is not in this party.
+
 /** ShadowMantle's DF is `global.chapter`, and this fight is chapter 3. */
 export const CHAPTER = 3;
 
@@ -178,8 +211,12 @@ export function statsOf(base, entry) {
     at,
     df,
     magic,
-    // BlueRibbon (26) — "Heal+". Multiplies heals PERFORMED BY the wearer.
-    healMult: (entry.armor ?? []).includes(26) ? 1.125 : 1,
+    // BlueRibbon (26) — "Heal+". The real math is scr_heal_amount_modify_by_
+    // equipment, verbatim: each equipped ribbon ADDS `ceil(amount / 8)` to a
+    // heal PERFORMED BY the wearer — slot-checked separately, so two ribbons
+    // stack to two ceils. (An earlier pass flattened this to a x1.125
+    // multiplier, which drops the ceil and cannot stack.)
+    healRibbons: (entry.armor ?? []).filter((a) => a === 26).length,
     // Devilsknife (7) — "Buster TP DOWN". 125 -> 100, i.e. 50% -> 40%.
     rudeBusterCost: entry.weapon === 7 ? 100 : 125,
     // ShadowMantle (23). `scr_damage` checks the ID directly rather than any
