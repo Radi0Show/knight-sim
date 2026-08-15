@@ -259,6 +259,21 @@ export function drawIntroScene(ctx, sc, sprites) {
   ctx.drawImage(bgCanvas, 0, 0);
   ctx.restore();
 
+  // 1.5 The entry markers' afterimages (obj_encounterbasic fightcon 1),
+  // alpha 0.5 fading at 0.04/frame, behind the markers themselves. With the
+  // party's flight covering zero distance in this fight they stack in place
+  // under the solid marker, exactly as invisibly as the original's.
+  if (sc.flightGhosts) {
+    for (const g of sc.flightGhosts) {
+      const entry = sprites.get(g.sprite);
+      if (!entry) continue;
+      const alpha = Math.max(0, 0.5 - (sc.t - g.born) * 0.04);
+      if (alpha <= 0) continue;
+      const frames = entry.meta.frames ?? 1;
+      drawSpriteExt(ctx, entry, g.index % frames, g.x - cam, g.y, 2, 2, 0, null, alpha);
+    }
+  }
+
   // 2. The party — depth order is -y (autodepth): higher on screen is
   // further back, so Kris (y 104) paints first and Ralsei (y 190) last.
   drawActor(ctx, sprites, sc.actors.kris, cam);

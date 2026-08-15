@@ -170,12 +170,15 @@ export function stepIntroFx(e, cues, sc) {
 // ---------------------------------------------------------------------------
 // The full scene.
 
-const CAM_X = 2230;
+// Exported for the fight renderer: the battle happens IN THIS ROOM at this
+// same camera (scr_battle never changes rooms), so the vista stays behind the
+// fight while obj_bgfountaintest's alphafactor fades the battle dark over it.
+export const CAM_X = 2230;
 
 export function createIntroScene() {
   return {
     t: 0,
-    phase: 'tableau', // tableau -> roar -> reappear -> sword -> marker -> fade -> done
+    phase: 'tableau', // tableau -> roar -> reappear -> sword -> marker -> entry -> done
     phaseT: 0,
     camX: CAM_X,
     done: false,
@@ -380,14 +383,20 @@ export function stepIntroScene(sc, cues) {
         m.delayIndex += 1;
         m.index = 7 + m.delayIndex;
         if (m.index >= 11) {
-          sc.phase = 'fade';
+          // sword_draw_ready -> PTB02 con 4 fires scr_battle(115) THAT frame,
+          // and the seam is obj_encounterbasic, not a fade: the party's
+          // overworld instances become dark markers, the knight's marker is
+          // handed to scr_move_to_point_over_time, and 25 frames later
+          // obj_battlecontroller exists. See the 'entry' case below.
+          sc.phase = 'entry';
           sc.phaseT = 0;
-          // The glide's endpoints: from the overworld anchor to the battle
-          // actor's (sim/actors.js KNIGHT) — and onto its exact FIRST-FRAME
-          // hover: the fight's siner2 starts at 0, so its opening y is
-          // 78 + cos(0)*8 = 86. Handing off mid-bob popped the swap frame
-          // by up to 16px (reported from play). The intro's own hover
-          // pauses here and the glide drives y directly to 86.
+          // The knight marker's glide (scr_battle's monstertype-104 branch):
+          // scr_move_to_point_over_time(heromakex, PTB02.ystart + hover, 20)
+          // with stopsiner2 — a LINEAR lerp over 20 frames (obj_move_to_point
+          // Step is `lerp(x, movex, movetimer / movemax)`), onto the fight
+          // actor's exact FIRST-FRAME hover: the fight's siner2 starts at 0,
+          // so its opening y is 78 + cos(0)*8 = 86. Handing off mid-bob
+          // popped the swap frame by up to 16px (reported from play).
           k.hoverPause = true;
           sc.glide = {
             fromX: k.x,
@@ -395,24 +404,72 @@ export function stepIntroScene(sc, cues) {
             toX: sc.camX + 425,
             toY: 86,
           };
+          // obj_encounterbasic's Create: the party become dark markers at
+          // their overworld spots — Kris spr_kris_sword_jump_down, Susie
+          // spr_susier_wall (her rsprite is spr_susier_dark, which the
+          // encounter swaps), Ralsei his ch3 rsprite spr_ralsei_walk_right —
+          // held on frame 0 (scr_dark_marker sets image_speed = 0). Their
+          // stations ARE where the tableau left them: encountersetup 115's
+          // heromake (126,104)/(80,142)/(58,190) equals the actors' positions
+          // minus CAM_X, so the "fly-in" (speed = distance/10) covers zero
+          // distance in this fight and the party transforms in place.
+          sc.actors.kris.sprite = 'spr_kris_sword_jump_down';
+          sc.actors.susie.sprite = 'spr_susier_wall';
+          sc.actors.ralsei.sprite = 'spr_ralsei_walk_right';
+          for (const key of Object.keys(sc.actors)) {
+            sc.actors[key].index = 0;
+            sc.actors[key].speed = 0;
+          }
+          sc.flightGhosts = [];
         } else {
           m.timer = MARKER_DELAYS[m.delayIndex];
         }
       }
       break;
     }
-    case 'fade': {
-      // The player-directed handoff: scenery fades over 45 frames while the
-      // Knight eases onto the battle anchor, so the fight's first frame draws
-      // him where the intro left him. (The real entry is scr_battle's swirl.)
-      const t = Math.min(1, sc.phaseT / 45);
-      const out = 1 - (1 - t) * (1 - t);
-      sc.bg.fadeAlpha = 1 - t;
-      // The hover is paused (marker handoff); y is driven directly onto the
-      // fight's deterministic opening hover position (86 — see the glide).
-      k.x = sc.glide.fromX + (sc.glide.toX - sc.glide.fromX) * out;
-      k.y = sc.glide.fromY + (sc.glide.toY - sc.glide.fromY) * out;
-      if (sc.phaseT >= 50) {
+    case 'entry': {
+      // obj_encounterbasic's Step, both cons. An earlier version of this
+      // phase was an invented 45-frame scenery fade — the real seam never
+      // fades the room; the fight's own backdrop (obj_bgfountaintest) fades
+      // IN over it once the battle starts (render/background.js alphafactor).
+      //
+      // The knight marker's linear 20-frame glide (obj_move_to_point).
+      const t = Math.min(1, sc.phaseT / 20);
+      k.x = sc.glide.fromX + (sc.glide.toX - sc.glide.fromX) * t;
+      k.y = sc.glide.fromY + (sc.glide.toY - sc.glide.fromY) * t;
+
+      // fightcon 1: `if (counttimer < 10)` — afterimages of every marker,
+      // alpha 0.5, fading at obj_afterimage's 0.04/frame. counttimer has
+      // already been incremented when the test runs, so frames 1..9 spawn.
+      if (sc.phaseT < 10) {
+        for (const key of Object.keys(sc.actors)) {
+          const a = sc.actors[key];
+          sc.flightGhosts.push({
+            sprite: a.sprite, index: Math.floor(a.index), x: a.x, y: a.y, born: sc.t,
+          });
+        }
+      }
+      sc.flightGhosts = sc.flightGhosts.filter((g) => 0.5 - (sc.t - g.born) * 0.04 > 0);
+
+      // `counttimer >= 10`: snd_impact at 0.7 + snd_weaponpull_fast at 0.8,
+      // and the flourish — THE attack animation the fight opens on: Kris
+      // spr_krisb_attack, Susie spr_susieb_attack, Ralsei his own
+      // spr_ralsei_battleintro, all from frame 0 at image_speed 0.5.
+      if (sc.phaseT === 10) {
+        cues.push({ name: 'snd_impact', pitch: 1, gain: 0.7 });
+        cues.push({ name: 'snd_weaponpull_fast', pitch: 1, gain: 0.8 });
+        sc.actors.kris.sprite = 'spr_krisb_attack';
+        sc.actors.susie.sprite = 'spr_susieb_attack';
+        sc.actors.ralsei.sprite = 'spr_ralsei_battleintro';
+        for (const key of Object.keys(sc.actors)) {
+          sc.actors[key].index = 0;
+          sc.actors[key].speed = 0.5;
+        }
+      }
+
+      // fightcon 2: 15 more frames, then the markers are destroyed and
+      // obj_battlecontroller is created — the fight's frame 0.
+      if (sc.phaseT >= 25) {
         sc.done = true;
       }
       break;

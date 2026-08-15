@@ -213,8 +213,12 @@ function reset() {
   // The bar's two trailing values are renderer-local, so a fresh fight has to
   // clear them or the new run starts with the old one's TP draining away.
   resetTensionBar();
+  // The vista's animation accumulator survives a reset — an R-restart is a
+  // fresh battle in the SAME room, not a re-run of the story intro.
+  const vistaFs = state?.vistaFsBase ?? 0;
   state = createState({ seed: (Math.floor(performance.now()) % 100000) + 1, traceBulletSlots: 0 });
   state.runMode = runMode;
+  state.vistaFsBase = vistaFs;
   // THE LOADOUT COMES FROM SETTINGS. The title's equip menu edits title.gear;
   // every fresh fight is built with a copy of it (sim/damage.js gearOf).
   state.loadout.gear = title.gear.map((g) => ({ weapon: g.weapon, armor: [...g.armor] }));
@@ -473,6 +477,10 @@ function frame(now) {
     drawBackground(ctx, state, renderer.sprites);
     drawIntroScene(ctx, introSeq, renderer.sprites);
     if (introSeq.done) {
+      // The room persists across the seam: hand the vista's animation
+      // accumulator to the fight renderer so the backdrop's 120-frame
+      // fade-in happens over an unbroken scene (render/canvas.js).
+      state.vistaFsBase = introSeq.bg.fountain_speed;
       introSeq = null;
       maskHeldInput();
     }

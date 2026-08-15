@@ -25,12 +25,27 @@ import { rgb } from './draw/gm.js';
 import { drawSpriteText, FONTS } from './text.js';
 import { loadFont, drawText } from './font.js';
 
-// THE ORIGINAL'S INSTANCE SITS AT x = 0, and its Draw puts the TP logo and the
-// percentage at `x - 30` — off the left of a 640-wide view. Rather than invent
-// three new offsets, the whole assembly is shifted right by 30 so that `x - 30`
-// lands at 0 and every other coordinate keeps the original's relationship to
-// it. One stated deviation instead of several silent ones.
-const X = 30;
+// THE BAR SLIDES IN. obj_tensionbar's Create puts the instance at
+// `x = view_x - 40` with `hspeed = 13, friction = 1` — built-in motion, so
+// each frame the speed drops by 1 FIRST and then the move happens (the
+// oracle-verified order in sim/index.js). The travel is 12+11+...+1 = 78,
+// coming to rest at x = +38 with the TP logo and readout at `x - 30` = 8.
+//
+// (An earlier note here claimed the instance "sits at x = 0" with the readout
+// off-screen, and shifted everything right by 30 to compensate. That was a
+// misread of the Create — the slide had not been seen. The real rest position
+// is 38, confirmed against reference/flipped_oracle_shot_20.png: bar at ~38,
+// "TP" text at ~8.)
+function barX(frame) {
+  let x = -40;
+  let sp = 13;
+  for (let i = 0; i < frame; i++) {
+    sp -= 1;
+    if (sp <= 0) return 38;
+    x += sp;
+  }
+  return x;
+}
 const Y = 40;
 
 /** GameMaker packs colours BGR: c_orange is 0x0080FF -> RGB(255,128,0). */
@@ -58,6 +73,8 @@ export function drawTensionBar(ctx, state, sprites) {
   const entry = sprites.get('spr_tensionbar');
   if (!entry || !entry.frames.length) return;
   const bg = entry.frames[Math.min(1, entry.frames.length - 1)];
+  // The slide-in, as a pure function of the sim frame (the 30Hz rule).
+  const X = barX(state.frame ?? 0);
   const w = bg.width;
   const h = bg.height;
   const tension = state.tension ?? 0;

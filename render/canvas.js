@@ -19,6 +19,8 @@ import { drawTensionBar } from './tensionbar.js';
 import { drawGraze } from './graze.js';
 import { drawFightBar } from './fightbar.js';
 import { drawBackground } from './background.js';
+import { drawSnowBackdrop } from './draw/intro-fx.js';
+import { CAM_X } from '../sim/intro.js';
 import { drawDmgNumbers, drawAttackVfx } from './dmgnumbers.js';
 import { drawRudeBuster } from './rudebuster.js';
 import { drawDialogue } from './dialogue.js';
@@ -465,6 +467,16 @@ export async function createRenderer(canvas) {
     }
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    // THE ROOM IS STILL THERE. scr_battle never changes rooms: the fight is
+    // played at the same camera the cutscene ends on, with the snow vista's
+    // world-anchored tiles on the left of the view. What darkens it is
+    // obj_bgfountaintest's own 120-frame alphafactor ramp drawing OVER it —
+    // there is no fade-out of the scenery itself. Cutting straight to black
+    // here was the visible seam between the intro and the fight.
+    // `vistaFsBase` carries the intro's fountain-animation accumulator across
+    // the handoff (0.1/frame, same rate on both sides).
+    drawSnowBackdrop(ctx, CAM_X, (state.vistaFsBase ?? 0) + 0.1 * (state.frame ?? 0), sprites);
 
     // obj_bgfountaintest, at depth 150000 — behind absolutely everything.
     // obj_knight_enemy's Create destroys obj_battleback and puts this in its

@@ -292,6 +292,32 @@ function drawEnemyRow(ctx, state, sprites, font) {
   drawText(ctx, font, '???', 424, 380, { yscale: 0.5, color: '#ffffff' });
 }
 
+/**
+ * obj_battlecontroller's Draw, `intro == 1` — the bottom band RISES at battle
+ * start: `bp` climbs 0 -> 152 at +30 a frame, easing by `round(d / 2.5)` once
+ * within 40, and every charbox coordinate carries a `(480 - bp)` or
+ * `bpoff = -bp + bpy` term. The series is 0, 30, 60, 90, 120, 133, 141, 145,
+ * 148, 150, 151, 152 — eleven frames. A pure function of the sim frame (the
+ * 30Hz rule), so R-reset replays it exactly as a fresh battle does.
+ *
+ * The battle MESSAGE does not ride it — scr_battletext's writer is created at
+ * a fixed (30, 376) — which is why the translate below is cancelled before
+ * the full-width lists are drawn.
+ */
+function panelRise(frame) {
+  if (frame >= 12) return 0;
+  let bp = 0;
+  for (let i = 0; i < frame; i++) {
+    if (bp < 151) {
+      const d = 152 - bp;
+      bp += d < 40 ? Math.round(d / 2.5) : 30;
+    } else {
+      bp = 152;
+    }
+  }
+  return 152 - bp;
+}
+
 export function drawMenu(ctx, state, sprites) {
   const menu = state.menu;
   if (!menu) return;
@@ -302,8 +328,10 @@ export function drawMenu(ctx, state, sprites) {
   if (state.knight?.endCutscene > 0) return;
 
   const top = 480 - BP; // 328
+  const rise = panelRise(state.frame ?? 0);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (rise) ctx.translate(0, rise);
 
   // THE BOTTOM BAND, drawn before anything else in it:
   //
@@ -411,7 +439,10 @@ export function drawMenu(ctx, state, sprites) {
     }
   }
 
-  // The lists are full-width over the band, not panel decoration.
+  // The lists are full-width over the band, not panel decoration — and they
+  // are anchored at a FIXED y (375/376), not at (480 - bp), so the intro rise
+  // stops here.
+  if (rise) ctx.translate(0, -rise);
   const font = loadFont();
   if (menu.open && (menu.submenu === 'item' || menu.submenu === 'magic' || menu.submenu === 'act')) {
     drawItemList(ctx, state, sprites, font, menu.siner);
