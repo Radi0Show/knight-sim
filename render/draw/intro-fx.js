@@ -168,6 +168,15 @@ function getCanvas(ref, w, h) {
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
+    // PIXEL ART, SAME AS THE MAIN CONTEXT. A fresh 2d context defaults to
+    // imageSmoothingEnabled = true, so every 2x-scaled sprite drawn into
+    // these scratch surfaces was bilinear-filtered — the intro's snow vista
+    // and dark fountain rendered FUZZY while the fight's identical backdrop
+    // (drawn straight onto the main ctx, which render/canvas.js configures)
+    // was crisp. Reported from play as exactly that seam. GameMaker
+    // surfaces do not interpolate either, so nearest is also the faithful
+    // choice for the ghosts' scaled re-blits.
+    c.getContext('2d').imageSmoothingEnabled = false;
     return c;
   }
   return ref;
