@@ -14,6 +14,7 @@ import { loadFont, drawText } from '../render/font.js';
 import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
+import { bindGamepad } from '../input/gamepad.js';
 import { createRenderer } from '../render/canvas.js';
 import { createIntroScene, stepIntroScene } from '../sim/intro.js';
 import { drawIntroScene } from '../render/draw/intro-fx.js';
@@ -30,7 +31,20 @@ const canvas = document.getElementById('game');
 const renderer = await createRenderer(canvas);
 const ctx = renderer.ctx;
 const audio = createAudio();
-const keys = bindKeyboard(window);
+const keyboard = bindKeyboard(window);
+const gamepad = bindGamepad();
+// One reader, two sources: the sim sees the OR of keyboard and controller,
+// so both work at once and neither can mask the other. The replay recorder
+// sits downstream of this read, so controller runs produce tokens exactly
+// like keyboard runs.
+const keys = {
+  read() {
+    const k = keyboard.read();
+    const g = gamepad.read();
+    for (const a of Object.keys(g)) if (g[a]) k[a] = true;
+    return k;
+  },
+};
 
 const params = new URLSearchParams(location.search);
 
@@ -420,6 +434,17 @@ function frame(now) {
   const elapsed = now - last;
   last = now;
 
+  // Controller driver keys — start pauses, select resets, mirroring the
+  // KeyP/KeyR handlers. Polled here because the Gamepad API has no events.
+  {
+    const pe = gamepad.driverEdges();
+    if (pe.reset) reset();
+    if (pe.pause) {
+      running = !running;
+      if (!running) audio.stopAll();
+    }
+  }
+
   // Debug freeze: a __intro.drive() paint stays on screen until released.
   if (window.__intro.hold) {
     requestAnimationFrame(frame);
@@ -708,7 +733,8 @@ function frame(now) {
     ` · HP ${state.partyHp.join('/')}` +
     ` · TP ${Math.floor((state.tension / 250) * 100)}%` +
     ` · sprites ${renderer.spriteCount}` +
-    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · E debug-hit 1000 · <b style="color:#e0a">B report a bug</b>`;
+    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · E debug-hit 1000 · <b style="color:#e0a">B report a bug</b>`
+    + (gamepad.connected() ? ' · 🎮 A confirm · B cancel/slow · start pause · select reset' : '');
 
   requestAnimationFrame(frame);
 }
