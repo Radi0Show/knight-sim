@@ -13,7 +13,7 @@
 // party hp[] bookkeeping is out of scope per CLAUDE.md.
 
 import { destroy } from '../entity.js';
-import { scrDamageAll } from '../damage.js';
+import { scrDamageAll, scrDamageSingle } from '../damage.js';
 
 export function scrBulletInit(e) {
   e.grazed = 0;
@@ -101,16 +101,26 @@ export function collidebulletOther15(e, state) {
   if (!state.damageEnabled) return;
 
   if (e.active === 1 || e.active === true) {
-    // THE KNIGHT'S BULLETS HIT THE WHOLE PARTY. `scr_damage_all` loops all
-    // three and then sets the shared invulnerability, which is why one contact
-    // takes three chunks out of the bars rather than one.
+    // obj_collidebullet Other_15, the real routing — and an earlier note
+    // here ("the knight's bullets hit the whole party") was WRONG, reported
+    // from play as the whole party melting at once:
     //
-    // This used to reset `invTimer` and stop — the hit registered, the timer
-    // ran, and nobody lost any HP. The bars the menu draws were decorative.
+    //     if (target != 3) scr_damage();       // ONE character, redirected
+    //     if (target == 3) scr_damage_all();   // the party, aoedamage set
+    //
+    // `scr_bullet_init` defaults `target = 0`, so an ordinary bullet takes
+    // HP from ONE character, chosen by scr_damage's chapter-3 block (the
+    // Kris redirect and the ShadowMantle's two-of-three pull). Only bullets
+    // that set target = 3 in their own Other_15 (the slashes, the pointing
+    // stars) hit everyone — and those set aoedamage, which SKIPS the
+    // redirect, so the AoE path never funnels into the wearer.
     if (state.invTimer < 0) {
-      scrDamageAll(state, e.damage ?? 1, {
-        flurrySoftened: state.flurrySoftened === true,
-      });
+      const opts = { flurrySoftened: state.flurrySoftened === true };
+      if (e.target === 3) {
+        scrDamageAll(state, e.damage ?? 1, opts);
+      } else {
+        scrDamageSingle(state, e.damage ?? 1, e.target ?? 0, opts);
+      }
     }
     if (e.destroyonhit === 1 || e.destroyonhit === true) {
       destroy(e);

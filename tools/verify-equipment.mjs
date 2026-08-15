@@ -15,6 +15,7 @@ import { PARTY, statFor, gearOf, DEFAULT_GEAR, scrDamage, knightTarget } from '.
 import { spellDamage, fightDamage, createKnight } from '../sim/knight.js';
 import { spellCost } from '../sim/spells.js';
 import { createHeroes } from '../sim/heroes.js';
+import { collidebulletOther15 } from '../sim/bullets/regularbullet.js';
 
 const failures = [];
 const st = (gear) => {
@@ -167,6 +168,34 @@ if (CHAPTER !== 3) failures.push('this fight is chapter 3');
   const slot2 = hitsOnWearer([0, 23]);
   if (slot1 !== 7) failures.push(`mantle in slot 1 redirected ${slot1}/10, expected the 2-of-3 cycle (7)`);
   if (slot2 !== 2) failures.push(`mantle in slot 2 redirected ${slot2}/10, expected the first-2 latch`);
+}
+
+// ── Bullet contact is SINGLE-TARGET by default ───────────────────────────
+// obj_collidebullet Other_15: `if (target != 3) scr_damage()` — one member,
+// through the redirect — `else scr_damage_all()`. The sim shipped with the
+// default contact hitting the whole party (three bars draining per touch,
+// the mantle economy never running), reported from play as Susie and Ralsei
+// melting. A default-target bullet must cost exactly ONE member HP; a
+// target-3 bullet must cost all standing members.
+{
+  const mk = () => {
+    const s = st();
+    s.damageEnabled = true;
+    s.invTimer = -1;
+    s.invc = 1;
+    return s;
+  };
+  const s1 = mk();
+  const before1 = [...s1.partyHp];
+  collidebulletOther15({ active: 1, target: 0, damage: 100, destroyonhit: 0, alive: true }, s1);
+  const hit1 = [0, 1, 2].filter((c) => s1.partyHp[c] !== before1[c]);
+  if (hit1.length !== 1) failures.push(`default bullet contact hit ${hit1.length} members, expected 1`);
+
+  const s3 = mk();
+  const before3 = [...s3.partyHp];
+  collidebulletOther15({ active: 1, target: 3, damage: 100, destroyonhit: 0, alive: true }, s3);
+  const hit3 = [0, 1, 2].filter((c) => s3.partyHp[c] !== before3[c]);
+  if (hit3.length !== 3) failures.push(`target-3 bullet contact hit ${hit3.length} members, expected 3`);
 }
 
 // ── The default build is the one the spec recommends ─────────────────────
