@@ -1,32 +1,37 @@
-// THE BATTLE CHATBOX and the speech balloons.
+// THE SPEECH BALLOON — the Susie/Knight enemy-talk exchange, drawn the way
+// the fight draws it (issue #1: the bottom chatbox read as the game
+// buffering; the real exchange is a balloon over the party's side).
 //
-// The chatbox is the band the button row occupies between turns —
-// `obj_writer` types into the same 640x60ish strip the menu uses, which is why
-// the menu and the text never appear together.
+// From obj_knight_enemy's talk block:
 //
-// TYPED, NOT SHOWN. `global.typer = 81` and the writer reveals a character at
-// a time. A block of text appearing whole reads as a subtitle; revealed at
-// ~2 characters a frame it reads as someone speaking, and the pacing is most
-// of what makes a DELTARUNE conversation feel like one.
+//     global.typer = 75;
+//     scr_enemyblcon(obj_herosusie.x + 92, obj_herosusie.y + 38, 14);
 //
-// `&` is the line break, so a message is up to three short lines rather than
-// one wrapped paragraph — the balloons are sized for exactly that.
+// and scr_enemyblcon's case 14: obj_battleblcon with spr_battleblcon_long,
+// auto_length = 1, side = -1. The auto-length balloon's Draw builds the body
+// out of TWO WHITE RECTANGLES (the plus-union is the rounded corner) sized
+// from the writer's text:
+//
+//     balloonwidth  = stringmax * hspace + 10        (longest line * 9)
+//     balloonheight = (linecount + 1) * vspace + 5   (lines * 20 + 5)
+//     side -1: xoffset 20; writing starts AT the anchor, centred vertically
+//     tail: spr_battleblcon_parts frame 4 at (x - 20, y), xscale -1,
+//           yscale 0.5 when balloonheight < 40
+//
+// TYPER 75: fnt_dotumche, c_black, charline 33, advance 9, vspace 20 —
+// BLACK text on the white balloon. Both beats of the exchange (the line and
+// the reply) present at the same anchor, as the block stages them.
+//
+// LABELLED: the writer's voice blips (snd_txtsus) are not cued.
 
-import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
-import { loadFont, drawText, textWidth, textHeight } from './font.js';
-// The typing logic is PURE and lives in sim/ — the turn loop needs it too.
-import { revealed, dialogueDone, formatWriter } from '../sim/dialogue.js';
+import { drawSpriteExt } from './draw/gm.js';
+import { loadFont, drawText } from './font.js';
+import { revealed, formatWriter } from '../sim/dialogue.js';
+import { PARTY } from '../sim/actors.js';
 
+const HSPACE = 9;
+const VSPACE = 20;
 
-const DIM = [160, 160, 170];
-
-
-/**
- * The chatbox, drawn over the band where the button row sits.
- *
- * Positioned at the band's own top (480 - bp = 328) rather than at an invented
- * offset, so it lands exactly where the menu it replaces does.
- */
 export function drawDialogue(ctx, state, sprites) {
   const dlg = state.dialogue;
   if (!dlg?.text) return;
@@ -36,38 +41,44 @@ export function drawDialogue(ctx, state, sprites) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // TYPER 81 — the Susie/Knight exchange's writer, from scr_texttype:
-  //
-  //     case 81: scr_textsetup(scr_84_get_font("dotumche"), c_black, x, y,
-  //                            33, 0, 1, snd_tv_voice_short, 9, 20, 0);
-  //
-  // charline 33, hspace 9, vspace 20, fnt_dotumche. DEVIATION, labelled: the
-  // real text is BLACK on a white speech balloon; until the balloon sprite is
-  // drawn (the Susie-dialogue task) black-on-arena would be unreadable, so
-  // the colour stays white here. Metrics are the game's.
-  const lines = revealed(formatWriter(dlg.text, 33), dlg.timer);
-  const lh = 20;
-  const top = 340;
+  // The anchor: obj_herosusie + (92, 38). Susie's battle position is the
+  // sim's PARTY[1].
+  const ax = PARTY[1].x + 92;
+  const ay = PARTY[1].y + 38;
 
-  // The speaker's face colour tints nothing — DELTARUNE draws the text plain
-  // white and identifies the speaker by the portrait, which this build does
-  // not have. The name is drawn instead of inventing a tint.
-  if (dlg.speaker) {
-    drawText(ctx, font, dlg.speaker === 'susie' ? 'SUSIE' : 'THE KNIGHT', 40, top - 22,
-      { color: rgb(DIM), xscale: 0.7, yscale: 0.7 });
+  // formatWriter returns the wrapped STRING; the balloon sizes off its
+  // fully-revealed line set (`&` breaks — the writer's own line separator).
+  const formatted = formatWriter(dlg.text, 33);
+  const fullLines = revealed(formatted, 1e9);
+  const stringmax = Math.max(...fullLines.map((l) => l.length));
+  const bw = stringmax * HSPACE + 10;
+  const bh = fullLines.length * VSPACE + 5;
+  const writingX = ax + 5;
+  const writingY = ay + 3 - bh / 2;
+
+  // The body: the two-rectangle union (draw_rectangle is inclusive; +1).
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(writingX - 10, writingY - 5, bw + 11, bh + 1);
+  ctx.fillRect(writingX - 5, writingY - 10, bw + 1, bh + 11);
+
+  // The tail, mirrored toward the speaker (side -1), half-height for a
+  // short balloon.
+  const parts = sprites.get('spr_battleblcon_parts');
+  if (parts) {
+    const tailScale = bh < 40 ? 0.5 : 1;
+    ctx.save();
+    ctx.translate(ax - 20, ay);
+    ctx.scale(-1, tailScale);
+    drawSpriteExt(ctx, parts, 4, 0, 0, 1, 1, 0, null, 1);
+    ctx.restore();
   }
 
+  // The text — black, revealed at the writer's rate, one row per line.
+  const lines = revealed(formatted, dlg.timer);
   for (let i = 0; i < lines.length; i++) {
-    drawText(ctx, font, lines[i], 40, top + i * lh, { color: rgb(c_white), advance: 9 });
-  }
-
-  // The prompt only appears once the line has finished typing — pressing
-  // through mid-sentence is allowed, but advertising it before then would
-  // teach players to skip everything.
-  if (dialogueDone(dlg.text, dlg.timer)) {
-    const t = 'C';
-    drawText(ctx, font, t, 600 - textWidth(font, t), top + 2 * lh,
-      { color: rgb(DIM), xscale: 0.7, yscale: 0.7 });
+    drawText(ctx, font, lines[i], writingX, writingY + i * VSPACE, {
+      color: 'rgb(0,0,0)', advance: HSPACE,
+    });
   }
   ctx.restore();
 }

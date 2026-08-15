@@ -214,23 +214,34 @@ function drawItemList(ctx, state, sprites, font, siner) {
  * unusable.
  */
 function drawTargetPicker(ctx, state, sprites, font) {
+  // bmenuno 7's REAL layout (obj_battlecontroller Draw — issue #2): three
+  // rows in the band, one per party member, the heart on the chosen row:
+  //
+  //     heart   (xx + 55, yy + 385 + coord * 30)
+  //     name    (xx + 80, yy + 375 + i * 30)   c_white, mainbig
+  //     trough  (xx + 400 .. 500, yy + 380 + i*30, 15 tall)   c_maroon
+  //     fill    xx + 400 -> 400 + hp%                          c_lime
+  //
+  // FAITHFUL ODDITY: `_hp` is hp/maxhp*100 clamped only at -100, so a
+  // SWOONED member's lime fill extends LEFTWARD out of the trough — the
+  // original draws the negative rectangle and so does this. The fallen stay
+  // selectable (a DeluxeDinner on a swooned ally is the point of carrying
+  // one; scr_heal adds to the negative number).
   const menu = state.menu;
   const heart = sprites.get('spr_heart');
-  for (let c = 0; c < 3; c++) {
-    const x = CHUNK[c];
-    const hp = state.partyHp?.[c] ?? 0;
-    const down = hp <= 0;
-    // A downed member is dimmed but still selectable — the dimming says
-    // "this one is out", not "you cannot pick this one".
-    ctx.globalAlpha = down ? 0.55 : 1;
-    drawText(ctx, font, PARTY[c].name.toUpperCase(), x + 40, 385,
-      { color: down ? '#ff0000' : '#ffffff' });
-    drawText(ctx, font, `${hp} / ${PARTY[c].maxhp}`, x + 40, 415,
-      { color: down ? '#ff0000' : '#ffffff' });
-    ctx.globalAlpha = 1;
-    if (menu.targetIndex === c && heart) {
-      drawSpriteExt(ctx, heart, 0, x + 20, 388, 1, 1, 0, null, 1);
-    }
+  for (let i = 0; i < 3; i++) {
+    const y = 375 + i * 30;
+    drawText(ctx, font, PARTY[i].name, 80, y, { color: '#ffffff' });
+    ctx.fillStyle = '#800000'; // c_maroon
+    ctx.fillRect(400, y + 5, 101, 16);
+    let hpPct = ((state.partyHp?.[i] ?? 0) / PARTY[i].maxhp) * 100;
+    if (hpPct <= -100) hpPct = -100;
+    ctx.fillStyle = '#00ff00'; // c_lime
+    if (hpPct >= 0) ctx.fillRect(400, y + 5, hpPct + 1, 16);
+    else ctx.fillRect(400 + hpPct, y + 5, -hpPct + 1, 16);
+  }
+  if (heart) {
+    drawSpriteExt(ctx, heart, 0, 55, 385 + menu.targetIndex * 30, 1, 1, 0, null, 1);
   }
 }
 

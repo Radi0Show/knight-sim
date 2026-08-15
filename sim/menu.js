@@ -455,11 +455,13 @@ export function stepMenu(state, input) {
   // number — and a picker that skipped downed members would make ReviveMint
   // unusable. Left/right walk all three regardless of state.
   if (menu.submenu === 'target') {
-    if (pressed('left')) {
+    // bmenuno 7's real navigation is UP/DOWN over the three rows (issue #2:
+    // the picker is the game's own ally list, not a horizontal toggle).
+    if (pressed('up') || pressed('left')) {
       menu.targetIndex = (menu.targetIndex + 2) % 3;
       moveNoise = true;
     }
-    if (pressed('right')) {
+    if (pressed('down') || pressed('right')) {
       menu.targetIndex = (menu.targetIndex + 1) % 3;
       moveNoise = true;
     }

@@ -35,8 +35,14 @@ function drawActor(ctx, sprites, a, cam) {
   const index = Math.floor(a.index) % frames;
   const sx = a.x - cam;
   if (a.flip) {
+    // scr_flip's own compensation: `x += (w - 2*ox) * xscale` — the mirror
+    // is IN PLACE. Mirroring about the bare anchor threw Susie backwards a
+    // sprite-width when the laugh flipped her (issue #3). Applied at draw
+    // time per current sprite, so sprite swaps while flipped cannot jump
+    // either (LABELLED: GML compensates once at flip time instead).
+    const compX = sx + (entry.meta.w - 2 * (entry.meta.ox ?? 0)) * 2;
     ctx.save();
-    ctx.translate(sx, a.y);
+    ctx.translate(compX, a.y);
     ctx.scale(-1, 1);
     drawSpriteExt(ctx, entry, index, 0, 0, 2, 2, 0, null, 1);
     ctx.restore();
@@ -52,6 +58,13 @@ export function drawVictoryScene(ctx, sc, sprites) {
   ctx.save();
   ctx.translate(shakeJitter[0], shakeJitter[1]);
   const cam = Math.round(sc.camX);
+
+  // 0. The apron: the jitter shifts the whole frame, and the exposed strips
+  // at the edges showed the fight's coloured background underneath
+  // (issue #1's red/blue/green at the top and right). Black past the edges
+  // before anything paints.
+  ctx.fillStyle = '#000';
+  ctx.fillRect(-16, -16, VIEW_W + 32, VIEW_H + 32);
 
   // 1. The room.
   drawSnowBackdrop(ctx, cam, sc.bg.fountain_speed, sprites);
