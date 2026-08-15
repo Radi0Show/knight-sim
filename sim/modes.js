@@ -84,6 +84,12 @@ export function createTitle() {
     attackIndex: 0,
     /** True once the mode is picked and SINGLE needs its second choice. */
     pickingAttack: false,
+    /** True while SINGLE's third choice is up — an index into the picked
+     *  attack's `difficulties`, SHOWN 1-based (the raw values are 0/3/4
+     *  shaped and mean nothing to a player). */
+    pickingDifficulty: false,
+    difficultyIndex: 0,
+    difficultyCount: 1,
     siner: 0,
     held: {},
     /** null, or the open settings state. */
@@ -210,8 +216,12 @@ export function previewStats(title, char) {
  *
  * Edge-detected like the battle menu — the same `pressed()` shape, because a
  * held key walking the cursor down a four-item list is unusable.
+ *
+ * `attacks` is the SINGLE roster (the array itself; a bare count is accepted
+ * for old callers, which then never see the difficulty stage).
  */
-export function stepTitle(title, input, attackCount) {
+export function stepTitle(title, input, attacks) {
+  const attackCount = Array.isArray(attacks) ? attacks.length : attacks;
   title.siner += 1;
   const pressed = (k) => {
     const down = !!input?.[k];
@@ -227,8 +237,12 @@ export function stepTitle(title, input, attackCount) {
   }
 
   // The cursor walks the modes plus the SETTINGS row below them.
-  const list = title.pickingAttack ? attackCount : MODES.length + 1;
-  const cur = title.pickingAttack ? 'attackIndex' : 'index';
+  const list = title.pickingDifficulty
+    ? title.difficultyCount
+    : title.pickingAttack ? attackCount : MODES.length + 1;
+  const cur = title.pickingDifficulty
+    ? 'difficultyIndex'
+    : title.pickingAttack ? 'attackIndex' : 'index';
   let moved = false;
 
   if (pressed('up')) {
@@ -240,6 +254,10 @@ export function stepTitle(title, input, attackCount) {
     moved = true;
   }
 
+  if (pressed('cancel') && title.pickingDifficulty) {
+    title.pickingDifficulty = false;
+    return { moved: true, chosen: false };
+  }
   if (pressed('cancel') && title.pickingAttack) {
     title.pickingAttack = false;
     return { moved: true, chosen: false };
@@ -255,6 +273,18 @@ export function stepTitle(title, input, attackCount) {
       // starting. Everything else starts immediately.
       title.pickingAttack = true;
       return { moved: false, chosen: false, selected: true };
+    }
+    // The roster confirm: an attack with one difficulty starts; one with
+    // several opens the third stage.
+    if (title.pickingAttack && !title.pickingDifficulty && Array.isArray(attacks)) {
+      const entry = attacks[title.attackIndex];
+      const count = entry?.difficulties?.length ?? 1;
+      if (count > 1) {
+        title.pickingDifficulty = true;
+        title.difficultyIndex = 0;
+        title.difficultyCount = count;
+        return { moved: false, chosen: false, selected: true };
+      }
     }
     title.mode = MODES[title.index].id;
     return { moved: false, chosen: true, selected: true };

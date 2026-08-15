@@ -107,6 +107,11 @@ export const STARCHILD_MASK = build(raw.starchildparts);
 export const SWORDOL_MASK = build(raw.swordol);
 export const STARCHILD_TRAIL_MASK = build(raw.starchildtrail);
 export const QUICKSLASH_MARKER_MASK = build(raw.quickslashmarker);
+/** spr_smallbullet — obj_diagonal_bullet's sprite, set on the OBJECT
+ *  DEFINITION (invisible to every code grep — the obj_basicattack hole).
+ *  sepmasks is AxisAlignedRect with bbox [6,6]..[9,9]: a 4x4 block centred
+ *  in a 16x16 sheet, origin (8,8). */
+export const SMALLBULLET_MASK = build(raw.smallbullet);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -135,6 +140,7 @@ export const SPRITE_MASKS = {
   spr_knight_bullet_star: STAR_MASK,
   spr_roaringknight_tooth: TOOTH_MASK,
   spr_rk_fountain_bullet: FOUNTAIN_MASK,
+  spr_smallbullet: SMALLBULLET_MASK,
 };
 
 /**

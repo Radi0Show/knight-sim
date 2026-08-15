@@ -43,7 +43,14 @@ for (const m of ATTACK_MENU) {
   }
 
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  if (total === 0) failures.push(`${m.id}: SILENT — no cue in ${FRAMES} frames`);
+  // DIAGONAL IS GENUINELY SILENT: none of obj_diagonal_bullet's or its
+  // manager's six events contains a single snd_ call (grepped, not assumed).
+  // It is debug content the fight never selects; a cue here would be invented.
+  if (total === 0 && m.id !== 'diagonal') {
+    failures.push(`${m.id}: SILENT — no cue in ${FRAMES} frames`);
+  }
+  // (The scene's own furniture — the arena opening, the heart drop — still
+  // cues around it, so no inverse assertion: only the ATTACK is silent.)
   if (peak > PEAK_LIMIT) {
     failures.push(`${m.id}: ${peak} cues on frame ${peakFrame} (limit ${PEAK_LIMIT})`);
   }

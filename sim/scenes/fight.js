@@ -33,6 +33,7 @@ import { spawnRotatingSlash } from '../attacks/rotating-slash.js';
 import { swordTunnelManager } from '../attacks/sword-tunnel.js';
 import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
+import { diagonalBulletManager } from '../attacks/diagonal-bullets.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -104,6 +105,10 @@ function turnLength(ac, difficulty) {
   // roaring_timer 375. Using the knight's 240 here cut Roaring off mid-spiral
   // and then relaunched it.
   if (ac === 5 || ac === 9) return 999999;
+  // ac 16 launches the type-104 controller too, so it gets the same 999999
+  // override and the rotating slash ends the turn itself; the tracking
+  // manager rides along (its own gate is `turntimer < 70`).
+  if (ac === 16) return 999999;
   // The charge-up turn takes NO override. Every other choice ends its arm of
   // the `attacked == 0` block with its own `scr_turntimer(...)`; `ac -1` sets
   // `chargeupcon = 1` and nothing else, so the turn keeps the 90 assigned at
@@ -368,8 +373,51 @@ export function launchAttack(state, entry) {
     case 11:
     case 14: {
       const mg = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
-      mg.variant = difficulty;
+      // THE DISPATCH HARDCODES THE VARIANT, it does not pass the selector's
+      // `difficulty` through: ac 11 sets `dc.difficulty = 0`, ac 14 sets
+      // `dc.difficulty = 3` (and the debug ac 17 sets 2) while the selector's
+      // own variable is 0 for all three. `mg.variant = difficulty` ran phase
+      // 3's tracking swords at variant 0 (rate 32 decaying to 16) instead of
+      // the real variant 3 (rate 20 decaying to 13) — a visibly slower wave.
+      mg.variant = ac === 14 ? 3 : 0;
       mg.damage = CONTROLLER_DAMAGE;
+      trackingSwordsManager.init(mg, state);
+      return mg;
+    }
+
+    // ------ DEBUG CONTENT from here to case 17: attacks the selector can
+    // never choose (the phase blocks reassign `phaseturn` before their rows
+    // can fire — see nextTurn). They exist for the SINGLE practice mode,
+    // launched exactly as the dispatch table would.
+
+    case 12: {
+      // `dc.type = 152` — obj_diagonal_bullet_manager at (growtangle.x,
+      // cameray()), damage inherited from the spawner's monsterat * 5.
+      const mg = spawn(state, diagonalBulletManager, { x: arena.x, y: state.view.y });
+      mg.damage = CONTROLLER_DAMAGE;
+      return mg;
+    }
+
+    case 16: {
+      // Two spawner calls: rotating slash (104, difficulty 0), then tracking
+      // swords (151, difficulty 0) with an explicit `dc.damage = 206` — the
+      // only place the tracking damage is overridden off its inherited 200.
+      const mg = spawnRotatingSlash(state, kx, ky, { difficulty: 0 });
+      reanchorRng(state);
+      const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
+      tr.variant = 0;
+      tr.damage = 206;
+      trackingSwordsManager.init(tr, state);
+      return mg;
+    }
+
+    case 17: {
+      // `dc.type = 151; dc.difficulty = 2; dc.damage = 206` — the multisword
+      // variant (pairs 4 frames apart along a fixed compass sweep), unused by
+      // the fight.
+      const mg = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
+      mg.variant = 2;
+      mg.damage = 206;
       trackingSwordsManager.init(mg, state);
       return mg;
     }

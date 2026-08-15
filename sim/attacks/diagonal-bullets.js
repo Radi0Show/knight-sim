@@ -46,6 +46,11 @@ export const diagonalBullet = {
     e.image_alpha = 0;
     scrBulletInit(e);
     e.destroyonhit = 0;
+    // spr_smallbullet comes from the OBJECT DEFINITION, not any event — the
+    // same grep-invisible hole as obj_basicattack (object_sprite.csx found
+    // it). Without it the bullet had no sprite, no mask, no contact and no
+    // graze: the verifiers caught all three the day it joined ATTACK_MENU.
+    e.sprite_index = 'spr_smallbullet';
     e.isBullet = true;
     e.componentMotion = true;
     e.hspeed = 0;

@@ -5485,5 +5485,24 @@
    "spr_ralsei_battleintro_9.png",
    "spr_ralsei_battleintro_10.png"
   ]
+ },
+ "spr_smallbullet": {
+  "w": 16,
+  "h": 16,
+  "ox": 8,
+  "oy": 8,
+  "frames": 1,
+  "bbox": [
+   6,
+   6,
+   9,
+   9
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_smallbullet_0.png"
+  ]
  }
 }

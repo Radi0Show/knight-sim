@@ -404,7 +404,13 @@ function startRun() {
   // The director reads this: ENDLESS must not reach the ending.
   state.runMode = runMode;
   mode = runMode === 'single' ? 'practice' : 'fight';
-  if (runMode === 'single') attackId = ATTACK_MENU[title.attackIndex].id;
+  if (runMode === 'single') {
+    const entry = ATTACK_MENU[title.attackIndex];
+    attackId = entry.id;
+    // The picker shows DIFFICULTY 1..N; the launch uses the selector's raw
+    // value behind it (0/3/4 for the tunnel, etc).
+    difficulty = entry.difficulties[title.difficultyIndex] ?? entry.difficulties[0] ?? 0;
+  }
   reset();
 }
 
@@ -426,7 +432,7 @@ function frame(now) {
     const { steps: ts, accumulator: ta } = drain(acc, elapsed);
     acc = ta;
     for (let i = 0; i < ts; i++) {
-      const r = stepTitle(title, gatedKeys(), ATTACK_MENU.length);
+      const r = stepTitle(title, gatedKeys(), ATTACK_MENU);
       if (r.moved) audio.play([{ name: 'snd_menumove', pitch: 1, gain: 1 }]);
       if (r.selected) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
       // The equip menu's refusal, and UNUSED's whole personality.
@@ -530,6 +536,7 @@ function frame(now) {
       if (toMenu) {
         title.mode = null;
         title.pickingAttack = false;
+        title.pickingDifficulty = false;
         reset();
       } else {
         victory = { timer: 0 }; // the skip path keeps the card
@@ -555,6 +562,7 @@ function frame(now) {
         if (toTitle) {
           title.mode = null;
           title.pickingAttack = false;
+          title.pickingDifficulty = false;
         }
         reset();
         break;
@@ -589,6 +597,7 @@ function frame(now) {
           // gesture: stop fighting this thing.
           title.mode = null;
           title.pickingAttack = false;
+          title.pickingDifficulty = false;
           reset();
         }
         break;

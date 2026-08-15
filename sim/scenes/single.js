@@ -16,28 +16,57 @@ import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
 import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
-import { launchAttack, clearTurn } from './fight.js';
+import { launchAttack, clearTurn, FIGHT_TABLE } from './fight.js';
 import { createMenu } from '../menu.js';
 import { freshParty } from '../damage.js';
 
 /**
  * Every attack the fight can select, with the difficulties it actually appears
- * at. The difficulties are the ones in CLAUDE.md's turn table — offering a
- * difficulty the fight never uses would be inventing content.
+ * at — plus the DEBUG CONTENT at the bottom: attacks the selector can never
+ * choose (`nextTurn`'s fall-through analysis), reachable in the real game only
+ * through `if (scr_debug() && overrideAttack > 0)`. They are launched with the
+ * dispatch table's exact parameters and labelled UNUSED where the player sees
+ * them, per the project rule.
+ *
+ * The difficulties are the selector's raw values; the UI shows them 1-based
+ * (see difficultyBlurb) so the player picks "DIFFICULTY 1/2/3", not 0/3/4.
+ *
+ * Rotating Slash previously offered a difficulty 3 here — no selector row and
+ * no branch in obj_knight_rotating_slash's Other_10 uses one (it branches on
+ * 1 and 2 only), so it was invented content and is gone.
  */
 export const ATTACK_MENU = [
   { id: 'stars', ac: 1, name: 'Stars', difficulties: [0, 1, 2], where: 'phase 1/2/3 opener' },
   { id: 'tracking11', ac: 11, name: 'Tracking Swords', difficulties: [0], where: 'phase 1 turn 2' },
   { id: 'flurry', ac: 2, name: 'Flurry (box splitter)', difficulties: [0, 1, 3], where: 'phase 1/2/3' },
   { id: 'tunnel', ac: 13, name: 'Sword Tunnel', difficulties: [0, 3, 4], where: 'phase 1/2/3' },
-  { id: 'rotating', ac: 5, name: 'Rotating Slash', difficulties: [0, 1, 2, 3], where: 'closes every phase' },
+  { id: 'rotating', ac: 5, name: 'Rotating Slash', difficulties: [0, 1, 2], where: 'closes every phase' },
   { id: 'vortex', ac: 15, name: 'Sword Vortex + Tracking', difficulties: [0], where: 'phase 2 turn 4' },
   { id: 'tracking14', ac: 14, name: 'Tracking Swords (late)', difficulties: [0], where: 'phase 3 turn 3' },
   { id: 'roaring', ac: 9, name: 'ROARING', difficulties: [0], where: 'phase 4 finale' },
+  { id: 'diagonal', ac: 12, name: 'Diagonal Bullets', difficulties: [0], where: 'UNUSED', unused: true },
+  { id: 'rotating16', ac: 16, name: 'Rotating + Tracking', difficulties: [0], where: 'UNUSED', unused: true },
+  { id: 'tracking17', ac: 17, name: 'Tracking Swords (multi)', difficulties: [0], where: 'UNUSED', unused: true },
 ];
 
 export function menuEntry(id) {
   return ATTACK_MENU.find((a) => a.id === id) ?? ATTACK_MENU[0];
+}
+
+/**
+ * Where an (ac, difficulty) pair actually appears, read off the selector's
+ * own table — so the difficulty picker can say "phase 2" without a second
+ * hand-maintained list going stale.
+ */
+export function difficultyBlurb(ac, diff) {
+  const phases = [];
+  for (const p of [1, 2, 3, 4]) {
+    for (const row of FIGHT_TABLE[p]) {
+      if (row.ac === ac && row.difficulty === diff && !phases.includes(p)) phases.push(p);
+    }
+  }
+  if (!phases.length) return 'UNUSED';
+  return `phase ${phases.join(' & ')}`;
 }
 
 const GAP = 45;

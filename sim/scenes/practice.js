@@ -410,6 +410,22 @@ const director = {
       e.phase = nx.phase;
       e.turn = nx.turn;
 
+      // ROARING DOES NOT REWIND THE SCHEDULE. The selector's first line is
+      //
+      //     if (phase != 4) { turn++; phaseturn++; }
+      //
+      // so `phaseturn` FREEZES while phase 4 runs, and the ROARING branch
+      // sets `phase = 3` without touching it — the fight resumes phase 3's
+      // table at the position the HP gate interrupted, one turn on. (The
+      // frozen counter can even come from phase 1 or 2: it is reinterpreted
+      // against phase 3's rows.) Restarting the loop at Stars here was why
+      // Flurry difficulty 3 — phase 3's second row — could effectively never
+      // be seen: the fight ends on the first hit after ROARING, which usually
+      // lands during that always-first Stars turn. Reported from play.
+      if (prevPhase === 4 && prevTurn === 2) {
+        e.turn = e.resumeTurn ?? 0;
+      }
+
       // PHASE 4 IS ENTERED ON HP < 80%, and now that the Knight has real HP
       // that is the trigger rather than a turn count.
       //
@@ -459,6 +475,11 @@ const director = {
         && phase4Reached(state) && !state.knight.haveusedroaring) {
         e.phase = 4;
         e.turn = phase4Entry(state.knight.rotatingslash3used);
+        // The position the gate is interrupting — the natural next turn's
+        // index, which is exactly frozen-phaseturn + 1 read against phase 3's
+        // table (a phase's LAST turn has already reset phaseturn to 0 at
+        // selection, and nx.turn is 0 there too).
+        e.resumeTurn = nx.turn;
       }
       return;
     }
@@ -841,9 +862,13 @@ const director = {
         // The flight itself is not modelled yet; the soul appears at its
         // landing spot. That is a renderer gap, not a sim one.
         advanceTurn(state);
-        // `phaseturn++` — the SELECTOR's own first line, in the same block.
-        // Reset to 0 when a phase ends, exactly as its branches do.
-        state.phaseturn = e.turn === 0 ? 1 : (state.phaseturn ?? 0) + 1;
+        // `phaseturn++` — the SELECTOR's own first line, which is GUARDED:
+        // `if (phase != 4) { turn++; phaseturn++; }`. So the counter FREEZES
+        // through phase 4 and resumes after ROARING. For phases 1-3 the live
+        // value is the row index + 1 (identical to the old increment in every
+        // normal-flow case, and correct on the post-ROARING resume turn,
+        // where the increment had accumulated through phase 4).
+        state.phaseturn = e.phase === 4 ? (state.phaseturn ?? 0) : e.turn + 1;
         const upcoming = FIGHT_TABLE[e.phase][e.turn];
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');

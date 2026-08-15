@@ -214,6 +214,18 @@ if (idx4 < 0) {
   if (seen[idx4 + 3] && !seen[idx4 + 3].startsWith('phase 3')) {
     gateFailures.push(`after ROARING the fight went to "${seen[idx4 + 3]}", wanted phase 3`);
   }
+  // AND THE SCHEDULE RESUMES, IT DOES NOT REWIND. The selector's first line
+  // is `if (phase != 4) { turn++; phaseturn++; }`, so phaseturn FREEZES
+  // through phase 4 and ROARING's `phase = 3` does not reset it. The gate
+  // trips here at the end of phase 2's first turn (frozen phaseturn 1), so
+  // the post-ROARING turn is phase 3's ROW 2 — Flurry, difficulty 3 — not a
+  // restart at Stars. Restarting at Stars is exactly the bug that made
+  // Flurry d3 unseeable in play: the fight ends on the first hit after
+  // ROARING, which always landed during the spurious Stars turn.
+  if (seen[idx4 + 3] && !seen[idx4 + 3].endsWith('Flurry')) {
+    gateFailures.push(`after ROARING the fight resumed on "${seen[idx4 + 3]}", `
+      + 'wanted phase 3 turn 2 (Flurry d3) — the frozen phaseturn, one on');
+  }
 }
 
 // The gate is ONE-SHOT: `haveusedroaring == false` is part of it, so the loop

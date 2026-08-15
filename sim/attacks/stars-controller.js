@@ -94,6 +94,21 @@ export const starsController = {
         coneAngle = lerp(0, cone.target_angle ?? 60, scrEaseOut(nextLerp, 6));
       }
 
+      // DIFFICULTY 2 RE-ROLLS THE BURST AXIS PER STAR, before the star is
+      // created (the choose sits directly above `scr_childbullet` in the
+      // spawn branch):
+      //
+      //     if (difficulty == 2) side = choose(0, 66, -66);
+      //
+      // so each star's two shard headings tilt to vertical or ±66 degrees.
+      // This was promised by a launchAttack comment and NEVER IMPLEMENTED:
+      // `e.side ?? 1` left every difficulty-2 burst on the one axis 90+1,
+      // which flattened the whole pattern — reported from play as "the
+      // hardest Stars is off, most of the move is wrong".
+      if ((e.difficulty ?? 0) === 2 && state.gmlRng) {
+        e.side = gmlChoose(state.gmlRng, [0, 66, -66]);
+      }
+
       // THE STAR IS CREATED BEFORE THE ROLLS. `d = scr_childbullet(...)` runs
       // first — and the star's Create draws its `dir = choose(-1, 1)` — THEN
       // the controller rolls size/special. Rolling first put the sim's size

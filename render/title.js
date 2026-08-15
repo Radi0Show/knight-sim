@@ -13,6 +13,7 @@
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth } from './font.js';
 import { MODES, SETTINGS_PAGES, pocketOf, previewStats } from '../sim/modes.js';
+import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
 import { PARTY } from '../sim/damage.js';
 
@@ -51,30 +52,56 @@ export function drawTitle(ctx, title, sprites, attacks) {
     return;
   }
 
-  centred(ctx, font, 'THE ROARING KNIGHT', 60, c_white, 1.6);
-  centred(ctx, font, 'practice', 100, DIM);
+  centred(ctx, font, 'BLACK KNIFE SIMULATOR', 60, c_white, 1.6);
 
   const heart = sprites.get('spr_heart');
-  const rows = title.pickingAttack
-    ? attacks.map((a) => ({ name: a.name.toUpperCase(), blurb: a.where }))
-    : MODES.map((m) => ({ name: m.name, blurb: m.blurb }));
-  const index = title.pickingAttack ? title.attackIndex : title.index;
+  const picked = attacks[title.attackIndex];
+  let rows;
+  let index;
+  if (title.pickingDifficulty && picked) {
+    // The third stage: the picked attack's difficulties, SHOWN 1-BASED — the
+    // selector's raw values (0/3/4 for the tunnel) mean nothing to a player.
+    // The blurb beside each is where that version runs in the real fight,
+    // read off the selector's own table.
+    rows = picked.difficulties.map((d, i) => ({
+      name: `DIFFICULTY ${i + 1}`,
+      blurb: difficultyBlurb(picked.ac, d),
+    }));
+    index = title.difficultyIndex;
+    centred(ctx, font, picked.name.toUpperCase(), 136, DIM, 0.9);
+  } else if (title.pickingAttack) {
+    rows = attacks.map((a) => ({ name: a.name.toUpperCase(), blurb: a.where, unused: a.unused }));
+    index = title.attackIndex;
+  } else {
+    rows = MODES.map((m) => ({ name: m.name, blurb: m.blurb }));
+    index = title.index;
+  }
 
   // A four-item list sits comfortably at 34px; the attack roster is longer, so
   // it tightens rather than running off the bottom.
-  const pitch = rows.length > 6 ? 26 : 34;
-  const top = 170;
+  const pitch = rows.length > 8 ? 24 : rows.length > 6 ? 26 : 34;
+  const top = title.pickingDifficulty ? 190 : rows.length > 8 ? 158 : 170;
 
   for (let i = 0; i < rows.length; i++) {
     const y = top + i * pitch;
     const on = i === index;
-    const x = 190;
+    const x = 160;
     if (on && heart) {
       // The cursor BOBS, as every DELTARUNE menu cursor does.
       const bob = Math.sin(title.siner / 6) * 1.5;
       drawSpriteExt(ctx, heart, 0, x - 30 + bob, y + 4, 1, 1, 0, null, 1);
     }
-    drawText(ctx, font, rows[i].name, x, y, { color: rgb(on ? HILITE : c_white) });
+    // UNUSED debug content is dimmed even at rest — labelled where the player
+    // sees it, per the project rule.
+    const restColor = rows[i].unused ? DIM : c_white;
+    // Long names are SQUEEZED, never clipped — the item menu's own idiom
+    // (`xscale = min(1, 200 / string_width)`), sized so the longest name
+    // stops short of the blurb column.
+    const squeeze = Math.min(1, 250 / Math.max(1, textWidth(font, rows[i].name)));
+    drawText(ctx, font, rows[i].name, x, y, { color: rgb(on ? HILITE : restColor), xscale: squeeze });
+    if ((title.pickingAttack || title.pickingDifficulty) && rows[i].blurb) {
+      drawText(ctx, font, rows[i].blurb, 430, y + 3, { color: rgb(DIM), yscale: 0.75, xscale: 0.75 });
+    }
   }
 
   // SETTINGS — the extra row, visually separated from the modes.
