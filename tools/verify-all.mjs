@@ -65,6 +65,7 @@ const SUITES = [
   ['verify-starchild.mjs', 'starchild homing — Stars difficulty 2'],
   ['verify-underbox.mjs', 'underbox orbs — ac 6 (unreachable content, no oracle)'],
   ['verify-knightlines.mjs', 'knightlines spears — ac 20 (unreachable content, no oracle)'],
+  ['verify-swordslash.mjs', 'Swordslash crescents — ac 0 (unreachable content, no oracle)'],
   ['verify-roaring-star.mjs', 'roaring star lifecycle — ac 9'],
   ['verify-roaring-pull.mjs', 'roaring pull + rings + screen shake — ac 9'],
   ['verify-fight-order.mjs', 'the playable scene runs the real fight order'],

@@ -38,6 +38,7 @@ import { knightStream } from '../attacks/knight-stream.js';
 import { knightSwordfall } from '../attacks/swordfall.js';
 import { launchUnderbox } from '../attacks/underbox.js';
 import { launchKnightlines } from '../attacks/knightlines.js';
+import { launchSwordslash } from '../attacks/swordslash.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -128,6 +129,9 @@ function turnLength(ac, difficulty) {
   // spears land, and that is the drill being generous, not the number being
   // wrong.
   if (ac === 20) return 90;
+  // `myattackchoice == 0 && difficulty == 0` -> 300, and difficulty 1 the
+  // same: two separate branches in the knight's Step with the same number.
+  if (ac === 0) return 300;
   if (ac === 2) return 350;
   if (ac === 11) return difficulty === 0 ? 292 : 300;
   if (ac === 13) return difficulty === 3 ? 360 : 330;
@@ -149,6 +153,10 @@ function invcFor(ac) {
 function arenaFor(ac) {
   // `if (myattackchoice == 4) { obj_growtangle.maxxscale = 3.5;
   //  obj_growtangle.maxyscale = 3.5; }` — the widest arena in the dispatch.
+  // `instance_create(view.x + 320 - 152, view.y + 170)` then
+  // `obj_growtangle.maxxscale = 0.5` — Swordslash's arena is a NARROW SLOT on
+  // the left. maxyscale is not touched, so it stays 2: 37 wide, 150 tall.
+  if (ac === 0) return { x: 168, y: 170, xscale: 0.5, yscale: 2 };
   if (ac === 4) return { x: 320, y: 170, xscale: 3.5, yscale: 3.5 };
   if (ac === 11) return { x: 320, y: 190, xscale: 2, yscale: 2 };
   if (ac === 13) return { x: 300, y: 190, xscale: 3, yscale: 2 };
@@ -177,6 +185,12 @@ const CONE_POS = { x: 425, y: 78.56589 };
  * rtimer window — restarted it halfway and the board visibly stuttered.
  */
 export function openArena(state, entry) {
+  // `myattackchoice` is assigned by the SELECTOR at the top of the turn, long
+  // before the attack object exists — so anything gated on it (the Swordslash
+  // soul clamp in knightActor.endStep) is already live while the board opens.
+  // Setting it only in launchAttack left a one-frame hole on the launch frame,
+  // because the director's endStep runs after the Knight's.
+  state.currentAc = entry.ac;
   // `myattackchoice == -1` has an EMPTY branch where every other choice
   // creates an obj_growtangle. No board rises on the charge-up turn — the
   // Knight winds up over an empty screen. Opening one here would put an
@@ -255,6 +269,11 @@ function reanchorRng(state) {
 
 export function launchAttack(state, entry) {
   const { ac, difficulty } = entry;
+  // `myattackchoice`, kept on the state because one line outside the attack
+  // reads it: the Knight's End Step clamps the soul for ac 0 (see
+  // knightActor.endStep). Set for every launch, including the charge-up's
+  // early return, so a stale value cannot leave the clamp on.
+  state.currentAc = ac;
 
   // The charge-up turn spawns no controller. `chargeupcon = 1` is the whole
   // of its arm in the Step, and that drives the Knight's own Draw, not a
@@ -426,6 +445,12 @@ export function launchAttack(state, entry) {
       return launchUnderbox(state, kx, ky);
     }
 
+    case 0: {
+      // `dc.type = 109`, `global.invc = 0.4`. The Knight warps out and the
+      // generator — invisible, off to the right — throws the crescents.
+      return launchSwordslash(state, difficulty);
+    }
+
     case 20: {
       // `dc.type = 101` — knightlines. The arena and the soul both slide 70
       // left and the box widens to 2.5; launchKnightlines does all of it.
@@ -537,6 +562,7 @@ const SURVIVES_TURN = new Set([
  * runs BETWEEN turns, so nothing live during an attack is touched.
  */
 export function clearTurn(state) {
+  state.currentAc = undefined;
   for (const e of state.entities) {
     if (e.alive && !SURVIVES_TURN.has(e.type.name)) e.alive = false;
   }

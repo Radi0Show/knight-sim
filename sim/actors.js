@@ -39,6 +39,32 @@ import { afterimage } from './fx.js';
 // eslint-disable-next-line
 export const knightActor = {
   name: 'obj_knight_enemy',
+
+  /**
+   * THE SWORDSLASH CLAMP — obj_knight_enemy's End Step, in full:
+   *
+   *     if (scr_isphase("bullets") && myattackchoice == 0)
+   *         if (i_ex(obj_heart) && obj_heart.x > camerax() + 165)
+   *             obj_heart.x = camerax() + 165;
+   *
+   * This project has met this line before, from the wrong end. A freshly
+   * created knight defaults to `myattackchoice = 0`, so any harness that
+   * forced `mnfight = 2` had him dragging the soul to x 165 EVERY FRAME with
+   * no attack running — the "soul outside the box" root cause CLAUDE.md
+   * records as costing many game runs and presenting as four unrelated bugs.
+   *
+   * It is not a bug. It is Swordslash's arena wall: the box for ac 0 is a
+   * 37-pixel slot at x 168, and this keeps you inside it. Now that ac 0 is
+   * translated the line finally has its attack around it, and it is gated the
+   * way the original gates it — on the CURRENT CHOICE, not on the generator
+   * existing, so it holds for the whole turn including the empty stretch after
+   * the generator deletes itself at `turntimer < 20`.
+   */
+  endStep(e, state) {
+    if (state.currentAc !== 0) return;
+    if (!state.soul || !state.soul.alive) return;
+    if (state.soul.x > state.view.x + 165) state.soul.x = state.view.x + 165;
+  },
   create(e) {
     e.sprite_index = 'spr_roaringknight_idle';
     e.image_index = 0;

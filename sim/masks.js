@@ -145,6 +145,21 @@ export const DIAMONDFORM_MASK = build(raw.diamondform);
  * the frame it appears and shrinks to true size as it locks on.
  */
 export const SLASHTUNNEL_MASK = build(raw.slashtunnel);
+/**
+ * `spr_bullet_knightcrescent_hitbox` — and this one is an EXPLICIT
+ * `mask_index`, not a sprite fallback:
+ *
+ *     mask_index = spr_bullet_knightcrescent_hitbox;   // knightcrescent Create
+ *
+ * so the crescent collides with a 26-row Precise crescent while it DRAWS
+ * `spr_bullet_knightcrescent` (same 36x34 sheet, AxisAlignedRect). Taking the
+ * drawn sprite's mask instead would give the whole rectangle — a crescent's
+ * concave side would kill you from inside the curve. The hitbox sprite is
+ * never drawn, so it is a mask here and no PNG ships for it.
+ *
+ * ORIGIN (0, 34) — the BOTTOM-left corner, not the centre, on both sprites.
+ */
+export const CRESCENT_MASK = build(raw.crescenthitbox);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -178,6 +193,7 @@ export const SPRITE_MASKS = {
   spr_knight_weird_shape: WEIRDSHAPE_MASK,
   spr_diamondbullet_form: DIAMONDFORM_MASK,
   spr_roaringknight_slash_tunnel: SLASHTUNNEL_MASK,
+  spr_bullet_knightcrescent: CRESCENT_MASK,
 };
 
 /**

@@ -133,6 +133,26 @@ export function spawn(state, type, vars = {}) {
 
   state.entities.push(e);
   if (type.create) type.create(e, state);
+
+  // `e.type` IS THIS ENGINE'S ENTITY DESCRIPTOR, and GML objects have instance
+  // variables of their own with ordinary names — including `type`.
+  // obj_bullet_knight_crescentGenerator's Create ends `type = 2`, its
+  // difficulty variant, and translating that line literally REPLACED the
+  // entity's descriptor with the number 2. Nothing threw: the object simply
+  // stopped having a `step`, never initialised, and vanished from every
+  // `type.name` lookup — so it read as "the attack does nothing" with no error
+  // anywhere. Half an hour to find, and it would have been half an hour again
+  // the next time.
+  //
+  // A translated object that needs a GML variable called `type` renames it
+  // (the generator uses `variant`); this makes the mistake impossible to make
+  // quietly.
+  if (e.type !== type) {
+    throw new Error(
+      `${type.name ?? 'an object'}'s create() overwrote e.type — that field is `
+      + 'the entity descriptor. Rename the GML variable (see sim/entity.js).',
+    );
+  }
   return e;
 }
 

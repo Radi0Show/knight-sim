@@ -396,6 +396,28 @@ If bit-exactness is ever needed, the next step is disassembling the runner's
 shuffle rather than more black-box probing; 18 samples were not enough and
 more of the same will not help.
 
+## A GML INSTANCE VARIABLE CAN COLLIDE WITH THE ENGINE'S OWN FIELDS
+
+`e.type` is this engine's entity DESCRIPTOR. GML objects have instance
+variables with ordinary names, and `obj_bullet_knight_crescentGenerator`'s
+Create ends with
+
+```gml
+type = 2;      // its difficulty VARIANT
+```
+
+Translating that line literally replaced the descriptor with the number 2.
+Nothing threw. The object simply stopped having a `step`, never initialised,
+and vanished from every `type.name` lookup — so it presented as "the attack
+does nothing", with no error anywhere and the entity still sitting in the list.
+
+`spawn()` now throws if a `create()` leaves `e.type` pointing somewhere else,
+so the mistake is loud instead of silent. A translated object that needs a GML
+variable of that name renames it (Swordslash uses `variant`).
+
+**Check the same way for any other engine-owned field** — `alive`, `seq`,
+`alarm`, `mask`, `depth`, `isBullet` — before translating a Create verbatim.
+
 ## GML `==` ON REALS IS NOT `===`
 
 GameMaker compares two reals with a TOLERANCE (`math_set_epsilon`; nothing in

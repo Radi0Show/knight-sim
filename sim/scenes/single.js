@@ -16,7 +16,7 @@ import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
 import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
-import { launchAttack, clearTurn, FIGHT_TABLE } from './fight.js';
+import { launchAttack, openArena, clearTurn, FIGHT_TABLE } from './fight.js';
 import { createMenu } from '../menu.js';
 import { freshParty } from '../damage.js';
 
@@ -48,6 +48,7 @@ export const ATTACK_MENU = [
   { id: 'swordfall', ac: 10, name: 'Swords Falling', difficulties: [0, 1], where: 'UNUSED', unused: true },
   { id: 'underbox', ac: 6, name: 'Orbs Under the Box', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'knightlines', ac: 20, name: 'Knightlines (spears)', difficulties: [0], where: 'UNUSED', unused: true },
+  { id: 'swordslash', ac: 0, name: 'Swordslash (crescents)', difficulties: [0, 1], where: 'UNUSED', unused: true },
   { id: 'diagonal', ac: 12, name: 'Diagonal Bullets', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'rotating16', ac: 16, name: 'Rotating + Tracking', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'tracking17', ac: 17, name: 'Tracking Swords (multi)', difficulties: [0], where: 'UNUSED', unused: true },
@@ -75,17 +76,26 @@ export function difficultyBlurb(ac, diff) {
 
 const GAP = 45;
 const DRAIN = 90;
+/** `rtimer == 12` — the beat between the board opening and the attack. */
+const RTIMER_SPAWN = 12;
 
 const director = {
   name: 'practice_director',
 
-  create(e) {
+  create(e, state) {
     e.started = false;
     e.gap = GAP;
     e.drain = 0;
     e.elapsed = 0;
     e.owner = null;
     e.runs = 0;
+    // THE SELECTOR PICKS THE ATTACK AT THE TOP OF THE TURN, so anything gated
+    // on `myattackchoice` is live from then — not from the board opening and
+    // certainly not from the attack object spawning. Swordslash's soul clamp
+    // is the one that notices: set any later and there is a frame where the
+    // choice is current and the clamp has not run, because the Knight's End
+    // Step comes before the director's.
+    state.currentAc = state.practiceEntry.ac;
   },
 
   endStep(e, state) {
@@ -116,10 +126,33 @@ const director = {
       state.partyHp = freshParty();
       state.invTimer = -1;
       clearTurn(state);
+      // …and the drill's next turn has already chosen it, being the same one.
+      state.currentAc = state.practiceEntry.ac;
       return;
     }
 
     e.gap -= 1;
+    // THE BOARD OPENS BEFORE THE ATTACK, by the same 12 frames the fight uses.
+    //
+    // `obj_knight_enemy` creates the growtangle in his `mnfight == 1.5` block
+    // and spawns the attack 12 frames later on `rtimer == 12` — so the arena
+    // is already most of the way through its 15-frame grow-in when the bullets
+    // start. This drill used to do both on one frame, which is fine for an
+    // attack that only reads the box's POSITION and wrong for one that reads
+    // its SIZE: Swordslash computes its six lanes from `box.sprite_height`
+    // once, at con 0, and with the board still at 40% scale they came out 22
+    // pixels apart instead of 150.
+    //
+    // The fight scene has always done it in this order (see openArena's note);
+    // this makes the drill agree with it.
+    if (e.gap === RTIMER_SPAWN) {
+      openArena(state, state.practiceEntry);
+      // launchAttack re-opens the arena unless it is told this one is already
+      // open — the same handshake practice.js uses. Without it the grow-in
+      // restarts on the launch frame and the twelve frames are given back.
+      const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
+      if (gt) gt.arenaOpened = state.practiceEntry.ac;
+    }
     if (e.gap > 0) return;
     e.owner = launchAttack(state, state.practiceEntry);
     e.started = true;

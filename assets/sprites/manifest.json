@@ -5586,5 +5586,31 @@
   "files": [
    "spr_knight_weird_shadow_0.png"
   ]
+ },
+ "spr_knight_crescentslash": {
+  "w": 94,
+  "h": 91,
+  "ox": 4,
+  "oy": 51,
+  "frames": 8,
+  "bbox": [
+   0,
+   0,
+   93,
+   87
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_knight_crescentslash_0.png",
+   "spr_knight_crescentslash_1.png",
+   "spr_knight_crescentslash_2.png",
+   "spr_knight_crescentslash_3.png",
+   "spr_knight_crescentslash_4.png",
+   "spr_knight_crescentslash_5.png",
+   "spr_knight_crescentslash_6.png",
+   "spr_knight_crescentslash_7.png"
+  ]
  }
 }

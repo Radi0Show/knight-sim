@@ -62,13 +62,21 @@ const behaviours = new Set();
 const seen = new Set();
 const spawnFrames = [];
 
+// THE SLIDE IS ONE FRAME WIDE, so it has to be measured across THAT frame.
+// The board now opens twelve frames before the attack (the fight's rtimer gap,
+// which the drill copies), and the soul is free to move during them — sampling
+// "first frame the box exists" against "first frame the slasher exists" folded
+// twelve frames of ordinary drifting into the measurement and read 74 instead
+// of 70. A rolling one-frame snapshot is what the assertion actually wants.
+let prevBoxX = null;
+let prevBoxScale = null;
+let prevSoulX = null;
+
 for (let f = 0; f < 400; f++) {
-  const gt = live(state, 'obj_growtangle')[0];
-  if (gt && boxBefore.x === null) {
-    boxBefore.x = gt.x;
-    boxBefore.xscale = gt.image_xscale;
-    soulBefore = state.soul?.x ?? null;
-  }
+  const gtPrev = live(state, 'obj_growtangle')[0];
+  prevBoxX = gtPrev ? gtPrev.x : prevBoxX;
+  prevBoxScale = gtPrev ? gtPrev.image_xscale : prevBoxScale;
+  prevSoulX = state.soul?.x ?? prevSoulX;
 
   stepFrame(state, IDLE);
 
@@ -76,6 +84,9 @@ for (let f = 0; f < 400; f++) {
   if (slasher) {
     behaviours.add(slasher.behavior);
     if (boxAfter === null) {
+      boxBefore.x = prevBoxX;
+      boxBefore.xscale = prevBoxScale;
+      soulBefore = prevSoulX;
       const g2 = live(state, 'obj_growtangle')[0];
       if (g2) { boxAfter = { x: g2.x, xscale: g2.image_xscale, init: g2.init }; }
       soulAfter = state.soul?.x ?? null;
