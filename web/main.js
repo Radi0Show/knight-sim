@@ -34,31 +34,34 @@ const renderer = await createRenderer(canvas);
 const ctx = renderer.ctx;
 
 /**
- * THE CANVAS IS SIZED TO A WHOLE NUMBER OF DEVICE PIXELS PER GAME PIXEL.
+ * HOW THE 640x480 FRAME MEETS THE WINDOW — a GRAPHICS setting, because the
+ * two answers are genuinely different and neither is right for everyone.
  *
- * The letterbox used to be pure CSS — `width: min(100vw, 100vh * 4/3)` — which
- * fills the window but lands on a fractional scale almost every time. With
- * `image-rendering: pixelated` a factor of, say, 4.725 gives some source
- * columns four device pixels and their neighbours five, so a one-pixel font
- * stem is fat on one letter and thin on the next and a horizontal rule
- * shimmers. Reported as the menu text looking "weird" after the fullscreen
- * change; it is not a filtering setting, and no filtering setting fixes it.
+ *   FULL   fill the window, letterboxed on the short axis. The default, and
+ *          what fullscreen should look like.
+ *   SMALL  scale by a WHOLE number of DEVICE pixels, leaving black around the
+ *          edges when the window is not a clean multiple of 640x480.
  *
- * So: measure in DEVICE pixels (a 2x display makes 640 CSS px into 1280 real
- * ones, and only the real count has to divide evenly), take the largest whole
- * multiple that fits, and give that back to CSS divided by the ratio. Every
- * game pixel is then exactly `scale` device pixels, everywhere on screen.
+ * The trade is unavoidable. `image-rendering: pixelated` at a fractional
+ * factor gives some source columns n device pixels and their neighbours n + 1,
+ * so a one-pixel font stem is fat on one letter and thin on the next — the
+ * "weird" menu text. SMALL is the only mode that cannot do that; FULL is the
+ * only one that fills the screen. Measuring in DEVICE pixels is what makes
+ * SMALL exact: a 2x display turns 640 CSS px into 1280 real ones, and only the
+ * real count has to divide evenly.
  *
- * Below 1x — a window smaller than 640x480 device pixels — there is no whole
- * multiple to land on, so it falls back to the old fractional fit. Showing the
- * whole frame slightly soft beats cropping the arena.
+ * FULL used to be the only behaviour, then SMALL was, and each was reported as
+ * a regression by the other's standard. Now it is a switch.
  */
+let scalingMode = 'fit';
 function fitCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const availW = window.innerWidth * dpr;
   const availH = window.innerHeight * dpr;
   const fit = Math.min(availW / renderer.VIEW_W, availH / renderer.VIEW_H);
-  const scale = fit >= 1 ? Math.floor(fit) : fit;
+  // Below 1x there is no whole multiple to land on, so SMALL falls back to
+  // filling: showing the whole frame slightly soft beats cropping the arena.
+  const scale = scalingMode === 'pixel' && fit >= 1 ? Math.floor(fit) : fit;
   canvas.style.width = `${(renderer.VIEW_W * scale) / dpr}px`;
   canvas.style.height = `${(renderer.VIEW_H * scale) / dpr}px`;
 }
@@ -397,17 +400,23 @@ try {
     title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
   }
   if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
+  if (saved?.scaling === 'fit' || saved?.scaling === 'pixel') title.scaling = saved.scaling;
 } catch { /* a corrupt entry falls back to the defaults */ }
 
 function persistSettings() {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       gear: title.gear, volumes: title.volumes, shake: title.shake,
+      scaling: title.scaling,
     }));
   } catch { /* private mode etc. — the session still works, unsaved */ }
   audio.setVolumes(title.volumes.music / 100, title.volumes.sfx / 100);
   // `global.flag[12]` in the sim's terms: SET means "do not move the view".
   state.flag12 = title.shake ? 0 : 1;
+  if (scalingMode !== title.scaling) {
+    scalingMode = title.scaling;
+    fitCanvas();
+  }
 }
 persistSettings();
 if (replay || params.get('mode')) title.mode = mode === 'practice' ? 'single' : 'normal';

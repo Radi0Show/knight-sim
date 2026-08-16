@@ -187,16 +187,23 @@ function drawSettings(ctx, title, sprites, font) {
     return;
   }
 
-  if (s.page === 'shake') {
-    centred(ctx, font, 'SCREEN SHAKE', 60, c_white, 1.4);
-    if (heart) drawSpriteExt(ctx, heart, 0, 110 + bob, 194, 1, 1, 0, null, 1);
-    drawText(ctx, font, 'SCREEN SHAKE', 140, 190, { color: rgb(HILITE) });
-    drawText(ctx, font, title.shake ? 'ON' : 'OFF', 420, 190, { color: rgb(HILITE) });
-    // Say what it is, because the honest answer to the report behind this
-    // page is "the game really does shake the whole view".
-    centred(ctx, font, "obj_shake moves the CAMERA, so the party moves with it.", 270, DIM, 0.75);
-    centred(ctx, font, "OFF is the game's own global.flag[12] — the shake object still", 296, DIM, 0.75);
-    centred(ctx, font, 'runs, it just never touches the view.', 320, DIM, 0.75);
+  if (s.page === 'graphics') {
+    centred(ctx, font, 'GRAPHICS', 60, c_white, 1.4);
+    // NO EXPLANATIONS. This page used to carry three lines about obj_shake and
+    // global.flag[12] under the toggle — accurate, and nobody wants a footnote
+    // in a settings menu. The reasoning lives in the code, where it belongs;
+    // the menu says ON or OFF.
+    const rows = [
+      { name: 'SCREEN SIZE', value: title.scaling === 'fit' ? 'FULL' : 'SMALL' },
+      { name: 'SCREEN SHAKE', value: title.shake ? 'ON' : 'OFF' },
+    ];
+    for (let i = 0; i < rows.length; i++) {
+      const y = 190 + i * 60;
+      const on = i === s.cursor;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 110 + bob, y + 4, 1, 1, 0, null, 1);
+      drawText(ctx, font, rows[i].name, 140, y, { color: rgb(on ? HILITE : c_white) });
+      drawText(ctx, font, rows[i].value, 420, y, { color: rgb(on ? HILITE : c_white) });
+    }
     centred(ctx, font, 'arrows  toggle      X  back', 448, DIM, 0.75);
     return;
   }

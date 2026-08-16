@@ -59,6 +59,7 @@
 
 import { cue } from './audio.js';
 import { damageKnight, KNIGHT_MAXHP } from './knight.js';
+import { scrOflash } from './fx.js';
 import { spawnDmgNumber, resetDmgStack } from './dmgnumbers.js';
 
 /** `t >= 28` ends the animation; the bolt leaves at `t == 10`. */
@@ -199,6 +200,15 @@ export function stepRudeBuster(state, press = false) {
       resetDmgStack(state);
       spawnDmgNumber(state, b.cx, b.cy, dmg, 1, 2);
       cue(state, 'snd_rudebuster_hit');
+      // `with (target) __of = scr_oflash();` — the Knight lights up in his own
+      // silhouette for about ten frames. Reported as issue #7: the bolt landed,
+      // the number appeared, and he did not react. `red == 1` (the empowered
+      // bolt, `damage += 90`) would recolour it c_red; nothing reachable here
+      // casts that variant, so the white one is the only one spawned.
+      const knight = state.entities.find(
+        (x) => x.alive && x.type.name === 'obj_knight_enemy',
+      );
+      if (knight) scrOflash(state, knight);
       b.explode = 1;
       b.t = 1;
       // Eight bursts, four at 45+i*90 and four more on the same angles —

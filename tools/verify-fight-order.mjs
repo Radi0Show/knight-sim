@@ -290,4 +290,79 @@ console.log(`→ phase 4 opened on the HP gate at turn ${idx4 + 1}, ran `
   + 'Rotating Slash → Charge-up → ROARING, then fell back to phase 3');
 console.log('→ the gate is one-shot: no second phase 4 despite HP staying under 5840');
 console.log('→ the flawless run earns "Kris coughed." on the guard drop, and it stays up');
+// ── THE ORDER IS NOT RANDOM, AND THAT IS CHECKABLE ────────────────────────
+//
+// Issue #8 reports the opposite: "attack order is randomized, so the knight
+// seems to pick from a pool of attacks that is randomized by phase markers".
+// obj_knight_enemy's Other_10 — the selector, and the only thing that assigns
+// `myattackchoice` — is 145 lines with no `random`, `choose`, `irandom` or
+// `shuffle` anywhere in it: a flat run of `if (phaseturn == N)` branches with
+// literal attack numbers. There is nothing in it to randomize.
+//
+// What DOES vary between runs, and is almost certainly what was seen:
+//
+//   * PHASE 3 LOOPS. Its `phaseturn == 5` sets `phaseturn = 0` and leaves
+//     `phase` alone, so it repeats until the fight ends.
+//   * PHASE 4 INTERRUPTS ON DAMAGE, not on a turn count — `monsterhp <= maxhp
+//     * 0.8`, tested at the end of ANY turn — so where it cuts in depends on
+//     how hard you have been hitting, which differs every run.
+//   * ROARING then sets `phase = 3`, dropping you back into that loop, and
+//     phase 4's own turn 1 is skipped when `rotatingslash3used` is set.
+//
+// So the same fixed table produces a different-looking sequence each time.
+// The reporter's own observation that it always opens with Stars is what a
+// fixed table predicts and a randomized pool does not.
+//
+// Asserted by construction: run the selector under several different seeds and
+// require the order to be IDENTICAL. If randomness is ever introduced — by a
+// translation slip or by "fixing" this report — these diverge immediately.
+{
+  const orders = [];
+  for (const seed of [1, 12345, 777, 20260816]) {
+    const st = createState({ seed, traceBulletSlots: 0 });
+    buildPracticeScene(st, { seed });
+    // `state.phase` is the director's own label — "phase N · turn M · Name" —
+    // so recording it whenever it changes captures the sequence exactly as a
+    // player would read it off the screen. THE MENU HAS TO BE DRIVEN, with the
+    // same pulsed confirm the main loop uses: on idle input the party never
+    // acts, the turn never ends, and the sweep sits on turn 1 forever. And the
+    // party is topped up for the same reason as above — this is a turn-ORDER
+    // question, not a survival one.
+    const order = [];
+    let last = null;
+    let pulse = false;
+    for (let f = 0; f < MAX_FRAMES && order.length < EXPECTED.length; f++) {
+      let input = idle;
+      if (st.menu?.open) { pulse = !pulse; input = { ...idle, confirm: pulse }; }
+      stepFrame(st, input);
+      st.partyHp = freshParty();
+      st.gameOver = false;
+      const label = String(st.phase ?? '');
+      if (!label || label === last) continue;
+      last = label;
+      order.push(label);
+    }
+    orders.push(order.join(' | '));
+  }
+  const first = orders[0];
+  const differing = orders.filter((o) => o !== first).length;
+  if (differing > 0) {
+    failures.push(
+      `the attack order differs between seeds (${differing} of ${orders.length}`
+      + ' runs diverged) — the selector has no RNG and must be identical',
+    );
+  }
+  const turns = first ? first.split('|').length : 0;
+  if (turns < EXPECTED.length) {
+    failures.push(`the seed sweep only reached ${turns} of ${EXPECTED.length} turns`);
+  }
+  console.log(`→ ${turns} turns, identical across ${orders.length} seeds`
+    + ' — the selector has no RNG (issue #8)');
+}
+
+if (failures.length) {
+  for (const f of failures) console.log(`→ FAILURE  ${f}`);
+  process.exit(1);
+}
+
 console.log('\nPASS  the playable scene runs the real fight order end to end');

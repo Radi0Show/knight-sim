@@ -230,6 +230,27 @@ export async function createRenderer(canvas) {
       return drawPointingStarchild(ctx, e, state, deps);
     },
     obj_knight_circle: drawKnightCircle,
+
+    /**
+     * obj_oflash — a FOGGED copy of its target at `sin(siner / 3)`.
+     *
+     * `gpu_set_fog(true, flashcolor, 0, 1)` replaces every pixel with the
+     * colour and keeps the alpha, which is not what the draw-colour argument
+     * does (that multiplies, and a white multiply on dark art is a no-op —
+     * the same trap the charge-up silhouette hit). `fogged()` is the one that
+     * is right here.
+     */
+    obj_oflash(ctx2, e, state2, deps) {
+      const entry = deps.sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
+      if (!entry || !entry.frames.length) return true;
+      const a = Math.sin(e.siner / 3);
+      if (a <= 0) return true;
+      const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
+      blit(fogged(entry.frames[idx], e.flashcolor ?? [255, 255, 255]),
+        entry.meta.ox, entry.meta.oy, e.x, e.y,
+        e.image_xscale ?? 2, e.image_yscale ?? 2, 0, Math.min(1, a));
+      return true;
+    },
     obj_knight_rotating_slash: drawRotatingSlashTelegraph,
 
     /**

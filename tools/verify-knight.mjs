@@ -29,6 +29,9 @@ import {
   PHASE4_GATE, endCutsceneReached, startEndCutscene,
 } from '../sim/knight.js';
 import { PARTY, statFor } from '../sim/damage.js';
+import { createState, stepFrame } from '../sim/index.js';
+import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { castRudeBuster } from '../sim/rudebuster.js';
 
 const failures = [];
 const eq = (got, want, what) => {
@@ -234,6 +237,39 @@ eq(total, 56, 'a perfect three-bolt turn');
 console.log(`knight 7300 HP / AT ${KNIGHT_AT} / DF ${KNIGHT_DF}, reduction ${DR_BASE} +${DR_PER_TURN}/turn to ${DR_CAP}`);
 console.log(`critical FIGHT: Kris ${fightDamage(mk(), 0, 150)}  Susie ${fightDamage(mk(), 1, 150)}  Ralsei ${fightDamage(mk(), 2, 150)}  = ${total}`);
 console.log(`Kris scaling: healthy x0.5 (${fightDamage(healthy, 0, 150)})  one down x1 (${fightDamage(oneDown, 0, 150)})  both down x2 (${fightDamage(bothDown, 0, 150)})`);
+// ── the bolt's own reaction ──────────────────────────────────────────────
+// `with (target) __of = scr_oflash();` on impact, and it was missing: the bolt
+// landed, the number came up, and the Knight did not react at all (issue #7).
+// obj_oflash is a fogged copy of him at `sin(siner / 3)`, destroyed once
+// `siner > 4 && sin(siner / 3) < 0` — a PULSE about ten frames long, not a
+// fade, so both the length and the peak are checked.
+{
+  const st = createState({ seed: 5, traceBulletSlots: 0 });
+  buildPracticeScene(st, { seed: 5 });
+  const IDLE = {
+    left: 0, right: 0, up: 0, down: 0, focus: 0, confirm: 0, cancel: 0, button3: 0,
+  };
+  for (let i = 0; i < 10; i++) stepFrame(st, IDLE);
+  const hp0 = st.knight.hp;
+  castRudeBuster(st, 100, 300, 200, 425, 90);
+  let frames = 0;
+  let peak = 0;
+  for (let i = 0; i < 200; i++) {
+    stepFrame(st, IDLE);
+    for (const e of st.entities) {
+      if (e.alive && e.type.name === 'obj_oflash') {
+        frames += 1;
+        peak = Math.max(peak, Math.sin(e.siner / 3));
+      }
+    }
+  }
+  if (frames < 8 || frames > 12) {
+    failures.push(`the Rude Buster flash lasted ${frames} frames, expected ~10`);
+  }
+  if (peak < 0.9) failures.push(`the flash peaked at ${peak.toFixed(2)}, expected ~1`);
+  if (st.knight.hp >= hp0) failures.push('the bolt did no damage');
+}
+
 console.log(`Rude Buster ${spellDamage(mk(), 1)} — x(dr + 0.65), no /2`);
 console.log(`5840 is the phase-4 gate, battleprog == 1, AND the end condition`);
 console.log(`party AT ${PARTY.map((p) => p.at).join('/')}  MAGIC ${PARTY.map((p) => p.magic).join('/')}`);

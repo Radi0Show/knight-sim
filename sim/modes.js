@@ -66,7 +66,7 @@ export const SETTINGS_PAGES = [
   { id: 'equip', name: 'WEAPONS / ARMOR' },
   { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
-  { id: 'shake', name: 'SCREEN SHAKE' },
+  { id: 'graphics', name: 'GRAPHICS' },
   { id: 'unused', name: 'UNUSED' },
 ];
 
@@ -111,6 +111,24 @@ export function createTitle() {
      * Knight alone, and the ending explicitly zeroes his own `shakex`.
      */
     shake: true,
+    /**
+     * HOW THE 640x480 FRAME MEETS THE WINDOW.
+     *
+     * 'fit'   fill it — the frame is scaled to whatever is there, letterboxed
+     *         on the short axis. This is the default and what the game looks
+     *         like fullscreen.
+     * 'pixel' scale by a WHOLE number of device pixels instead, which leaves
+     *         black around the edges when the window is not a clean multiple
+     *         of 640x480.
+     *
+     * The difference is real and unavoidable, not a preference between two
+     * equal things: `image-rendering: pixelated` at a fractional factor gives
+     * some source columns n device pixels and their neighbours n+1, so a
+     * one-pixel font stem is fat on one letter and thin on the next. 'pixel'
+     * is the only setting that cannot do that; 'fit' is the only one that
+     * fills the screen. Both are offered because both are right sometimes.
+     */
+    scaling: 'fit',
     /** Set when gear/volumes change; the driver persists and clears it. */
     dirty: false,
   };
@@ -154,10 +172,12 @@ function stepSettings(title, pressed) {
     return out;
   }
 
-  // ---- shake: one toggle ----
-  if (s.page === 'shake') {
+  // ---- graphics: two toggles ----
+  if (s.page === 'graphics') {
+    if (pressed('up') || pressed('down')) { s.cursor = 1 - s.cursor; out.moved = true; }
     if (pressed('left') || pressed('right') || pressed('confirm')) {
-      title.shake = !title.shake;
+      if (s.cursor === 0) title.scaling = title.scaling === 'fit' ? 'pixel' : 'fit';
+      else title.shake = !title.shake;
       title.dirty = true;
       out.moved = true;
     }
@@ -278,11 +298,28 @@ export function stepTitle(title, input, attacks) {
     moved = true;
   }
 
-  if (pressed('cancel') && title.pickingDifficulty) {
+  // ONE CALL, THEN BRANCH — `pressed()` LATCHES.
+  //
+  // It records the key as held on the way out, so calling it twice in a frame
+  // makes the second call return false no matter what the player did. Written
+  // as two guarded tests:
+  //
+  //     if (pressed('cancel') && title.pickingDifficulty) { ... }
+  //     if (pressed('cancel') && title.pickingAttack)     { ... }
+  //
+  // the first one evaluates `pressed` FIRST, latches, and then fails its own
+  // `&&` whenever the difficulty stage is not the one showing — and the second
+  // test can never see the press. So X backed out of the difficulty list
+  // (where the first test matches) and did nothing at all in the attack list.
+  // Reported as issue #6: "X does not bring you back to the main menu from
+  // single attack", and it works in settings because that path calls
+  // `pressed('cancel')` exactly once.
+  const cancelled = pressed('cancel');
+  if (cancelled && title.pickingDifficulty) {
     title.pickingDifficulty = false;
     return { moved: true, chosen: false };
   }
-  if (pressed('cancel') && title.pickingAttack) {
+  if (cancelled && title.pickingAttack) {
     title.pickingAttack = false;
     return { moved: true, chosen: false };
   }

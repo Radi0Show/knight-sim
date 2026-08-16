@@ -74,6 +74,74 @@ export const afterimage = {
 
 
 /**
+ * obj_oflash — THE HIT GLOW, and the thing a Rude Buster on the Knight was
+ * missing.
+ *
+ *     // obj_rudebuster_bolt, on impact
+ *     scr_damage_enemy(star, damage);
+ *     with (target) __of = scr_oflash();
+ *     if (red == 1) with (target) __of.flashcolor = c_red;
+ *
+ * `scr_oflash` copies the target's sprite, index and scales onto a new
+ * instance one depth in front, and obj_oflash's Draw redraws that copy FOGGED
+ * — every pixel replaced by `flashcolor`, alpha kept — at `sin(siner / 3)`:
+ *
+ *     siner += flashspeed;                       // 1 a frame
+ *     gpu_set_fog(true, flashcolor, 0, 1);
+ *     draw_sprite_ext(..., sin(siner / 3));
+ *     if (siner > 4 && sin(siner / 3) < 0) instance_destroy();
+ *
+ * So it is a PULSE, not a fade: up through 1 around siner 4.7 and gone by 9.4,
+ * about ten frames of the Knight lit up in his own silhouette. `follow` is
+ * false here, so it stays where the hit landed even if he moves.
+ *
+ * The Knight's own object-definition sprite is `spr_roaringknight_idle`
+ * (confirmed with the object_sprite dump, the same technique CLAUDE.md
+ * records for obj_basicattack), which is why copying `sprite_index` gives a
+ * copy of him rather than something blank.
+ */
+export const oflash = {
+  name: 'obj_oflash',
+
+  create(e) {
+    e.flashspeed = 1;
+    e.siner = 0;
+    e.target = null;
+    e.image_speed = 0;
+    e.flashcolor = [255, 255, 255];
+    e.follow = false;
+  },
+
+  step(e) {
+    if (e.target && e.target.alive) {
+      e.image_index = e.target.image_index;
+      e.sprite_index = e.target.sprite_index;
+      if (e.follow) {
+        e.x = e.target.x;
+        e.y = e.target.y;
+      }
+    }
+    e.siner += e.flashspeed;
+    if (e.siner > 4 && Math.sin(e.siner / 3) < 0) destroy(e);
+  },
+};
+
+/** `scr_oflash(follow)` — the copy, made from the caller. */
+export function scrOflash(state, target, { follow = false, color = null } = {}) {
+  const e = spawn(state, oflash, { x: target.x, y: target.y });
+  e.image_xscale = target.image_xscale;
+  e.image_yscale = target.image_yscale;
+  e.image_speed = 0;
+  e.image_index = target.image_index;
+  e.sprite_index = target.sprite_index;
+  e.depth = (target.depth ?? 0) - 1;
+  e.target = target;
+  e.follow = follow;
+  if (color) e.flashcolor = color;
+  return e;
+}
+
+/**
  * obj_knight_circle — the expanding ring at an aim point.
  *
  * Rotating slash drops one wherever it locks on, and ROARING fires one on the
