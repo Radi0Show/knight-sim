@@ -30,6 +30,7 @@ import {
 } from './draw/swords.js';
 import { drawKnightCircle } from './draw/knight-circle.js';
 import { drawKnightStream } from './draw/knight-stream.js';
+import { drawFallingSword, drawSwordfallKnight } from './draw/swordfall.js';
 import { drawRotatingSlashTelegraph } from './draw/rotating-slash.js';
 import { createSplitBox } from './splitbox.js';
 import { scrEaseOut, clamp01, lerp } from '../sim/gml.js';
@@ -147,6 +148,10 @@ export async function createRenderer(canvas) {
     // The stream draws its beams, its streamlines AND its diamonds itself,
     // clipped to the box — see render/draw/knight-stream.js.
     obj_knight_stream: drawKnightStream,
+    // The swords carry a two-ghost motion trail, and the manager draws its
+    // pose at a fixed screen x — see render/draw/swordfall.js.
+    obj_fallingsword: drawFallingSword,
+    obj_knight_swordfall: drawSwordfallKnight,
     obj_bullet_knight_stream: () => true,
     obj_knight_streamline: () => true,
     obj_bullet_stream_diamond: () => true,

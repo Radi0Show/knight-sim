@@ -37,6 +37,8 @@
  "snd_knight_cut": "snd_knight_cut.wav",
  "snd_knight_cut2": "snd_knight_cut2.wav",
  "snd_knight_drawpower": "snd_knight_drawpower.wav",
+ "snd_knight_fallingsword": "snd_knight_fallingsword.ogg",
+ "snd_knight_fallingsword_big": "snd_knight_fallingsword_big.wav",
  "snd_knight_hurt": "snd_knight_hurt.wav",
  "snd_knight_hurtb": "snd_knight_hurtb.wav",
  "snd_knight_jump": "snd_knight_jump.wav",

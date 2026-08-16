@@ -35,6 +35,7 @@ import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { diagonalBulletManager } from '../attacks/diagonal-bullets.js';
 import { knightStream } from '../attacks/knight-stream.js';
+import { knightSwordfall } from '../attacks/swordfall.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -400,6 +401,15 @@ export function launchAttack(state, entry) {
       // the manager takes over.
       if (knight) knight.image_alpha = 0;
       const mg = spawn(state, knightStream, { x: kx, y: ky });
+      return mg;
+    }
+
+    case 10: {
+      // `dc.type = 108`. The default arena, and the manager runs the whole
+      // turn itself (Other_10 sets its own 324-frame local clock).
+      const mg = spawn(state, knightSwordfall, { x: kx, y: ky });
+      mg.difficulty = difficulty;
+      knightSwordfall.init(mg, state);
       return mg;
     }
 
