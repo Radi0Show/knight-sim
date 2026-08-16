@@ -37,6 +37,7 @@ import { diagonalBulletManager } from '../attacks/diagonal-bullets.js';
 import { knightStream } from '../attacks/knight-stream.js';
 import { knightSwordfall } from '../attacks/swordfall.js';
 import { launchUnderbox } from '../attacks/underbox.js';
+import { launchKnightlines } from '../attacks/knightlines.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -117,6 +118,16 @@ function turnLength(ac, difficulty) {
   // `chargeupcon = 1` and nothing else, so the turn keeps the 90 assigned at
   // the mnfight 1.5 -> 2 transition. It is the shortest turn in the fight.
   if (ac === -1) return 90;
+  // AC 20 TAKES NO OVERRIDE EITHER, and unlike the other unused attacks its
+  // controller (type 101) does not pin `global.turntimer` to 999999 — so
+  // knightlines keeps the same default 90 the charge-up does. Its own timeline
+  // is longer than that: the slasher runs about 105 frames and the spears'
+  // alarms reach `32 + 22 * 4` = 120 before they even move. The real fight
+  // would cut the volley off. Kept at 90 because that is what the dump says;
+  // the practice director's 90-frame drain is what still lets you watch the
+  // spears land, and that is the drill being generous, not the number being
+  // wrong.
+  if (ac === 20) return 90;
   if (ac === 2) return 350;
   if (ac === 11) return difficulty === 0 ? 292 : 300;
   if (ac === 13) return difficulty === 3 ? 360 : 330;
@@ -413,6 +424,14 @@ export function launchAttack(state, entry) {
       // both. All of that is launchUnderbox, so the dispatch stays one line.
       state.turntimer = 999999;
       return launchUnderbox(state, kx, ky);
+    }
+
+    case 20: {
+      // `dc.type = 101` — knightlines. The arena and the soul both slide 70
+      // left and the box widens to 2.5; launchKnightlines does all of it.
+      // NOTE it does NOT pin `global.turntimer`, and ac 20 has no
+      // scr_turntimer line either — see the header in sim/attacks/knightlines.js.
+      return launchKnightlines(state, kx, ky);
     }
 
     case 10: {

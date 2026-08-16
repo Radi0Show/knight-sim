@@ -32,6 +32,7 @@ import { drawKnightCircle } from './draw/knight-circle.js';
 import { drawKnightStream } from './draw/knight-stream.js';
 import { drawFallingSword, drawSwordfallKnight } from './draw/swordfall.js';
 import { drawWeirdCircle, drawWeirdBottomManager } from './draw/underbox.js';
+import { drawTunnelslash } from './draw/knightlines.js';
 import { drawRotatingSlashTelegraph } from './draw/rotating-slash.js';
 import { createSplitBox } from './splitbox.js';
 import { scrEaseOut, clamp01, lerp } from '../sim/gml.js';
@@ -157,6 +158,23 @@ export async function createRenderer(canvas) {
     // and its manager breathes on a sine — see render/draw/underbox.js.
     obj_knight_weird_circle: drawWeirdCircle,
     obj_knight_weird_bottom_manager: drawWeirdBottomManager,
+    // The knightlines spear is drawn twice onto a 100x100 surface and then
+    // CUT at the arena's left wall — see render/draw/knightlines.js.
+    obj_bullet_knight_tunnelslash: drawTunnelslash,
+    /**
+     * obj_knight_tunnel_slasher's Draw is the pose with a `sin(fulltimer *
+     * 0.1) * 2` breathe, the same two-pixel bob the rotating slash's knight
+     * has. Its `fulltimer` is the instance's own clock, not global.time.
+     */
+    obj_knight_tunnel_slasher(ctx2, e, state2, deps) {
+      const entry = deps.sprites.get(e.sprite_index);
+      if (!entry || !entry.frames.length) return true;
+      blit(entry.frames[Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length],
+        entry.meta.ox, entry.meta.oy,
+        e.x, e.y + Math.sin(e.fulltimer * 0.1) * 2,
+        e.image_xscale ?? 2, e.image_yscale ?? 2, 0, e.image_alpha ?? 1, e.image_blend);
+      return true;
+    },
     obj_bullet_knight_stream: () => true,
     obj_knight_streamline: () => true,
     obj_bullet_stream_diamond: () => true,

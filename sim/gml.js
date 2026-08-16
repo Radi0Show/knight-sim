@@ -91,6 +91,36 @@ export function gmlEq(a, b) {
   return Math.abs(a - b) < GML_EPSILON;
 }
 
+/**
+ * GML `median(...)` — and in this codebase it is a CLAMP, written three ways.
+ *
+ *     median(-arg2, arg2, angle_difference(arg1, arg0))     // scr_anglechange
+ *     median(-argument2, argument2, ...)                    // scr_ease_towards_*
+ *
+ * Sort the arguments and take the middle, and `median(lo, hi, v)` is exactly
+ * `clamp(v, lo, hi)` — which is what every three-argument call in the dump is
+ * doing.
+ *
+ * ORIGINAL BUG, and it is why this helper exists at all:
+ *
+ *     boxdir = median(180, point_direction(x, y, ...));   // tunnelslash Alarm 0
+ *
+ * TWO arguments. A two-argument clamp is not a clamp; it degenerates to one
+ * side of one. GameMaker sorts and takes index `floor((n - 1) / 2)`, which for
+ * an even count is the LOWER of the two middle values — so this is `min(180,
+ * dir)`, and the author's intended bound on the other side simply is not
+ * there.
+ *
+ * THE TIE-BREAK IS FROM THE MANUAL, NOT MEASURED. Only the two-argument call
+ * depends on it, and only for the half of the spears that spawn above their
+ * target; both readings retreat and both lock on. Worth an oracle probe if
+ * this attack ever gets one, and NOT worth a game run on its own.
+ */
+export function gmlMedian(...values) {
+  const v = [...values].sort((a, b) => a - b);
+  return v[Math.floor((v.length - 1) / 2)];
+}
+
 /** scr_ease_in(t, curve) — only the curves actually used are implemented. */
 export function scrEaseIn(t, curve) {
   if (curve < -3 || curve > 7) return t;

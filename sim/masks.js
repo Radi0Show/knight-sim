@@ -137,6 +137,14 @@ export const WEIRDSHAPE_MASK = build(raw.weirdshape);
  * along; keyed `diamondform` for the same reason.
  */
 export const DIAMONDFORM_MASK = build(raw.diamondform);
+/**
+ * `spr_roaringknight_slash_tunnel` — the knightlines spears. 99x21 Precise,
+ * and only 9 rows are inked: a long lens that tapers to a point at both ends,
+ * which is why it reads as a spear rather than a bar. The bullet is created at
+ * `image_xscale = 4` and approaches 1, so the mask is FOUR TIMES this wide on
+ * the frame it appears and shrinks to true size as it locks on.
+ */
+export const SLASHTUNNEL_MASK = build(raw.slashtunnel);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -169,6 +177,7 @@ export const SPRITE_MASKS = {
   spr_diamondbullet: STREAMDIAMOND_MASK,
   spr_knight_weird_shape: WEIRDSHAPE_MASK,
   spr_diamondbullet_form: DIAMONDFORM_MASK,
+  spr_roaringknight_slash_tunnel: SLASHTUNNEL_MASK,
 };
 
 /**
