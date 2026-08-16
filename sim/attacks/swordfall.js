@@ -51,6 +51,7 @@ import { gmlRandom, gmlIrandom } from '../rng.js';
 import { scrBulletInit, regularbulletCreate, regularbulletStep, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { SWORDOL_MASK, scrPreciseHit } from '../masks.js';
+import { chainNext, registerComboAttack } from './combination.js';
 import { cue } from '../audio.js';
 
 /** How many trail samples the sword keeps. `max_old = 3`. */
@@ -212,8 +213,43 @@ export const knightSwordfall = {
     e.done = false;
   },
 
-  /** Other_10 — the "full" arm; the chained turn_types belong to ac 7. */
-  init(e) {
+  /**
+   * Other_10. The "full" arm is the standalone launch; the rest are the
+   * COMBINATION's (ac 7), which chains this attack as one of three segments.
+   *
+   * `short start` and `short mid` share a shape — a short clock, a fast
+   * `countdowner`, and the point pose eased in over 20 frames to the box's
+   * right edge — and differ only in how long they run (70 against 80) and how
+   * quickly the swords come (10 against 20). `short end` is the odd one: it
+   * skips the pose entirely, takes the LONGEST clock in the object (214), and
+   * arms alarm 5 exactly as "full" does, because it is the segment that has to
+   * finish the turn rather than hand it on.
+   */
+  init(e, state) {
+    if (e.turn_type === 'short start' || e.turn_type === 'short mid') {
+      const short = e.turn_type === 'short start';
+      e.local_turntimer = short ? 70 : 80;
+      e.countdowner = short ? 10 : 20;
+      e.countdown = 2;
+      e.turn_time = 40;
+      e.sprite_index = 'spr_roaringknight_point_ol';
+      scrLerpvar(state, spawn, e, 'image_index', 0, 4, 8);
+      const box = boxOf(state);
+      if (box) {
+        const hw = (box.image_xscale ?? 2) * 37.5;
+        const hh = (box.image_yscale ?? 2) * 37.5;
+        scrLerpvar(state, spawn, e, 'x', e.x, box.x + hw + 60, 20, 1);
+        scrLerpvar(state, spawn, e, 'y', e.y, box.y - 110, 20, 1);
+      }
+      return;
+    }
+    if (e.turn_type === 'short end') {
+      e.local_turntimer = 214;
+      e.countdowner = 10;
+      e.countdown = 20;
+      e.alarm[5] = 4;
+      return;
+    }
     e.local_turntimer = 324;
     e.alarm[5] = 4;
   },
@@ -278,6 +314,16 @@ export const knightSwordfall = {
       e.alarm[4] = 26;
     },
 
+    /**
+     * Alarm 3 — THE HANDOFF. `if (next_up != -999) { ...create the next
+     * segment... } instance_destroy();` — so outside a combination it is
+     * simply the object's end.
+     */
+    3(e, state) {
+      chainNext(state, e);
+      destroy(e);
+    },
+
     /** The manager is done; hand the knight's hover phase back. */
     4(e, state) {
       if (state.knight) state.knight.siner2 = e._siner;
@@ -329,8 +375,19 @@ export const knightSwordfall = {
     if (e.local_turntimer < e.turn_time - ex) {
       e.countdown = 99999;
       e.local_turntimer = 99999;
-      e.alarm[1] = 8;
-      e.alarm[2] = 60;
+      // TWO ENDINGS, and the turn_type picks one. A standalone launch throws
+      // the FINAL sword (alarm 1) and brings the Knight back (alarm 2); a
+      // chained segment does neither — it eases the pose back and arms the
+      // HANDOFF (alarm 3) four frames later, so the next attack starts while
+      // this one's swords are still in the air.
+      if (e.turn_type !== 'start' && e.turn_type !== 'short start'
+        && e.turn_type !== 'short mid') {
+        e.alarm[1] = 8;
+        e.alarm[2] = 60;
+      } else {
+        scrLerpvar(state, spawn, e, 'image_index', 4, 0, 8);
+        e.alarm[3] = 4;
+      }
       return;
     }
 
@@ -351,3 +408,6 @@ function boxOf(state) {
   const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
   return gt ? { x: gt.x, y: gt.y } : { x: state.view.x + 320, y: state.view.y + 170 };
 }
+
+// Combination segment 4 — see sim/attacks/combination.js's registry note.
+registerComboAttack(4, knightSwordfall);

@@ -469,3 +469,7 @@ export function launchUnderbox(state, x, y) {
   weirdBottomManager.init(mg, state);
   return mg;
 }
+
+// Combination segment 5 — the registry, not an import, breaks the cycle.
+import { registerComboAttack } from './combination.js';
+registerComboAttack(5, weirdBottomManager);

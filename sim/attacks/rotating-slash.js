@@ -49,11 +49,12 @@
 import { scrLerpvar } from '../lerpvar.js';
 import { spawn, destroy } from '../entity.js';
 import { roaringknightSlash } from './roaringknight-slash.js';
-import { knightCircle } from '../fx.js';
+import { knightCircle, knightWarp, knightWarpOut } from '../fx.js';
 import { cue, cueLoop, cueStop } from '../audio.js';
 import { scrApproach } from '../gml.js';
 import { gmlChoose, gmlIrandom, gmlU32 } from '../rng.js';
 import { scrBulletInherit } from '../bullets/regularbullet.js';
+import { chainNext } from './combination.js';
 
 /** Fisher-Yates over the real generator. See SHUFFLE CAVEAT above. */
 function shuffleList(list, rng) {
@@ -155,10 +156,28 @@ export const rotatingSlash = {
       e.slash_number = 3;
       e.slash_array = [3, 4, 4, 4, 4, 4];
     }
+    // THE COMBINATION'S ARMS. Other_10's turn_type block, verbatim — each
+    // form is just a shorter clock and a head start on `timer`, which is what
+    // lets three attacks share one turn without any of them being cut off
+    // mid-pattern.
     if (e.turn_type === 'full') e.local_turntimer = 400;
     if (e.turn_type === 'start') e.local_turntimer = 320;
     if (e.turn_type === 'end') {
       e.local_turntimer = 300;
+      e.timer = 15;
+    }
+    if (e.turn_type === 'short start') {
+      e.local_turntimer = 270;
+      e.timer = 12;
+      e.turn_limit_4 = 250;
+    }
+    if (e.turn_type === 'short mid') {
+      e.local_turntimer = 260;
+      e.timer = 15;
+      e.turn_limit_4 = 250;
+    }
+    if (e.turn_type === 'short end') {
+      e.local_turntimer = 260;
       e.timer = 15;
     }
   },
@@ -194,6 +213,16 @@ export const rotatingSlash = {
         state.turntimer = -1;
       }
       destroy(e);
+    },
+
+    /**
+     * Alarm_2 — THE HANDOFF, and it is a SEPARATE alarm from the destroy
+     * above. The object ends one of two ways: alarm 3 (its own end, which
+     * closes the turn) or alarm 2 (hand the turn to the next segment). Only
+     * the combination arms this one.
+     */
+    2(e, state) {
+      chainNext(state, e);
     },
   },
 
@@ -454,6 +483,16 @@ export const rotatingSlash = {
               e.aim_x = (b[2] + b[0]) / 2;
               e.aim_y = (b[1] + b[3]) / 2;
             }
+          } else if (e.turn_type === 'start' || e.turn_type === 'short start'
+            || e.turn_type === 'short mid') {
+            // A CHAINED SEGMENT DOES NOT RETURN — it warps out and arms the
+            // HANDOFF alarm instead, four frames later. `exit` in the original,
+            // so none of the return block below runs.
+            const w = spawn(state, knightWarp, { x: e.x, y: e.y });
+            w.master = e;
+            knightWarpOut(state, w);
+            e.alarm[2] = 4;
+            return;
           } else {
             e.state = 'return';
             e.timer = 0;
@@ -548,3 +587,7 @@ export function spawnRotatingSlash(state, x, y, { difficulty = 0 } = {}) {
   rotatingSlash.init(e);
   return e;
 }
+
+// Combination segment 2.
+import { registerComboAttack } from './combination.js';
+registerComboAttack(2, rotatingSlash);

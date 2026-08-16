@@ -146,3 +146,39 @@ export function gmlChoose(r, values) {
 export function gmlRandomsign(r) {
   return gmlIrandom(r, 1) * 2 - 1;
 }
+
+/**
+ * `ds_list_shuffle` — the DRAW COUNT is the verified part, not the order.
+ *
+ * Probed inside the real game (`oracle_shuffle_probe.csx`,
+ * `traces/shuffle-probe.csv`): it consumes exactly **16 u32 draws per list
+ * element**, constant across seeds — 64 for n=4, 96 for n=6, 208 for n=13.
+ * Sixteen is WELL512's state size, so it advances one full state pass per
+ * element. The algorithm itself resisted a structured search (peak 3/18,
+ * chance level), and CLAUDE.md carries it as unsolved.
+ *
+ * So this burns the measured number of draws and then permutes with our own
+ * Fisher-Yates over the same generator: statistically equivalent, not
+ * bit-identical, and correct in the one respect anything downstream can
+ * observe — where the stream is left.
+ *
+ * obj_knight_combinations is the only caller that matters, and it THROWS THE
+ * RESULT AWAY three lines later (see sim/attacks/combination.js), so for the
+ * one attack that shuffles, the unsolved algorithm is not a blocker at all.
+ *
+ * NOTE the older `shuffleList` in sim/attacks/rotating-slash.js consumes n-1
+ * draws instead of 16n. It is left alone deliberately: its attack is
+ * oracle-diffed against a recording with the order pinned on both sides, and
+ * changing its stream position now would move a verified diff to chase a
+ * number that diff does not depend on.
+ */
+export function gmlShuffle(rng, list) {
+  for (let i = 0; i < list.length * 16; i++) gmlU32(rng);
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = gmlU32(rng) % (i + 1);
+    const t = list[i];
+    list[i] = list[j];
+    list[j] = t;
+  }
+  return list;
+}

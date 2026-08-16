@@ -19,6 +19,10 @@ import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../acto
 import { launchAttack, openArena, clearTurn, FIGHT_TABLE } from './fight.js';
 import { createMenu } from '../menu.js';
 import { freshParty } from '../damage.js';
+import { COMBO_ATTACKS } from '../attacks/combination.js';
+
+/** The objects a combination turn can hand itself to. */
+const COMBO_SEGMENT_NAMES = new Set(Object.values(COMBO_ATTACKS).map((a) => a.name));
 
 /**
  * Every attack the fight can select, with the difficulties it actually appears
@@ -49,6 +53,11 @@ export const ATTACK_MENU = [
   { id: 'underbox', ac: 6, name: 'Orbs Under the Box', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'knightlines', ac: 20, name: 'Knightlines (spears)', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'swordslash', ac: 0, name: 'Swordslash (crescents)', difficulties: [0, 1], where: 'UNUSED', unused: true },
+  // The last unused attack, and the only roster entry that is PARTIAL: the
+  // combination chains three attacks and its third is obj_knight_tunnel_
+  // slasher_2_revised, ac 3's own untranslated attack. Labelled where the
+  // player sees it, per the project rule.
+  { id: 'combination', ac: 7, name: 'Combination (2 of 3)', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'diagonal', ac: 12, name: 'Diagonal Bullets', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'rotating16', ac: 16, name: 'Rotating + Tracking', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'tracking17', ac: 17, name: 'Tracking Swords (multi)', difficulties: [0], where: 'UNUSED', unused: true },
@@ -106,6 +115,21 @@ const director = {
 
     if (e.started) {
       e.elapsed += 1;
+      // THE COMBINATION HANDS THE TURN ON, so "the owner died" is not "the
+      // turn is over" for ac 7. Each segment destroys itself as it creates the
+      // next, and the drill's owner is only the FIRST — without this the turn
+      // was declared finished the moment swordfall handed off to the rotating
+      // slash, and the second segment was swept a few frames later.
+      //
+      // Adopting the live successor is the same shape the real turn has: the
+      // clock stays pinned at 999999 until the LAST segment's CleanUp sets it
+      // to -1, so the chain, not the first object, is what owns the turn.
+      if (e.owner && !e.owner.alive) {
+        const next = state.entities.find(
+          (x) => x.alive && COMBO_SEGMENT_NAMES.has(x.type.name),
+        );
+        if (next) e.owner = next;
+      }
       const ownerAlive = e.owner && e.owner.alive;
       const bulletsLeft = state.entities.some(
         (x) => x.alive && x.isBullet && x.type.name !== 'obj_heart',

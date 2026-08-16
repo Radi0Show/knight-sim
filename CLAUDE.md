@@ -379,6 +379,31 @@ draw-count model is confirmed against a zero-draw control (6/6).
 16-block is used x forward/backward x six index formulas peaked at 3/18 — chance
 level. Do not assume Fisher-Yates.
 
+**AND FOR THE COMBINATION ATTACK IT DOES NOT MATTER AT ALL.** `ds_list_shuffle`
+was carried here as the thing standing between this project and ac 7. It is
+not. `obj_knight_combinations`' Other_10 shuffles [2,3,4,5], derives
+first/second/third_attack from the result — and then overwrites all three from
+`obj_knight_enemy`'s own fields, which its Create sets to 4, 2 and 3 and which
+nothing else in the dump ever writes:
+
+```gml
+first_attack  = ds_list_find_value(main_list, 0);   // ...all of this...
+second_attack = ds_list_find_value(main_list, 1);
+third_attack  = ds_list_find_value(main_list, 2);
+first_attack  = obj_knight_enemy.first_attack;      // ...is thrown away here
+second_attack = obj_knight_enemy.second_attack;
+third_attack  = obj_knight_enemy.third_attack;
+```
+
+So the combination is ALWAYS swordfall -> rotating slash -> sword tunnel
+(revised). The two de-dupe guards above it are dead twice over: they test for
+attack 1, which a list of 2, 3, 4 and 5 never contains. `sim/rng.js`'s
+`gmlShuffle` burns the measured 16 draws per element so the stream stays
+aligned, and discards the permutation exactly as the game does.
+
+The remaining shuffle user is `obj_knight_rotating_slash`'s slash angles, where
+the caveat below still applies.
+
 **Practical consequence — and why this is not blocking.** The shuffle is random
 per playthrough in the real game, so matching one particular seed's order is
 not required for the tool to be authentic; it is only required for *verifying*

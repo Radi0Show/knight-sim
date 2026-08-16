@@ -39,6 +39,7 @@ import { knightSwordfall } from '../attacks/swordfall.js';
 import { launchUnderbox } from '../attacks/underbox.js';
 import { launchKnightlines } from '../attacks/knightlines.js';
 import { launchSwordslash } from '../attacks/swordslash.js';
+import { launchCombination } from '../attacks/combination.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -131,6 +132,9 @@ function turnLength(ac, difficulty) {
   if (ac === 20) return 90;
   // `myattackchoice == 0 && difficulty == 0` -> 300, and difficulty 1 the
   // same: two separate branches in the knight's Step with the same number.
+  // ac 7's controller pins `global.turntimer = 999999`; the LAST segment's
+  // CleanUp is what sets it back to -1. Same shape as rotating slash's.
+  if (ac === 7) return 999999;
   if (ac === 0) return 300;
   if (ac === 2) return 350;
   if (ac === 11) return difficulty === 0 ? 292 : 300;
@@ -443,6 +447,13 @@ export function launchAttack(state, entry) {
       // both. All of that is launchUnderbox, so the dispatch stays one line.
       state.turntimer = 999999;
       return launchUnderbox(state, kx, ky);
+    }
+
+    case 7: {
+      // `dc.type = 105` — the combination. The Knight is hidden, the clock is
+      // pinned at 999999, and the first segment runs the turn; each segment
+      // hands to the next as it finishes. See sim/attacks/combination.js.
+      return launchCombination(state);
     }
 
     case 0: {
