@@ -28,7 +28,7 @@ import { applyItem } from '../items.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_ITEM, HERO_SPELL } from '../heroes.js';
 import {
   advanceBalloon, advanceReply, clearDialogue, dialogueDone, dialogueSkipTimer,
-  textSoundChar, TV_VOICE_COUNT,
+  textSoundChar,
 } from '../dialogue.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
@@ -544,24 +544,31 @@ const director = {
           state.dialogue.timer, dialogueSkipTimer(state.dialogue.text));
       }
       state.dialogue.timer += 1;
-      // THE BALLOON'S VOICE, and the two speakers do not share one. Susie is
-      // typer 75 (`snd_txtsus`); the Knight is typer 81, whose sound is
-      // `snd_tv_voice_short` — and scr_textsound gives that one alone a
-      // special case: nine samples, `irandom(8) + 1` per character, gain 0.7
-      // and pitch `0.86 + random(0.35)`, with all nine stopped first so they
-      // never overlap. He is voiced by television static, which is the joke.
+      // THE BALLOON'S VOICE IS snd_txtsus FOR BOTH SPEAKERS, and the previous
+      // reading of this was wrong in a way that is audible.
+      //
+      // The enemy-talk block opens with `global.typer = 81` — the TV-static
+      // voice — and that is where the last pass stopped reading. Both balloon
+      // creations OVERWRITE it before any writer exists:
+      //
+      //     global.typer = 81;                       // line 110, and then
+      //     ...
+      //     if (createballoon) { global.typer = 75;  // the Knight's line
+      //                          scr_enemyblcon(susie.x + 92, ...); }
+      //     ...
+      //     global.typer = 75;                       // Susie's reply
+      //     scr_enemyblcon(susie.x + 92, ...);
+      //
+      // `scr_enemyblcon` is what creates obj_writer, and it reads the typer at
+      // that moment — 75 both times. So 81 is a DEAD ASSIGNMENT here, another
+      // `linex`, and giving the Knight's lines the television voice put
+      // Tenna's blurb on half the exchange. Both balloons are anchored over
+      // SUSIE's head (`obj_herosusie.x + 92`), so to anyone watching it read
+      // as Susie occasionally speaking in someone else's voice — which is
+      // exactly how it was reported.
       if (!state.input?.focus
         && textSoundChar(state.dialogue.text, state.dialogue.timer)) {
-        if (state.dialogue.speaker === 'knight') {
-          const n = gmlIrandom(state.gmlRng, TV_VOICE_COUNT - 1) + 1;
-          const name = n >= 2 ? `snd_tv_voice_short_${n}` : 'snd_tv_voice_short';
-          for (let i = 1; i <= TV_VOICE_COUNT; i++) {
-            cueStop(state, i >= 2 ? `snd_tv_voice_short_${i}` : 'snd_tv_voice_short');
-          }
-          cue(state, name, 0.86 + gmlRandom(state.gmlRng, 0.35), 0.7);
-        } else {
-          cue(state, 'snd_txtsus', 1, 1);
-        }
+        cue(state, 'snd_txtsus', 1, 1);
       }
       const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
 

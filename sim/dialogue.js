@@ -286,7 +286,7 @@ export function textSoundChar(text, timer, cps = CHARS_PER_FRAME) {
 }
 
 /**
- * The Knight's voice is NINE SAMPLES, picked per character:
+ * TYPER 81'S voice is NINE SAMPLES, picked per character:
  *
  *     var rand = irandom(8) + 1;
  *     soundindex = "snd_tv_voice_short" + (rand >= 2 ? "_" + rand : "");
@@ -295,5 +295,13 @@ export function textSoundChar(text, timer, cps = CHARS_PER_FRAME) {
  *
  * `global.flag[1054]` multiplies the pitch and is forced to 1 the first time
  * it is read, so it is 1 here.
+ *
+ * NOT THE KNIGHT'S BALLOON — retracting an earlier claim in this file. This
+ * fight never reaches typer 81: `obj_knight_enemy`'s Step sets it at line 110
+ * and then sets 75 again at lines 196 and 296, on the same frame each
+ * `scr_enemyblcon` builds its writer. Both balloons are snd_txtsus. Nothing
+ * reads this constant; it stays as the record of what 81 would sound like if
+ * anything ever selected it, so that a future reader does not re-derive the
+ * wrong conclusion from the typer table alone.
  */
 export const TV_VOICE_COUNT = 9;

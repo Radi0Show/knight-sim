@@ -14,10 +14,16 @@
 //
 // The eighth is the VOICE and the eleventh is the SHADOW, and both were
 // missing: the fight typed in silence, and the dark-world text had no lift off
-// the black. Neither is cosmetic trivia — the Knight's balloon is voiced by
-// snd_tv_voice_short, the television-static syllables, which is a
-// characterisation choice, and the Game Over screen is snd_nosound, which is
-// another.
+// the black. Neither is cosmetic trivia — the Game Over screen is snd_nosound,
+// which is a characterisation choice.
+//
+// TYPER 81 IS NEVER REACHED, which corrects an earlier claim in this file that
+// the Knight's balloon speaks in television static. `obj_knight_enemy`'s Step
+// sets `global.typer = 81` at line 110, but lines 196 and 296 set it back to 75
+// on the very frame each `scr_enemyblcon` constructs its writer, so both of the
+// fight's balloons — the Knight's and Susie's — are snd_txtsus. The assignment
+// at 110 is dead. This is audible: the sim used to play the TV blips under
+// lines anchored over Susie's head.
 //
 // No oracle: the recordings carry no audio column. Every assertion below is
 // therefore a positive-execution one on the sim's own cue stream.
@@ -25,7 +31,7 @@
 import { createState, stepFrame } from '../sim/index.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { drainCues } from '../sim/audio.js';
-import { textSoundChar, formatWriter, TV_VOICE_COUNT } from '../sim/dialogue.js';
+import { textSoundChar, formatWriter } from '../sim/dialogue.js';
 
 const IDLE = {
   left: 0, right: 0, up: 0, down: 0, focus: 0, confirm: 0, cancel: 0, button3: 0,
@@ -87,9 +93,9 @@ for (let f = 0; f < 200; f++) {
 check(mutedBlips === 0, `holding X should silence the typer, heard ${mutedBlips}`);
 
 // ------------------------------------------------------ the two balloons
-// Susie is typer 75 (snd_txtsus); the Knight is 81, and scr_textsound gives
-// that one a special case: nine samples chosen per character, all nine stopped
-// first so they never overlap, gain 0.7, pitch 0.86 + random(0.35).
+// Both are typer 75 — snd_txtsus, plain snd_play, no stops. scr_textsound's
+// nine-sample special case belongs to typer 81 and the balloon path never
+// reaches it, so seeing snd_tv_voice_short here is a bug, not a feature.
 function balloonRun(speaker, text) {
   const st = createState({ seed: 99, traceBulletSlots: 0 });
   buildPracticeScene(st, { seed: 99 });
@@ -120,27 +126,25 @@ check(susie.names.size === 1 && susie.names.has('snd_txtsus'),
 
 const knight = balloonRun('knight', 'Thing is,&you actually...');
 check(knight.total > 5, `the Knight's balloon should blip, heard ${knight.total}`);
-check([...knight.names].every((n) => n.startsWith('snd_tv_voice_short')),
-  `the Knight's voice is the TV static, got ${[...knight.names].join(',')}`);
-check(knight.names.size >= 5,
-  `the Knight should draw from all ${TV_VOICE_COUNT} samples; saw ${knight.names.size}`);
-check(knight.pitches.size >= 5,
-  `each syllable is pitched 0.86 + random(0.35); saw ${knight.pitches.size} pitches`);
-check([...knight.gains].every((g) => Math.abs(g - 0.7) < 1e-9),
-  `the TV voice plays at gain 0.7, got ${[...knight.gains].join(',')}`);
-// `audio_stop_sound` on all nine before each one, so they never pile up.
-check(knight.stops >= knight.total * TV_VOICE_COUNT,
-  `all ${TV_VOICE_COUNT} samples should be stopped before each syllable;`
-  + ` ${knight.stops} stops for ${knight.total} blips`);
-// And Susie's does NOT get the special case.
-check(susie.stops === 0, 'snd_txtsus takes the plain snd_play path, with no stops');
+// THE SAME VOICE. Both balloons are created at typer 75, so the Knight's lines
+// sound exactly like Susie's — the difference is the words, not the timbre.
+// A regression here would be audible and nothing but this would fail.
+check(knight.names.size === 1 && knight.names.has('snd_txtsus'),
+  `both balloons are snd_txtsus, got ${[...knight.names].join(',')}`);
+check(knight.stops === 0,
+  'snd_txtsus takes the plain snd_play path — no audio_stop_sound, no variants');
+check(susie.stops === 0, 'and the same for Susie');
+// The TV voice belongs to typer 81, which the balloon path never reaches.
+check(![...knight.names, ...susie.names].some((n) => n.startsWith('snd_tv_voice')),
+  'no balloon should ever cue the television voice')
 
 // -------------------------------------------------------------- report
 console.log('typewriter — scr_textsound + scr_textsetup\'s `special` (no oracle)\n');
 console.log(`→ "${MSG}": ${heard.length} of ${MSG.length} characters voiced`);
 console.log(`→ battle message cued snd_text x${counts.snd_text}, x${mutedBlips} with X held`);
-console.log(`→ Susie x${susie.total} on snd_txtsus; Knight x${knight.total} across `
-  + `${knight.names.size} TV samples, ${knight.pitches.size} pitches, ${knight.stops} stops`);
+console.log(`→ Susie x${susie.total} and Knight x${knight.total}, both on `
+  + `${[...new Set([...susie.names, ...knight.names])].join('/')}, `
+  + `${susie.stops + knight.stops} stops`);
 
 if (fail.length) {
   for (const f of fail) console.log(`\n→ FAILED  ${f}`);

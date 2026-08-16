@@ -52,7 +52,14 @@ export function drawDialogue(ctx, state, sprites) {
   const fullLines = revealed(formatted, 1e9);
   const stringmax = Math.max(...fullLines.map((l) => l.length));
   const bw = stringmax * HSPACE + 10;
-  const bh = fullLines.length * VSPACE + 5;
+  // `balloonheight = ((linecount + 1) * vspace) + 5` — obj_battleblcon's Draw,
+  // line 37. The +1 IS THE BUG THAT WAS REPORTED: a one-line balloon is two
+  // line-heights tall, not one, and using `linecount` left every balloon a
+  // whole 20px short. The text is laid out from the TOP, so what goes missing
+  // is the bottom — reported twice from play as Susie's dialogue being cut off
+  // at the bottom, and the half-pixel fix below (which was also real) only
+  // ever addressed the last ROW of it.
+  const bh = (fullLines.length + 1) * VSPACE + 5;
   const writingX = ax + 5;
   // `writingy = initwritingy - (balloonheight / 2)`, and balloonheight is
   // `lines * 20 + 5` — always ODD, so this lands on a HALF PIXEL.

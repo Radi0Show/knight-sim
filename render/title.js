@@ -11,7 +11,7 @@
 // `c_yellow`, which is what DELTARUNE's menus use for the selected row.
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
-import { loadFont, drawText, textWidth } from './font.js';
+import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { MODES, SETTINGS_PAGES, CREDITS, pocketOf, previewStats } from '../sim/modes.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
@@ -675,12 +675,28 @@ function drawFailure(ctx, over, font, heart) {
   // fade-in never appeared. It also has to reach the glow copies, which scale
   // their own 0.3/0.08 alphas by it — `specfade` in the original does exactly
   // this, and DEVICE_FAILURE's ten-frame `xfade` is the same idea one layer up.
+  // THE CHOICES ARE NOT THE WRITER'S. DEVICE_CHOICE's Draw is
+  //
+  //     scr_84_set_draw_font("main");
+  //     draw_text(NAMEX[i][0], NAMEY[i][0] + choice_y_offset,
+  //               string_hash_to_newline(NAME[i][0]));
+  //
+  // a plain `draw_text` — so the glyphs advance by their OWN widths, not by
+  // the writer's fixed `hspace = 12`, and there is no `special` glow because
+  // that lives in obj_writer and nothing else. Borrowing the writer's metrics
+  // (which is what the last pass did) made "(FIGHT AGAIN)" thirteen characters
+  // at 12 apart — 156 room pixels from x 70, straight through GO FORWARD at
+  // 190. Reported as the two options intersecting; they do not intersect in
+  // the game because the real advances are far narrower.
+  //
+  // `#` is the line break, and one draw_text call renders both lines, so the
+  // second sits a FONT line-height below — not the writer's vspace.
+  const lineH = textHeight(font) * ROOM_SCALE;
   CHOICES.forEach((c, i) => {
     const color = rgb(over.cur === i ? C_YELLOW : c_white);
     c.name.forEach((s, k) => {
-      drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * rx(20),
-        { color, advance: 12, xscale: ROOM_SCALE, yscale: ROOM_SCALE,
-          special: 2, siner: over.t, alpha: xfade });
+      drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * lineH,
+        { color, xscale: ROOM_SCALE, yscale: ROOM_SCALE, alpha: xfade });
     });
   });
 }
