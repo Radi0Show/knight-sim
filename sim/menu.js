@@ -807,7 +807,29 @@ function skipFallen(state) {
   while (state.menu.charturn < 3 && !isUp(state, state.menu.charturn)) {
     state.menu.charturn += 1;
   }
-  return state.menu.charturn < 3;
+  if (state.menu.charturn < 3) return true;
+  // NO ONE LEFT — SO THE TURN IS OVER, AND THAT IS WHERE THE BAG COMMITS.
+  //
+  // `scr_endturn` is called from inside `scr_nexthero`, on the branch where
+  // there is no next hero, and its first line is
+  //
+  //     for (i = 0; i < 12; i++) global.item[i] = tempitem[i][global.charturn];
+  //
+  // reading `global.charturn` while it is still the character who just acted.
+  // `charturn = 0` happens later, in scr_mnendturn.
+  //
+  // THIS SIM HAD THE ORDER INVERTED: every caller set `menu.charturn = 0` and
+  // then flagged `needsCommit` for the director to honour a frame later, so
+  // endTurnItems read index 0 and committed KRIS's snapshot. Kris rarely eats
+  // anything, so his snapshot is the untouched bag — and every item Susie or
+  // Ralsei used came straight back. Reported from play: Spincake never leaves
+  // the inventory.
+  //
+  // Committing here puts it back where the original has it, before the index
+  // is thrown away. The director's deferred call still runs and is a harmless
+  // no-op: all three snapshots equal the inventory by then.
+  endTurnItems(state);
+  return false;
 }
 
 /** Reopen for the next turn, back at the first conscious character. */

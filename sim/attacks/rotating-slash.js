@@ -251,6 +251,39 @@ export const rotatingSlash = {
           e.sprite_index = 'spr_roaringknight_flurry_prepare';
           e.image_index = 0;
         }
+
+        // AND HE MOVES. Two lines of the original that were never translated:
+        //
+        //     scr_lerpvar("x", x, (scr_get_box(0) - 20) + movebox_x,
+        //                 (slash_base + slash_offset) - 8, 1, "out");
+        //     scr_lerpvar("y", y, (scr_get_box(1) - 20) + movebox_y,
+        //                 (slash_base + slash_offset) - 8, 1, "out");
+        //
+        // The `movebox` walk above was translated and then had nothing to
+        // drive, so the Knight stood on his anchor for the whole attack at
+        // difficulties 0 and 1, and at difficulty 2 the ONLY thing that ever
+        // moved him was the finale's spiral block (which does have these
+        // lines). That is what the report is: with nothing else moving, the
+        // finale's single descent reads as the Knight dipping for no reason,
+        // rather than as the last of a dozen repositions.
+        //
+        // The two edges are the box's RIGHT and TOP — scr_get_box's indices
+        // are not in the order the names suggest, see boxEdges — so he circles
+        // the arena's top-right corner, `movebox_x` over [0, 80] and
+        // `movebox_y` over [0, 120]. At the default box that is x 375..455,
+        // y 75..195: he really does swing down past the arena's top edge, and
+        // the sim was reaching less of that range, not more.
+        //
+        // NOT AN RNG CONCERN: scr_lerpvar draws nothing, so the stream and
+        // every anchored diff are unaffected. verify-rotating compares state,
+        // timers, aim and slash counts — never x/y — which is exactly why an
+        // oracle-verified attack could be missing its whole walk.
+        {
+          const b = boxEdges(state);
+          const dur = e.slash_base + e.slash_offset - 8;
+          scrLerpvar(state, spawn, e, 'x', e.x, b[0] - 20 + e.movebox_x, dur, 1);
+          scrLerpvar(state, spawn, e, 'y', e.y, b[1] - 20 + e.movebox_y, dur, 1);
+        }
       }
 
       // Halfway through the aim he advances one frame, and on the last frame

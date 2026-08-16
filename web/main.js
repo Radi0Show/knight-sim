@@ -648,9 +648,12 @@ function frame(now) {
     for (let i = 0; i < gs; i++) {
       const r = stepGameOver(over, gatedKeys());
       if (r.moved) audio.play([{ name: 'snd_menumove', pitch: 1, gain: 1 }]);
-      if (r.advanced) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
+      // NO CUE ON ADVANCE. The lines advance themselves now, on the writer's
+      // own clock, and typer 667's sound is `snd_nosound` — this screen is
+      // the drone and nothing else until you answer.
       if (r.chosen !== undefined) {
         audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
+        audio.stopLoop('audio_drone');
         over = null;
         if (r.chosen === 0) {
           // GO BACK (FIGHT AGAIN) — the same fight, from the top.
@@ -733,6 +736,19 @@ function frame(now) {
           // The key that was down when you died is not an answer to the
           // Knight's question.
           maskHeldInput();
+          // THE DRONE. DEVICE_FAILURE's Create, on the knight_mode branch:
+          //
+          //     snd_free_all();
+          //     global.currentsong[0] = snd_init("AUDIO_DRONE.ogg");
+          //     global.currentsong[1] = mus_loop(global.currentsong[0]);
+          //
+          // `snd_free_all()` first — every other sound in the game is released,
+          // so the screen is a single sustained tone and nothing else. It is a
+          // LOOSE file in Resources/mus, like the fight's own knight.ogg, so it
+          // needed no extraction pass. The typer over it is `snd_nosound`: the
+          // Knight's words arrive in silence on top of the drone.
+          audio.stopLoop('mus_knight');
+          if (musicOn) audio.play([{ name: 'audio_drone', pitch: 1, gain: 1, loop: true }]);
           over = makeGameOver(
             shot,
             (state.soul?.x ?? renderer.VIEW_W / 2) + 2 - (state.view?.x ?? 0),

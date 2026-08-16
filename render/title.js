@@ -396,6 +396,89 @@ const KNIGHT_LINES = [
 ];
 
 /**
+ * IT IS TYPED, AND THE PAUSES ARE THE POINT.
+ *
+ * The strings above are the dump's, verbatim, and their raw form carries two
+ * control codes this screen lives on:
+ *
+ *     "\M0     VERY^6& &  INTERESTING./%"
+ *     "\M0 YOUR LOSS HERE^6& &     IS ALL^6& & BUT GUARANTEED./%"
+ *
+ * `&` is a line break and `^6` is a PAUSE. obj_writer's Alarm 0 adds a fixed
+ * number of frames per digit — 1:5 2:10 3:15 4:20 5:30 6:40 7:60 8:90 9:150 —
+ * so `^6` is FORTY FRAMES of nothing, mid-sentence, before the break. That
+ * beat between "VERY" and "INTERESTING." is the whole delivery, and drawing
+ * the line whole threw it away.
+ *
+ * The `& &` around each pause is a break, a line holding one space, and
+ * another break: the blank rows in the arrays above.
+ *
+ * RATE 2. This used to be recorded as unmeasured — "inventing a rate would put
+ * a number on screen the game never chose". It is measured now, from the same
+ * scr_texttype row as the font and the glow: `scr_textsetup(main, c_white, x,
+ * y, 33, 0, 2, snd_nosound, 12, 20, 2)`, and obj_writer re-arms `alarm[0] =
+ * rate` per character. One character every two frames, and `snd_nosound` —
+ * this screen types in SILENCE, which is a deliberate choice against the drone
+ * underneath it.
+ *
+ * `\M0` sets `global.flag[20] = 0`, which nothing in DEVICE_FAILURE reads. It
+ * is inert here and is not modelled.
+ */
+const GAMEOVER_RATE = 2;
+const PAUSE_FRAMES = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 30, 6: 40, 7: 60, 8: 90, 9: 150 };
+/** Where a `^6` sits in each message, as a character index into the joined text. */
+const KNIGHT_PAUSES = [
+  { 9: 6 },                    // ...VERY^6
+  { 15: 6, 27: 6 },            // ...HERE^6 ...IS ALL^6
+  { 11: 6 },                   // ...AND YET^6
+  {},                          // no pauses — three plain breaks
+  { 10: 6 },                   // ...THEN^6
+];
+
+/**
+ * How many characters of message `n` are showing after `t` frames, and whether
+ * it has finished. Walks the string a character at a time so a pause costs
+ * real frames exactly where the `^` is.
+ */
+function typedCount(n, t) {
+  const chars = KNIGHT_LINES[n].join('').length;
+  const pauses = KNIGHT_PAUSES[n] ?? {};
+  let frames = 0;
+  for (let i = 0; i < chars; i++) {
+    frames += GAMEOVER_RATE;
+    if (pauses[i]) frames += PAUSE_FRAMES[pauses[i]];
+    if (frames > t) return { shown: i, done: false };
+  }
+  return { shown: chars, done: true };
+}
+
+/** `scr_delay_var("knight_mode_con", next, 30)` — the beat between messages. */
+const LINE_GAP = 30;
+
+/** Total frames message `n` takes to type, for the X skip. */
+function typedFrames(n) {
+  const chars = KNIGHT_LINES[n].join('').length;
+  const pauses = KNIGHT_PAUSES[n] ?? {};
+  let frames = 0;
+  for (let i = 0; i < chars; i++) {
+    frames += GAMEOVER_RATE;
+    if (pauses[i]) frames += PAUSE_FRAMES[pauses[i]];
+  }
+  return frames;
+}
+
+/** Slice the padded rows to the first `shown` characters, keeping the layout. */
+function revealRows(rows, shown) {
+  let left = shown;
+  return rows.map((r) => {
+    if (left <= 0) return '';
+    const out = r.slice(0, left);
+    left -= r.length;
+    return out;
+  });
+}
+
+/**
  * The two options, with the game's own strings and coordinates:
  *
  *     NAME[0][0] = "GO BACK#(FIGHT AGAIN)"     NAMEX 70   NAMEY 180
@@ -498,8 +581,13 @@ function drawFailure(ctx, over, font, heart) {
 
   if (!font?.ready) return;
 
-  // obj_writer is created at (70, 80), one instance per line.
-  const line = KNIGHT_LINES[Math.min(over.line, KNIGHT_LINES.length - 1)];
+  // obj_writer is created at (70, 80), one instance per line, and TYPES it —
+  // `over.lineT` is that writer's clock, reset by stepGameOver on every new
+  // message.
+  const which = Math.min(over.line, KNIGHT_LINES.length - 1);
+  const line = revealRows(
+    KNIGHT_LINES[which], typedCount(which, over.lineT ?? 0).shown,
+  );
   if (over.choiceT < 0 && t > 2) {
     line.forEach((s, i) => {
       // `vspace = 20`, in the 320x240 room's coordinates — so rx(20) on
@@ -516,8 +604,28 @@ function drawFailure(ctx, over, font, heart) {
       // all of it and is pinned at 1: DEVICE_FAILURE only lowers it inside
       // `if (specfade <= 0.9)`, which can never be true starting from 1 —
       // an ORIGINAL BUG, so the glow never dims on a held X.
+      // THE WHOLE BLOCK IS ROOM-SPACE, INCLUDING THE GLYPHS.
+      //
+      // PLACE_FAILURE is a 320x240 room displayed at 2x, so every number in
+      // DEVICE_FAILURE is in ROOM pixels and the font is magnified with the
+      // room: the origin (70, 80), `vspace = 20` AND `hspace = 12` all scale,
+      // and the characters are drawn twice size.
+      //
+      // Only the origin and the stride were being scaled. The advance stayed
+      // at 12 SCREEN pixels — half the game's — and the glyphs at 1x, so the
+      // Knight's words came out half width and hard against the left, which
+      // is what "should generally be centered" is about. THE GAME DOES NOT
+      // CENTRE ANYTHING HERE: the strings are hand-padded with leading spaces
+      // and the origin is chosen so that lands near the middle of a 320-wide
+      // room. " YOUR LOSS HERE" is 15 characters at hspace 12 = 180 wide, and
+      // (320 - 180) / 2 is exactly 70 — the writer's own x. The lines that
+      // look off-centre, like "IF YOU ARE SO", are off-centre in the game too,
+      // which is the "except the stuff that is not".
       drawText(ctx, font, s, rx(70), rx(80) + i * rx(20),
-        { color: rgb(c_white), advance: 12, special: 2, siner: over.t });
+        // `advance` is in the SAME space as the glyphs — drawText multiplies
+        // it by xscale — so it stays 12 and the room scale is applied once.
+        { color: rgb(c_white), advance: 12, xscale: ROOM_SCALE,
+          yscale: ROOM_SCALE, special: 2, siner: over.t });
     });
   }
 
@@ -542,7 +650,8 @@ function drawFailure(ctx, over, font, heart) {
     const color = rgb(over.cur === i ? C_YELLOW : c_white);
     c.name.forEach((s, k) => {
       drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * rx(20),
-        { color, advance: 12, special: 2, siner: over.t, alpha: xfade });
+        { color, advance: 12, xscale: ROOM_SCALE, yscale: ROOM_SCALE,
+          special: 2, siner: over.t, alpha: xfade });
     });
   });
 }
@@ -572,22 +681,45 @@ export function stepGameOver(over, keys = {}) {
 
   const t = over.t - FAILURE_AT;
 
-  // Advancing the Knight's lines. `scr_delay_var(..., 30)` puts thirty frames
-  // between one line finishing and the next starting; here the reader sets the
-  // pace instead, since nothing types.
+  // THE LINES TYPE, AND THEY ADVANCE THEMSELVES.
+  //
+  // The original's timeline is a chain of `knight_mode_con` steps, each of the
+  // shape "when the writer is gone, set the next message and make a new
+  // writer", with `scr_delay_var("knight_mode_con", next, 30)` inserting a
+  // THIRTY-FRAME hold between them:
+  //
+  //     if (knight_mode_con == 1 && !i_ex(obj_writer)) {
+  //         knight_mode_con = 2;
+  //         scr_delay_var("knight_mode_con", 3, 30);
+  //         global.msg[0] = "...";  instance_create(70, 80, obj_writer);
+  //     }
+  //
+  // and the writer ends on `/%`, which is `halt = 2` — it dismisses ITSELF
+  // rather than waiting for a press. So the Knight talks at you at his own
+  // pace; nothing here is reader-driven, which is what makes the pauses land.
+  //
+  // The reader's only power is X, which obj_writer honours as
+  // `if (halt == 0 && button2 == 1 && pos < length && skippable == 1)
+  //  skipme = 1;` — the whole line at once, not a faster crawl.
   if (over.choiceT < 0) {
-    const pressed = !!keys.confirm && !over.heldConfirm;
-    over.heldConfirm = !!keys.confirm;
-    if (pressed && t > 2) {
-      if (over.line < KNIGHT_LINES.length - 1) {
-        over.line += 1;
-      } else {
-        // knight_mode_con 50: the choice is created and the marker fades.
-        over.choiceT = 0;
-      }
+    if (t <= 2) return {};
+    over.lineT = (over.lineT ?? 0) + 1;
+    if (keys.focus) {
+      over.lineT = Math.max(over.lineT, typedFrames(over.line));
+    }
+    const { done } = typedCount(over.line, over.lineT);
+    if (!done) return {};
+    over.gap = (over.gap ?? 0) + 1;
+    if (over.gap < LINE_GAP) return {};
+    over.gap = 0;
+    over.lineT = 0;
+    if (over.line < KNIGHT_LINES.length - 1) {
+      over.line += 1;
       return { advanced: true };
     }
-    return {};
+    // knight_mode_con 50: the choice is created and the marker fades.
+    over.choiceT = 0;
+    return { advanced: true };
   }
 
   over.choiceT += 1;
@@ -626,6 +758,8 @@ export function makeGameOver(shot, x, y) {
     x0: x,
     y0: y,
     line: 0,
+    lineT: 0,
+    gap: 0,
     choiceT: -1,
     cur: -1,
     heldConfirm: false,
