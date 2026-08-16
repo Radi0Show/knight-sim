@@ -5612,5 +5612,25 @@
    "spr_knight_crescentslash_6.png",
    "spr_knight_crescentslash_7.png"
   ]
+ },
+ "spr_knight_diamondswordbullet": {
+  "w": 33,
+  "h": 32,
+  "ox": 16,
+  "oy": 15,
+  "frames": 2,
+  "bbox": [
+   4,
+   15,
+   28,
+   15
+  ],
+  "sepmasks": "RotatedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerSecond",
+  "files": [
+   "spr_knight_diamondswordbullet_0.png",
+   "spr_knight_diamondswordbullet_1.png"
+  ]
  }
 }

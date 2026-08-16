@@ -160,6 +160,24 @@ export const SLASHTUNNEL_MASK = build(raw.slashtunnel);
  * ORIGIN (0, 34) — the BOTTOM-left corner, not the centre, on both sprites.
  */
 export const CRESCENT_MASK = build(raw.crescenthitbox);
+/**
+ * THE REVISED TUNNEL'S SWORDS, in their three sizes. The attack picks by how
+ * long the blade needs to be: the default `spr_knight_diamondswordbullet`
+ * (33x32), `_m` at 66 once `y3 > 48`, `_l` at 99 once `y3 > 80`.
+ *
+ * The first two are ROTATED-RECT sprites whose bbox is ONE PIXEL TALL —
+ * [4,15]..[28,15] and [4,15]..[61,15] — so the mask is a horizontal hairline,
+ * built here from the bbox rather than from the art (the same treatment
+ * SMALLBULLET_MASK gets, and the correct one: a rect mask IS its bbox).
+ *
+ * A one-pixel-tall mask is exactly at the contact model's threshold, and it
+ * only registers because these are drawn at `image_angle` 90 or 270 —
+ * CLAUDE.md's contact study, rule 2: an axis-aligned sub-pixel bar misses,
+ * the same bar rotated crosses integer sample rows and connects. Turned
+ * upright, that hairline is the blade.
+ */
+export const DIAMONDSWORD_MASK = build(raw.diamondsword);
+export const DIAMONDBULLET_M_MASK = build(raw.diamondbullet_m);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -194,6 +212,8 @@ export const SPRITE_MASKS = {
   spr_diamondbullet_form: DIAMONDFORM_MASK,
   spr_roaringknight_slash_tunnel: SLASHTUNNEL_MASK,
   spr_bullet_knightcrescent: CRESCENT_MASK,
+  spr_knight_diamondswordbullet: DIAMONDSWORD_MASK,
+  spr_knight_diamondbullet_m: DIAMONDBULLET_M_MASK,
 };
 
 /**

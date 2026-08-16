@@ -223,6 +223,10 @@ export const rotatingSlash = {
      */
     2(e, state) {
       chainNext(state, e);
+      // `instance_destroy();` is the last line of Alarm_2 — the segment that
+      // hands on does not linger. Without it the outgoing rotating slash was
+      // still on screen while the next segment played.
+      destroy(e);
     },
   },
 
@@ -488,10 +492,20 @@ export const rotatingSlash = {
             // A CHAINED SEGMENT DOES NOT RETURN — it warps out and arms the
             // HANDOFF alarm instead, four frames later. `exit` in the original,
             // so none of the return block below runs.
-            const w = spawn(state, knightWarp, { x: e.x, y: e.y });
-            w.master = e;
-            knightWarpOut(state, w);
-            e.alarm[2] = 4;
+            //
+            // ARMED ONCE. The branch is re-entered every frame while the state
+            // holds, and re-arming an alarm each frame means it never counts
+            // down to fire at all — or, once it does, fires repeatedly. Both
+            // showed up: the handoff spawned TWO third segments five frames
+            // apart. The original's own control flow only reaches this once;
+            // the flag is how that is expressed here.
+            if (!e.handoffArmed) {
+              e.handoffArmed = true;
+              const w = spawn(state, knightWarp, { x: e.x, y: e.y });
+              w.master = e;
+              knightWarpOut(state, w);
+              e.alarm[2] = 4;
+            }
             return;
           } else {
             e.state = 'return';

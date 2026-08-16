@@ -40,6 +40,7 @@ import { launchUnderbox } from '../attacks/underbox.js';
 import { launchKnightlines } from '../attacks/knightlines.js';
 import { launchSwordslash } from '../attacks/swordslash.js';
 import { launchCombination } from '../attacks/combination.js';
+import { launchSwordTunnelRevised } from '../attacks/sword-tunnel-revised.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -135,6 +136,10 @@ function turnLength(ac, difficulty) {
   // ac 7's controller pins `global.turntimer = 999999`; the LAST segment's
   // CleanUp is what sets it back to -1. Same shape as rotating slash's.
   if (ac === 7) return 999999;
+  // ac 3 takes no `scr_turntimer` line either, and its controller pins the
+  // clock at 999999; the attack's own `local_turntimer` runs the turn and its
+  // CleanUp hands the clock back.
+  if (ac === 3) return 999999;
   if (ac === 0) return 300;
   if (ac === 2) return 350;
   if (ac === 11) return difficulty === 0 ? 292 : 300;
@@ -447,6 +452,13 @@ export function launchAttack(state, entry) {
       // both. All of that is launchUnderbox, so the dispatch stays one line.
       state.turntimer = 999999;
       return launchUnderbox(state, kx, ky);
+    }
+
+    case 3: {
+      // `dc.type = 102`. NOT the fight's sword tunnel — that is ac 13 and
+      // obj_sword_tunnel_manager. This is the "_2_revised" object, which
+      // shares only the name in `global.monsterattackname`.
+      return launchSwordTunnelRevised(state);
     }
 
     case 7: {

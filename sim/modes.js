@@ -67,7 +67,19 @@ export const SETTINGS_PAGES = [
   { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
   { id: 'graphics', name: 'GRAPHICS' },
+  { id: 'credits', name: 'CREDITS' },
   { id: 'unused', name: 'UNUSED' },
+];
+
+/**
+ * THE CREDITS. Three rows, and none of them links anywhere yet — the `link`
+ * field is here so that when one gets a URL the page does not have to change
+ * shape, only the value.
+ */
+export const CREDITS = [
+  { role: 'Developer', who: 'Radi0', link: null },
+  { role: 'Bug fixing and Playtesting', who: 'WandeR', link: null },
+  { role: 'SUPPORT', who: '', link: null },
 ];
 
 /** BlackShard (26) stays out of the pocket; id 0 is the empty slot. */
@@ -169,6 +181,19 @@ function stepSettings(title, pressed) {
   // ---- items: a stub page; any press leaves ----
   if (s.page === 'items') {
     if (pressed('cancel') || pressed('confirm')) { s.page = null; out.moved = true; }
+    return out;
+  }
+
+  // ---- credits: a cursor over three rows, none of which goes anywhere yet ----
+  //
+  // The rows carry a `link: null` so the day one of them gets a URL, the shape
+  // is already right and only the value changes. Confirm on a row with no link
+  // is a NO-OP rather than an error sound: nothing is broken, there is just
+  // nothing there.
+  if (s.page === 'credits') {
+    if (pressed('up')) { s.cursor = (s.cursor + CREDITS.length - 1) % CREDITS.length; out.moved = true; }
+    if (pressed('down')) { s.cursor = (s.cursor + 1) % CREDITS.length; out.moved = true; }
+    if (pressed('cancel')) { s.page = null; out.moved = true; }
     return out;
   }
 

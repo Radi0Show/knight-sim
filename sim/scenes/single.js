@@ -57,7 +57,8 @@ export const ATTACK_MENU = [
   // combination chains three attacks and its third is obj_knight_tunnel_
   // slasher_2_revised, ac 3's own untranslated attack. Labelled where the
   // player sees it, per the project rule.
-  { id: 'combination', ac: 7, name: 'Combination (2 of 3)', difficulties: [0], where: 'UNUSED', unused: true },
+  { id: 'tunnel2', ac: 3, name: 'Sword Tunnel (revised)', difficulties: [0], where: 'UNUSED', unused: true },
+  { id: 'combination', ac: 7, name: 'Combination', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'diagonal', ac: 12, name: 'Diagonal Bullets', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'rotating16', ac: 16, name: 'Rotating + Tracking', difficulties: [0], where: 'UNUSED', unused: true },
   { id: 'tracking17', ac: 17, name: 'Tracking Swords (multi)', difficulties: [0], where: 'UNUSED', unused: true },

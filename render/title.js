@@ -12,7 +12,7 @@
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth } from './font.js';
-import { MODES, SETTINGS_PAGES, pocketOf, previewStats } from '../sim/modes.js';
+import { MODES, SETTINGS_PAGES, CREDITS, pocketOf, previewStats } from '../sim/modes.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
 import { PARTY } from '../sim/damage.js';
@@ -184,6 +184,28 @@ function drawSettings(ctx, title, sprites, font) {
     centred(ctx, font, 'ITEMS', 60, c_white, 1.4);
     centred(ctx, font, 'Not built yet — the bag is fixed for now.', 220, DIM, 0.85);
     centred(ctx, font, 'Z / X  back', 448, DIM, 0.75);
+    return;
+  }
+
+  if (s.page === 'credits') {
+    centred(ctx, font, 'CREDITS', 60, c_white, 1.4);
+    for (let i = 0; i < CREDITS.length; i++) {
+      const y = 170 + i * 56;
+      const on = i === s.cursor;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 90 + bob, y + 4, 1, 1, 0, null, 1);
+      const row = CREDITS[i];
+      // The SUPPORT row is a single word, not a role-and-name pair, so it is
+      // drawn as one line rather than padded into a column that has no second
+      // half.
+      if (row.who) {
+        drawText(ctx, font, row.role, 120, y,
+          { color: rgb(on ? HILITE : DIM), xscale: 0.8, yscale: 0.8 });
+        drawText(ctx, font, row.who, 120, y + 22, { color: rgb(on ? HILITE : c_white) });
+      } else {
+        drawText(ctx, font, row.role, 120, y + 11, { color: rgb(on ? HILITE : c_white) });
+      }
+    }
+    centred(ctx, font, 'arrows  move      X  back', 448, DIM, 0.75);
     return;
   }
 

@@ -18,9 +18,10 @@
 // measured in-game) and the sim burns them too, so the stream stays aligned —
 // which is the only part of a shuffle anything downstream can observe.
 //
-// PARTIAL, ON PURPOSE: segment 3 is obj_knight_tunnel_slasher_2_revised, ac 3's
-// own untranslated attack. The chain reaches it, records the stop, and ends the
-// turn. Asserted below so the gap cannot quietly widen or quietly close.
+// ALL THREE SEGMENTS NOW RUN. Segment 3 is obj_knight_tunnel_slasher_2_revised
+// — ac 3's own attack — and translating it completed this one, so the
+// assertions below moved from "the chain stops here, deliberately" to "the
+// chain runs to the end and the turn closes itself".
 
 import { createState, stepFrame } from '../sim/index.js';
 import { buildSingleAttackScene } from '../sim/scenes/single.js';
@@ -128,14 +129,15 @@ check(comboSequence()[2] === 'obj_knight_tunnel_slasher_2_revised',
   check(bothAtOnce === 0, 'the segments run one at a time, not overlapping');
   check(knightHidden > 50, `the Knight stays hidden through the turn, saw ${knightHidden}`);
 
-  check(sawUntranslated === 'obj_knight_tunnel_slasher_2_revised',
-    `the chain should reach segment 3 and record the stop, got ${sawUntranslated}`);
-  check(endedAt > 0,
-    'the turn never ended — with segment 3 missing, nothing sets turntimer back');
-  check(COMBO_ATTACKS[3].type === null,
-    'segment 3 is registered as translated now — update this suite and the roster label');
-  check(COMBO_ATTACKS[4].type !== null && COMBO_ATTACKS[2].type !== null,
-    'segments 1 and 2 must be registered');
+  check(stages[2] === 'obj_knight_tunnel_slasher_2_revised:short end/2',
+    `segment 3 should be the revised tunnel PROMOTED to "short end" at segment 2,`
+    + ` got ${stages[2]}`);
+  check(sawUntranslated === null,
+    `every segment is translated now, so nothing should record a stop; got ${sawUntranslated}`);
+  check(endedAt > 0, 'the turn never ended — the last segment closes the clock');
+  check(COMBO_ATTACKS[2].type !== null && COMBO_ATTACKS[3].type !== null
+    && COMBO_ATTACKS[4].type !== null,
+    'all three segments of the fixed order must be registered');
 
   console.log(`→ ${stages.filter((s) => s !== '(none)').join('  ->  ')}`);
   console.log(`→ turn ended at frame ${endedAt}; stopped at ${sawUntranslated}`);
@@ -148,4 +150,4 @@ if (fail.length) {
   for (const f of fail) console.log(`\n→ FAILED  ${f}`);
   process.exit(1);
 }
-console.log('\nPASS  combination chains its segments — ac 7 (UNUSED, 2 of 3 translated)');
+console.log('\nPASS  combination chains all three segments — ac 7 (UNUSED content)');

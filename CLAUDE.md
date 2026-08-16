@@ -250,6 +250,13 @@ code and are UNUSED CONTENT:
 
 > 0 Swordslash · 3 swordtunnel · 4 xattacks · **6 underboxattack** ·
 > 10 swords falling · 20 knightlines
+>
+> — plus **7 combinationattack**, which chains three of them. ALL SEVEN ARE
+> NOW TRANSLATED and offered in SINGLE, labelled UNUSED where the player sees
+> them: sim/attacks/swordslash.js (0), sword-tunnel-revised.js (3),
+> knight-stream.js (4), underbox.js (6), combination.js (7), swordfall.js (10),
+> knightlines.js (20). Each has a suite of positive assertions; none has an
+> oracle, and none can, so every one says so in its header.
 
 Reading the dispatch table instead of the selector is how two verified attacks
 turned out to be content the fight never uses. Before translating anything,
