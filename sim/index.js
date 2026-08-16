@@ -7,7 +7,7 @@
 
 import { runPhase, runAlarms, reap } from './entity.js';
 import { traceRow } from './trace.js';
-import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK } from './masks.js';
+import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK, grazeMaskAt } from './masks.js';
 import { stepGraze } from './tension.js';
 import { freshParty, scrRevive } from './damage.js';
 
@@ -135,11 +135,12 @@ function runMotion(state) {
  * Long thin rotated bullets are most of this fight, so the graze needs the real
  * shape, not a cheap approximation of it.
  */
-function grazes(e, gx, gy) {
+function grazes(e, gx, gy, sizeFactor = 1) {
   const mask = e.mask ?? SPRITE_MASKS[e.sprite_index] ?? null;
   if (!mask) return false;
+  // The box is drawn AND tested at `grazesizefactor` — see grazeMaskAt.
   return masksOverlap(
-    GRAZE_MASK, gx, gy,
+    grazeMaskAt(sizeFactor), gx, gy,
     mask, e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
   );
 }

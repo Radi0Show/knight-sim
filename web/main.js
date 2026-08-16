@@ -20,6 +20,8 @@ import { createIntroScene, stepIntroScene } from '../sim/intro.js';
 import { drawIntroScene } from '../render/draw/intro-fx.js';
 import { createVictoryScene, stepVictoryScene } from '../sim/victory-scene.js';
 import { drawVictoryScene } from '../render/draw/victory-scene.js';
+import { createTvTurnoff, stepTvTurnoff } from '../sim/tvturnoff.js';
+import { drawTvTurnoff } from '../render/draw/tvturnoff.js';
 import { KNIGHT, PARTY as PARTY_ACTORS } from '../sim/actors.js';
 import { damageKnight } from '../sim/knight.js';
 import { spawnDmgNumber } from '../sim/dmgnumbers.js';
@@ -268,7 +270,7 @@ window.addEventListener('keydown', (e) => {
   // anim/state effects included), so the ending is reachable in seconds when
   // bug-fixing it. A practice-tool tool, shown in the HUD like every key.
   // 1000 >= 100 so it strobes like any heavy hit, and the number is drawn.
-  if (e.code === 'KeyE' && mode === 'fight' && !introSeq && !victory && !cutsceneSeq) {
+  if (e.code === 'KeyE' && mode === 'fight' && !introSeq && !tvOff && !cutsceneSeq) {
     const dealt = damageKnight(state, 1000);
     if (dealt > 0) spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, 1);
   }
@@ -358,7 +360,13 @@ let over = null;          // the Game Over sequence, once the party is down
 // does not ship. The seam is cut at the fade: the tool holds the white, then
 // shows its own card. Tool UI, styled like the title, labelled as the point
 // where the story continues — not a recreation of it.
-let victory = null;       // { timer } once the ending's fade has filled
+// THE CELEBRATION CARD IS GONE. It was tool-authored text ("THE KNIGHT LET
+// DOWN ITS GUARD", a timer, a hits count) over a white fade — invented
+// content in a project whose first rule is that nothing invented ships. A
+// won run now ends the way Chapter 3 ends a scene: the TV switches off and
+// the title screen comes back, so the state it used is gone with it.
+// obj_tvturnoff_manager — the CRT power-off that closes a won run.
+let tvOff = null;
 // THE STORY SCENE between the white and the card — Susie against the Knight,
 // Undyne, the bird. sim/victory-scene.js has the sourcing; it runs driver-
 // side like the intro. Z advances dialogue; X skips the whole scene.
@@ -369,35 +377,6 @@ let cutsceneSeq = null;
  * beat named for what it is, and the run's numbers — a practice tool's
  * scoreboard, in the fight's font.
  */
-function drawVictory(ctx2, v, st) {
-  const font = loadFont();
-  ctx2.fillStyle = '#000';
-  ctx2.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
-  // The white recedes over the first 30 frames of the card.
-  const white = Math.max(0, 1 - v.timer / 30);
-  if (white > 0) {
-    ctx2.globalAlpha = white;
-    ctx2.fillStyle = '#fff';
-    ctx2.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
-    ctx2.globalAlpha = 1;
-  }
-  if (!font?.ready || v.timer < 20) return;
-  const mid = renderer.VIEW_W / 2;
-  drawText(ctx2, font, 'THE KNIGHT LET DOWN ITS GUARD', mid, 130,
-    { halign: 'center', color: '#ffffff' });
-  drawText(ctx2, font, 'the fight is won', mid, 170,
-    { halign: 'center', color: '#999999', xscale: 0.75, yscale: 0.75 });
-  const mins = Math.floor(simFrames / 30 / 60);
-  const secs = Math.floor((simFrames / 30) % 60);
-  const stats = `${mins}:${String(secs).padStart(2, '0')}   ·   ${st.counters?.collisionHits ?? 0} hits taken`;
-  drawText(ctx2, font, stats, mid, 230, { halign: 'center', color: '#ffffff', xscale: 0.85, yscale: 0.85 });
-  drawText(ctx2, font, 'the story continues in Chapter 3', mid, 300,
-    { halign: 'center', color: '#666666', xscale: 0.7, yscale: 0.7 });
-  if (v.timer > 40 && Math.floor(v.timer / 15) % 2 === 0) {
-    drawText(ctx2, font, 'Z  fight again      X  mode menu', mid, 360,
-      { halign: 'center', color: '#bbbbbb', xscale: 0.7, yscale: 0.7 });
-  }
-}
 let hitlessDeaths = 0;
 
 // THE OPENING ROAR — obj_knight_roaring_fx, run OUT HERE like the title
@@ -557,48 +536,42 @@ function frame(now) {
         ctx.globalAlpha = 1;
       }
     } else {
-      // After the knighting: THE MAIN MENU (player-directed — the game
-      // itself rolls into free roam here, out of this tool's scope).
-      const toMenu = cutsceneSeq.toMenu;
+      // After the knighting: the TV SWITCHES OFF and the title comes back.
+      // Both exits go the same way now — the celebration card is gone (it
+      // was tool-authored text over a white fade, and the game has its own
+      // way of ending a scene).
       cutsceneSeq = null;
       maskHeldInput();
-      if (toMenu) {
-        title.mode = null;
-        title.pickingAttack = false;
-        title.pickingDifficulty = false;
-        reset();
-      } else {
-        victory = { timer: 0 }; // the skip path keeps the card
-      }
+      tvOff = createTvTurnoff();
     }
     requestAnimationFrame(frame);
     return;
   }
 
-  // VICTORY. Held on the ending's full-white fade, then the card. Z fights
-  // again; X returns to the mode menu.
-  if (victory) {
-    const { steps: vs, accumulator: va } = drain(acc, elapsed);
-    acc = va;
-    for (let i = 0; i < vs; i++) {
-      victory.timer += 1;
-      const input = gatedKeys();
-      if (victory.timer > 40 && (input.confirm || input.cancel)) {
-        const toTitle = !!input.cancel;
-        audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
-        victory = null;
-        maskHeldInput();
-        if (toTitle) {
-          title.mode = null;
-          title.pickingAttack = false;
-          title.pickingDifficulty = false;
-        }
-        reset();
-        break;
+  // THE TV TURNS OFF. obj_tvturnoff_manager, then straight back to the menu
+  // — no card, no prompt. Unskippable: it is 43 frames end to end, shorter
+  // than the press that would skip it.
+  if (tvOff) {
+    const { steps: ts2, accumulator: ta2 } = drain(acc, elapsed);
+    acc = ta2;
+    for (let i = 0; i < ts2; i++) {
+      const cues = [];
+      stepTvTurnoff(tvOff, cues);
+      for (const c of cues) {
+        if (c.stop) audio.stopLoop(c.name);
+        else audio.play([c]);
       }
+      if (tvOff.done) break;
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (victory) drawVictory(ctx, victory, state);
+    drawTvTurnoff(ctx, tvOff, renderer.sprites);
+    if (tvOff.done) {
+      tvOff = null;
+      title.mode = null;
+      title.pickingAttack = false;
+      title.pickingDifficulty = false;
+      maskHeldInput();
+      reset();
+    }
     requestAnimationFrame(frame);
     return;
   }
@@ -658,7 +631,7 @@ function frame(now) {
       // The win: the ending's white fade has filled (stepEndCutscene drives
       // it to 1 over 30 frames from endtimer 32). The story scene plays
       // first; the card follows it.
-      if (!victory && !cutsceneSeq && (state.endFade ?? 0) >= 1) {
+      if (!tvOff && !cutsceneSeq && (state.endFade ?? 0) >= 1) {
         maskHeldInput();
         cutsceneSeq = createVictoryScene();
       }

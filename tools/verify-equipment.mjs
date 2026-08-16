@@ -91,8 +91,14 @@ if (CHAPTER !== 3) failures.push('this fight is chapter 3');
   if (spellDamage(geared, 1) <= spellDamage(bare, 1)) {
     failures.push('gear did not raise Rude Buster');
   }
-  // Devilsknife's whole reason to exist.
-  if (spellCost(geared, 1, 4) !== 100) failures.push('Devilsknife did not cut Rude Buster to 100');
+  // Devilsknife's whole reason to exist — tested on a loadout that HOLDS
+  // one, not through the default build. Susie's default is the ToxicAxe now
+  // (a save cannot carry the Devilsknife and the Jevilstail together), so
+  // routing this through DEFAULT_GEAR would have quietly stopped testing the
+  // discount the moment the default changed.
+  const knife = st([{ weapon: 0, armor: [] }, { weapon: 7, armor: [] }, { weapon: 0, armor: [] }]);
+  if (spellCost(knife, 1, 4) !== 100) failures.push('Devilsknife did not cut Rude Buster to 100');
+  if (spellCost(geared, 1, 4) !== 125) failures.push('the ToxicAxe default should pay full price');
   if (spellCost(bare, 1, 4) !== 125) failures.push('the bare Rude Buster cost is not 125');
   // Heal Prayer's other spells keep their flat cost.
   if (spellCost(geared, 2, 2) !== 80) failures.push('Heal Prayer cost moved');
@@ -203,7 +209,12 @@ if (CHAPTER !== 3) failures.push('this fight is chapter 3');
   const g = gearOf(st());
   if (g !== DEFAULT_GEAR) failures.push('the default gear is not DEFAULT_GEAR');
   if (!(g[0].armor ?? []).includes(23)) failures.push('the default build does not put the mantle on Kris');
-  if (g[1].weapon !== 7) failures.push('Susie is not holding Devilsknife by default');
+  // THE DEFAULT MUST BE OBTAINABLE. Devilsknife (7) + Jevilstail (armour 7)
+  // cannot coexist on a save, so Susie carries the ToxicAxe.
+  if (g[1].weapon !== 24) failures.push('Susie is not holding the ToxicAxe by default');
+  if (g[1].weapon === 7 && (g[1].armor ?? []).includes(7)) {
+    failures.push('the default pairs Devilsknife with Jevilstail — not obtainable together');
+  }
   if (!(g[2].armor ?? []).includes(26)) failures.push('Ralsei is not wearing BlueRibbon by default');
 }
 

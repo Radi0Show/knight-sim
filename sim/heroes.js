@@ -92,7 +92,14 @@ export const HERO_SPRITES = [
     spell: 'spr_susieb_spell',
     defeat: 'spr_susieb_defeat',
     victory: 'spr_susieb_victory',
-    attackframes: 6, itemframes: 6, defendframes: 7,
+    // THE ROWS WERE SHIFTED BY ONE CHARACTER. This read 6/6/7 — Ralsei's
+    // counts — while obj_heroparent's Create gives Susie 5/5/5. The visible
+    // result was her FIGHT swing: the animation clamps at `attackframes`, so
+    // a 6 ran it one frame past the end of spr_susieb_attack (6 frames, 0-5)
+    // and the wrap landed the HELD pose on frame 0, the wind-up. She finished
+    // every swing by snapping back into the start of it and standing there —
+    // reported from play as a mid-axe-swing stuck over her idle.
+    attackframes: 5, itemframes: 5, defendframes: 5,
     actframes: 7, actreturnframes: 10, spellframes: 8,
   },
   {
@@ -110,11 +117,14 @@ export const HERO_SPRITES = [
     spell: 'spr_ralsei_spell',
     defeat: 'spr_ralsei_defeat',
     victory: 'spr_ralsei_victory',
-    // `defendframes = 0` for Ralsei, which is not a mistake — the Step guards
-    // the spell branch with `spellframes != 0` but the DEFEND branch does not,
-    // so his defend pose sits on frame 0 and never advances. Faithful.
-    attackframes: 4, itemframes: 9, defendframes: 0,
-    actframes: 7, actreturnframes: 10, spellframes: 6,
+    // ...and this row was NOELLE's (4/9/0, spell 6) — she is the next block
+    // down in the same Create and is not even in this fight. The note that
+    // used to sit here explained Ralsei's `defendframes = 0` as faithful; it
+    // was Noelle's zero, and it meant his defend pose never animated at all.
+    // Ralsei's block assigns no spellframes, so he keeps the Create's default
+    // of 10 rather than Noelle's 6.
+    attackframes: 6, itemframes: 6, defendframes: 7,
+    actframes: 7, actreturnframes: 10, spellframes: 10,
   },
 ];
 

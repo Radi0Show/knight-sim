@@ -66,24 +66,48 @@ export function drawIntroFx(ctx, e, sprites) {
   // born 40..240 out, pulled toward the centre. Each is drawn for a few
   // frames along its inward path, seeded by its birth frame.
   if (e.whiteout && e.fxState === 'intro') {
-    for (let back = 0; back < 10; back++) {
+    // THE IMPLOSION. Each particle's whole life, from the Step:
+    //
+    //     scr_lerpvar("speed", 4, 16 + irandom(8), 32, 1, "in");
+    //     scr_lerpvar("image_xscale", image_xscale, image_xscale * 16, 32, 1, "in");
+    //     scr_lerpvar("image_yscale", image_yscale, image_xscale * 0.5, 32, 1, "in");
+    //     image_angle = direction;               // pointing AT the centre
+    //     ... destroyed within 32px of the centre
+    //
+    // so it is a 32-FRAME life that accelerates inward while stretching to
+    // SIXTEEN TIMES its length and thinning out — streaks converging on the
+    // Knight, not dots. This drew 3px squares for 10 frames and then dropped
+    // them, which is why the effect registered and vanished before it read.
+    //
+    // (`yscale`'s target is the ORIGINAL `image_xscale * 0.5`, not the
+    // stretched one — the assignment reads the field before its own lerp has
+    // moved it. Kept.)
+    const LIFE = 32;
+    const easeIn = (t) => 1 - Math.cos(t * 1.5707963267948966);
+    for (let back = 0; back < LIFE; back++) {
       const bf = e.frame - back;
       const n = 2 + Math.floor(frand(bf, 1) * 3);
       for (let i = 0; i < n; i++) {
         const dir = frand(bf, 2 + i) * Math.PI * 2;
         const dist0 = 40 + frand(bf, 20 + i) * 240;
         const size = 0.25 + frand(bf, 40 + i) * 0.75;
-        // Accelerating inward — `scr_lerpvar("speed", 4, 16..24, 32, "in")`.
-        const t = back / 10;
-        const dist = dist0 * (1 - t * t);
+        const vmax = 16 + Math.floor(frand(bf, 60 + i) * 9);
+        // Distance covered = the integral of the eased speed ramp.
+        let travelled = 0;
+        for (let j = 0; j < back; j++) travelled += 4 + (vmax - 4) * easeIn(j / LIFE);
+        const dist = dist0 - travelled;
         if (dist <= 32) continue;
+        const t = back / LIFE;
         const sx = px + Math.cos(dir) * dist;
         const sy = py + Math.sin(dir) * dist;
+        const len = 3 * size * (1 + 15 * easeIn(t));
+        const thick = Math.max(1, 3 * (size + (size * 0.5 - size) * easeIn(t)));
         ctx.save();
         ctx.globalAlpha = 0.6;
         ctx.fillStyle = '#ffffff';
-        const s = 3 * size * (1 + t);
-        ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+        ctx.translate(sx, sy);
+        ctx.rotate(dir + Math.PI); // image_angle = direction, toward centre
+        ctx.fillRect(-len / 2, -thick / 2, len, thick);
         ctx.restore();
       }
     }

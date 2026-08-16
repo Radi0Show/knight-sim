@@ -216,11 +216,15 @@ eq(total, 56, 'a perfect three-bolt turn');
   const susie = statFor(g, 1);
   const ralsei = statFor(g, 2);
   if (kris.at !== 20) failures.push(`equipped Kris AT ${kris.at}, expected 20 (14 + Saber10 6)`);
-  if (susie.at !== 25) failures.push(`equipped Susie AT ${susie.at}, expected 25`);
-  if (susie.magic !== 9) failures.push(`equipped Susie MAG ${susie.magic}, expected 9`);
+  // ToxicAxe (at 6, no magic) + RoyalPin + Jevilstail.
+  if (susie.at !== 26) failures.push(`equipped Susie AT ${susie.at}, expected 26`);
+  if (susie.magic !== 5) failures.push(`equipped Susie MAG ${susie.magic}, expected 5`);
   if (ralsei.magic !== 19) failures.push(`equipped Ralsei MAG ${ralsei.magic}, expected 19`);
   if (!kris.mantle) failures.push('the mantle is not on Kris in the default build');
-  if (susie.rudeBusterCost !== 100) failures.push("Devilsknife did not cut Rude Buster's cost");
+  // The default no longer carries the Devilsknife, so Rude Buster is full
+  // price; the discount itself is asserted in verify-equipment against a
+  // loadout that actually holds the knife.
+  if (susie.rudeBusterCost !== 125) failures.push('the ToxicAxe default should pay 125 for Rude Buster');
   if (ralsei.healRibbons !== 1) failures.push('BlueRibbon Heal+ is not on Ralsei');
   const rb = spellDamage(g, 1);
   console.log(`equipped: Kris AT ${kris.at} · Susie AT ${susie.at} MAG ${susie.magic} · `

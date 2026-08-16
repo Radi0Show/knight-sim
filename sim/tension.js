@@ -72,6 +72,12 @@ export function stepGraze(state, grazes) {
   // heart position, not this frame's.
   const cx = state.grazePrev ? state.grazePrev.x : state.soul.x + 10;
   const cy = state.grazePrev ? state.grazePrev.y : state.soul.y + 10;
+  // `image_xscale = grazesizefactor` — the RIBBONS' actual effect. Hoisted
+  // out of the loop: the factor is a property of the loadout, not the bullet.
+  const grazeSize = grazeFactors(gearOf(state)).size;
+  // The renderer draws the enlarged ring off this (obj_grazebox's own
+  // image_xscale), so the flash and the hitbox can never disagree.
+  state.grazeSize = grazeSize;
 
   for (const e of state.entities) {
     if (!e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;
@@ -80,7 +86,7 @@ export function stepGraze(state, grazes) {
     const active = e.active === 1 || e.active === true;
     if (!active && e.type.name !== 'obj_sword_tunnel_sword') continue;
 
-    if (!grazes(e, cx, cy)) {
+    if (!grazes(e, cx, cy, grazeSize)) {
       // NOTHING CLEARS `grazed` HERE. obj_grazebox's collision event only
       // ever SETS the flag; the dump has no generic clear-on-leave anywhere.
       // Re-arming is strictly per-object: obj_knight_pointing_star and

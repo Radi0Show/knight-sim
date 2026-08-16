@@ -35,4 +35,24 @@ export function drawGraze(ctx, state, sprites) {
   if (entry.frames.length > 3) {
     drawSpriteExt(ctx, entry, 3, x, y, 1, 1, 0, c_white, t / 6 - 0.2);
   }
+
+  // THE RIBBON FLASH — the half of the event that was missing:
+  //
+  //     if (image_xscale > 1) {
+  //         draw_sprite_ext(sprite_index, 0, x, y, image_xscale, image_yscale, ...);
+  //         draw_sprite_ext(sprite_index, 3, x, y, image_xscale, image_yscale, ...);
+  //     }
+  //
+  // With a graze-area ribbon equipped (PinkRibbon or TwinRibbon, the only
+  // things that raise `grazesizefactor`), the whole ring is drawn a SECOND
+  // time at the enlarged scale, over the normal one. That outer flash is how
+  // the game shows you the bigger window you are being paid TP for — and it
+  // is the tell for where the enlarged hitbox actually is.
+  const size = state.grazeSize ?? 1;
+  if (size > 1) {
+    drawSpriteExt(ctx, entry, 0, x, y, size, size, 0, c_white, t / 6);
+    if (entry.frames.length > 3) {
+      drawSpriteExt(ctx, entry, 3, x, y, size, size, 0, c_white, t / 6 - 0.2);
+    }
+  }
 }

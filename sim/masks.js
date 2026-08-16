@@ -723,3 +723,45 @@ export const GRAZE_MASK = build({
 // AxisAlignedRect in the game data (maskcount=0): takes the rectangle
 // collision routine, not the precise one. See masksOverlap.
 GRAZE_MASK.axisRect = true;
+
+/**
+ * The graze box AT ITS EQUIPPED SIZE.
+ *
+ * `obj_grazebox`'s Create ends with `image_xscale = grazesizefactor;
+ * image_yscale = grazesizefactor;`, and the graze-area ribbons are the only
+ * things that move it: PinkRibbon +0.2 each, TwinRibbon +0.25 each, capped at
+ * 3. The sim tested against the unscaled 50x50 square no matter what was
+ * equipped, so the ribbons' entire reason to exist — a bigger graze window —
+ * did nothing to the collision. Only their TP/time PENALTIES were modelled,
+ * which made them strictly bad items.
+ *
+ * A scaled AxisAlignedRect is just a bigger rectangle about the same centre,
+ * so it is rebuilt rather than run through the rotation path. Cached: this is
+ * called once per bullet per frame.
+ *
+ * LABELLED: the game scales the mask and lets the runner rasterise the
+ * result, so a FRACTIONAL size (TwinRibbon's 1.25 gives 62.5px) rounds
+ * somewhere this project has not measured. `Math.round` on the extent is the
+ * assumption; integer factors — the common 1.2 pairing included — are exact.
+ */
+const grazeScaled = new Map();
+export function grazeMaskAt(factor) {
+  if (!(factor > 1)) return GRAZE_MASK;
+  const key = factor.toFixed(4);
+  const hit = grazeScaled.get(key);
+  if (hit) return hit;
+  const side = Math.round(50 * factor);
+  const half = side / 2;
+  const m = build({
+    name: 'spr_grazemask',
+    w: side,
+    h: side,
+    originX: half,
+    originY: half,
+    bbox: [0, 0, side - 1, side - 1],
+    rows: Array.from({ length: side }, () => '1'.repeat(side)),
+  });
+  m.axisRect = true;
+  grazeScaled.set(key, m);
+  return m;
+}

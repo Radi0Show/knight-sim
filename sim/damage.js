@@ -56,11 +56,20 @@ export const PARTY = [
  * one the wiki's own analysis lands on.
  *
  *   Kris    Saber10 (23)      · ShadowMantle (23) · TennaTie (27)
- *   Susie   Devilsknife (7)   · RoyalPin (22)     · Jevilstail (7)
+ *   Susie   ToxicAxe (24)     · RoyalPin (22)     · Jevilstail (7)
  *   Ralsei  FiberScarf (18)   · Dealmaker (21)    · BlueRibbon (26)
  *
  * Weapon and armour ids are separate namespaces, which is why 23 and 7 each
  * appear twice above meaning different things.
+ *
+ * SUSIE CARRIES THE TOXICAXE, not the Devilsknife. The spec's build paired
+ * the Devilsknife with the Jevilstail, and a save cannot hold both — so the
+ * default was a loadout no player could actually bring to this fight, which
+ * is the same class of error as inventing content. Reported by the project
+ * owner. Both weapons are at 6 vs 5, so the swap also costs nothing: what it
+ * gives up is the Devilsknife's Rude Buster discount (125 TP instead of 100),
+ * which is a real difference in play and now has to be chosen deliberately in
+ * the settings menu.
  *
  * The mantle goes on KRIS because the Knight's targeted attacks avoid him by
  * default (see knightTarget) — putting it on him inverts that and makes the
@@ -69,7 +78,7 @@ export const PARTY = [
  */
 export const DEFAULT_GEAR = [
   { weapon: 23, armor: [23, 27] },
-  { weapon: 7, armor: [22, 7] },
+  { weapon: 24, armor: [22, 7] },
   { weapon: 18, armor: [21, 26] },
 ];
 

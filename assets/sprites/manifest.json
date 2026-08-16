@@ -5526,5 +5526,27 @@
    "spr_ralsei_walk_up_2.png",
    "spr_ralsei_walk_up_3.png"
   ]
+ },
+ "spr_zapper_tvturnoff2": {
+  "w": 390,
+  "h": 390,
+  "ox": 198,
+  "oy": 193,
+  "frames": 4,
+  "bbox": [
+   8,
+   6,
+   388,
+   382
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerSecond",
+  "files": [
+   "spr_zapper_tvturnoff2_0.png",
+   "spr_zapper_tvturnoff2_1.png",
+   "spr_zapper_tvturnoff2_2.png",
+   "spr_zapper_tvturnoff2_3.png"
+  ]
  }
 }
