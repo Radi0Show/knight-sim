@@ -205,8 +205,26 @@ export const roaring2 = {
     // The renderer draws `knight_sprite` at (fake_x, fake_y); the per-scanline
     // wobble is not reproduced (see docs/STATUS.md).
     e.knight_sprite_image += e.knight_sprite_speed;
-    e.sprite_index = e.knight_sprite;
-    e.image_index = e.knight_sprite_image;
+    // `sprite_index` AND `knight_sprite` ARE TWO DIFFERENT SPRITES, and this
+    // used to copy one onto the other every single step.
+    //
+    //   sprite_index    what `draw_self()` draws — the instance's own sprite
+    //   knight_sprite   a NUMERIC id, drawn row by row by the scanline
+    //                   `draw_sprite_part_ext` calls
+    //
+    // The Step assigns them separately and to different values (rt 275 sets
+    // `sprite_index = spr_roaringknight_front_slash` and `knight_sprite =
+    // 4320` on adjacent lines). Copying knight_sprite over sprite_index broke
+    // the attack's LAST beat: at roaring_timer 363 the knight is supposed to
+    // rematerialise at his battle spot as `spr_knight_warp`, frames 5 -> 8
+    // over 8 frames — and this line overwrote that on the very next frame, so
+    // for the twelve frames before the real knight returns he was drawn as
+    // the slash pose at an image_index the lerp had walked past the end of
+    // the sheet, wrapping to garbage. Reported from play as the knight
+    // appearing weirdly a second or two after the screen slash.
+    //
+    // The renderer already reads `knight_sprite` directly for the scanline
+    // rows (drawKnightRows), so nothing needed it copied here.
     e.image_xscale = 2;
     e.image_yscale = 2;
 

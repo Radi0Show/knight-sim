@@ -54,12 +54,23 @@ export function drawDialogue(ctx, state, sprites) {
   const bw = stringmax * HSPACE + 10;
   const bh = fullLines.length * VSPACE + 5;
   const writingX = ax + 5;
+  // `writingy = initwritingy - (balloonheight / 2)`, and balloonheight is
+  // `lines * 20 + 5` — always ODD, so this lands on a HALF PIXEL.
+  //
+  // GameMaker rasterises a filled rectangle onto whole pixels; a canvas
+  // fillRect at x.5 blends its edge rows instead, so the balloon's top and
+  // bottom rows came out half-strength grey against the background —
+  // reported from play as the balloon looking cut off at the bottom pixel.
+  // Flooring here matches the rasteriser rather than the arithmetic; the
+  // TEXT keeps the exact value, because that is a sprite blit and the game
+  // positions those at the unrounded coordinate.
   const writingY = ay + 3 - bh / 2;
+  const boxY = Math.floor(writingY);
 
   // The body: the two-rectangle union (draw_rectangle is inclusive; +1).
   ctx.fillStyle = '#fff';
-  ctx.fillRect(writingX - 10, writingY - 5, bw + 11, bh + 1);
-  ctx.fillRect(writingX - 5, writingY - 10, bw + 1, bh + 11);
+  ctx.fillRect(writingX - 10, boxY - 5, bw + 11, bh + 1);
+  ctx.fillRect(writingX - 5, boxY - 10, bw + 1, bh + 11);
 
   // The tail, mirrored toward the speaker (side -1), half-height for a
   // short balloon.

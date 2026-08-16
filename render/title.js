@@ -77,13 +77,32 @@ export function drawTitle(ctx, title, sprites, attacks) {
     index = title.index;
   }
 
-  // A four-item list sits comfortably at 34px; the attack roster is longer, so
-  // it tightens rather than running off the bottom.
-  const pitch = rows.length > 8 ? 24 : rows.length > 6 ? 26 : 34;
-  const top = title.pickingDifficulty ? 190 : rows.length > 8 ? 158 : 170;
+  // A SCROLLING WINDOW, so the roster can grow without the list running off
+  // the bottom or shrinking until it is unreadable. The alternative — packing
+  // the pitch tighter every time an attack is added — is what the previous
+  // version did, and it was already down to 24px with eleven entries.
+  //
+  // The idiom is the game's own item menu: a fixed window of rows with
+  // `spr_morearrow` bobbing at the edge when there is more beyond it
+  // (obj_battlecontroller's Draw, `bmenuno == 4` — the arrow is what tells you
+  // a second page exists). The window follows the cursor rather than paging,
+  // because the cursor WRAPS here and a paged view jumps two pages at the wrap.
+  const WINDOW = 8;
+  const pitch = rows.length > 6 ? 30 : 34;
+  const top = title.pickingDifficulty ? 190 : 170;
 
-  for (let i = 0; i < rows.length; i++) {
-    const y = top + i * pitch;
+  // Keep the cursor inside the window, and keep the window inside the list.
+  let first = 0;
+  if (rows.length > WINDOW) {
+    first = Math.min(
+      Math.max(0, index - Math.floor(WINDOW / 2)),
+      rows.length - WINDOW,
+    );
+  }
+  const last = Math.min(rows.length, first + WINDOW);
+
+  for (let i = first; i < last; i++) {
+    const y = top + (i - first) * pitch;
     const on = i === index;
     const x = 160;
     if (on && heart) {
@@ -101,6 +120,21 @@ export function drawTitle(ctx, title, sprites, attacks) {
     drawText(ctx, font, rows[i].name, x, y, { color: rgb(on ? HILITE : restColor), xscale: squeeze });
     if ((title.pickingAttack || title.pickingDifficulty) && rows[i].blurb) {
       drawText(ctx, font, rows[i].blurb, 430, y + 3, { color: rgb(DIM), yscale: 0.75, xscale: 0.75 });
+    }
+  }
+
+  // MORE ABOVE / MORE BELOW. `spr_morearrow` bobs on `sin(s_siner / 10) * 2`
+  // in the item menu, and the upward one is the same sprite at `yscale -1`
+  // with the bob INVERTED, so the two lean away from the list rather than
+  // both pointing the same way.
+  const arrow = sprites.get('spr_morearrow');
+  if (arrow && rows.length > WINDOW) {
+    const bob = Math.sin(title.siner / 10) * 2;
+    if (first > 0) {
+      drawSpriteExt(ctx, arrow, 0, 300, top - 22 - bob, 1, -1, 0, null, 1);
+    }
+    if (last < rows.length) {
+      drawSpriteExt(ctx, arrow, 0, 300, top + WINDOW * pitch - 6 + bob, 1, 1, 0, null, 1);
     }
   }
 
