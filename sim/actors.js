@@ -100,6 +100,39 @@ export const knightActor = {
     const strobeMod = k?.endCutscene > 0 ? 3 : 2;
     const strobing = k?.animState === 3 && k.stronghurtanim
       && (k.hurttimer % strobeMod) !== 0;
+    // THE WHITE DISSOLVE INTO ROARING. His Draw's second branch, which runs
+    // before everything below it and exits:
+    //
+    //     if (chargeupcon == 2) {
+    //         chargeuptimer++;
+    //         d3d_set_fog(true, c_white, 0, 1);
+    //         draw_sprite_ext(idlesprite, siner, x, y, ..., (10 - chargeuptimer) / 10);
+    //         d3d_set_fog(false, c_black, 0, 0);
+    //         if (chargeuptimer == 10) { chargeupcon = 3; image_alpha = 0; }
+    //         exit;
+    //     }
+    //
+    // ROARING's Create sets `chargeupcon = 2`, so he burns out to white over
+    // ten frames and only THEN goes invisible for the attack. The sim drove
+    // image_alpha straight to 0 on the launch frame instead, so he vanished
+    // in one frame and the phantom took over as a separate event — half of
+    // the "appears, then appears again" report. `fog` is the GPU replace, not
+    // a multiply tint (see render/draw/gm.js).
+    if (k?.chargeupcon === 2) {
+      k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
+      e.sprite_index = 'spr_roaringknight_idle';
+      e.image_index = 0;
+      e.fog = true;
+      e.image_alpha = (10 - k.chargeuptimer) / 10;
+      if (k.chargeuptimer >= 10) {
+        k.chargeupcon = 3;
+        e.image_alpha = 0;
+        e.fog = false;
+      }
+      return;
+    }
+    e.fog = false;
+
     if (k?.blockanim) {
       e.sprite_index = 'spr_roaringknight_block_ol';
     } else if (strobing) {

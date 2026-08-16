@@ -540,7 +540,11 @@ export function stepVictoryScene(sc, input, cues) {
       }
       case 'susieLaugh': {
         const su = A.susie;
-        su.flip = true;
+        // `c_flip("x")` TOGGLES — `image_xscale = -image_xscale`. This is the
+        // first of two in the sequence; the second (at the swoon) turns her
+        // back. Assigning `true` at both sites left her mirrored for the rest
+        // of the scene.
+        su.flip = !su.flip;
         su.sprite = 'spr_susie_laugh_dw';
         su.index = 0;
         su.speed = 0.25;
@@ -568,7 +572,16 @@ export function stepVictoryScene(sc, input, cues) {
           k.index = 0;
           k.speed = 0;
           const su = A.susie;
-          su.flip = true;
+          // THE SECOND `c_flip("x")`, and it flips her BACK — the command
+          // negates image_xscale rather than setting it, and the script runs
+          // one before the laugh and one here with no c_sel in between. She
+          // is drawn unmirrored for the swoon.
+          //
+          // This is why she landed too far back: `flip` stayed true, so the
+          // renderer kept applying the mirror's x-compensation
+          // (`x += (w - 2*ox) * xscale`, scr_flip) on top of a position the
+          // script sets ABSOLUTELY on the next line. Reported from play.
+          su.flip = !su.flip;
           su.x = 2410; su.y = 142;
           su.sprite = 'spr_susie_dw_fell';
           su.index = 0; su.speed = 0;
@@ -604,7 +617,24 @@ export function stepVictoryScene(sc, input, cues) {
         ra.sprite = 'spr_ralsei_walk_right_unhappy'; // rsprite 359
         ra.speed = 0.25;
         ra.lerp = { field: 'x', from: ra.x, to: ra.x + 8, t: 0, dur: 10, curve: 'linear' };
-        setTimeoutStep(sc, 10, () => { ra.speed = 0; ra.index = 0; });
+        // ...AND THEN HE TURNS TO FACE THE KNIGHT. The script is
+        //
+        //     c_autowalk(1); c_walkwait("r", 8, 10); c_facing("u");
+        //
+        // and `c_facing` swaps to the facing set's UP sprite —
+        // `scr_set_facing_sprites`, "ralseiunhappy": `usprite =
+        // spr_ralsei_walk_up` (the unhappy set keeps the neutral up sprite;
+        // there is no unhappy variant of it). The turn was missing entirely,
+        // so he finished the walk still facing right, side-on to the Knight
+        // he is about to be cut down by — reported from play as him not
+        // walking and turning correctly. Standing still, the walk sprite
+        // rests on frame 0 (obj_actor's Step: `v_speed == 0` -> image_index
+        // 0, image_speed 0).
+        setTimeoutStep(sc, 10, () => {
+          ra.speed = 0;
+          ra.index = 0;
+          ra.sprite = 'spr_ralsei_walk_up';
+        });
         break;
       }
       case 'black':

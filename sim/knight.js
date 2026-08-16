@@ -279,13 +279,24 @@ export function stepKnightAnim(state) {
     // turn ran the default 90 and the finale arrived a second late.
     if (k.chargeuptimer === 60) state.turntimer = 1;
   }
-  // chargeupcon 2 is ROARING's launch (obj_knight_roaring2's Create sets
-  // it). The Draw's intended 10-frame white fade-out is dead code in the
-  // real sequence — chargeuptimer is already ~60+, so `(10 - t) / 10` is
-  // negative (invisible at once) and the `== 10` handoff to con 3 never
-  // fires. The effective behaviour, ported as such: he vanishes instantly
-  // and stays gone until the roar's CleanUp restores him (chargeupcon = 0,
-  // image_alpha = 1). The renderer reads chargeupcon >= 2 as hidden.
+  // chargeupcon 2 is ROARING's launch, and it runs a TEN-FRAME WHITE
+  // BURN-OUT before he disappears — `(10 - chargeuptimer) / 10` on a
+  // fog-white copy, then `chargeupcon = 3; image_alpha = 0`.
+  //
+  // RETRACTED: this note used to call that fade dead code, reasoning that
+  // chargeuptimer was already ~60 from the charge-up turn so the ramp
+  // started negative. It is not — obj_knight_roaring2's Create zeroes the
+  // timer on the very next line after setting con 2:
+  //
+  //     obj_knight_enemy.chargeupcon = 2;
+  //     obj_knight_enemy.chargeuptimer = 0;
+  //
+  // Reading the assignment without reading the line under it is the same
+  // mistake as reading a dispatch table without the selector. The fade is
+  // live, sim/actors.js drives the timer, and the vanish-in-one-frame it
+  // was replaced with was reported from play. con 3 is the hidden state,
+  // held until the roar's CleanUp restores him (chargeupcon = 0,
+  // image_alpha = 1, siner2 = 0).
 
   // `blockanim == 1` — the Knight BLOCKS, and the bell is its whole audio:
   //

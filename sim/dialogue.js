@@ -186,15 +186,29 @@ export function clearDialogue(dlg) {
 }
 
 /**
- * `global.typer = 81` — the writer reveals roughly two characters a frame.
+ * ONE CHARACTER A FRAME — measured, not estimated.
+ *
+ * This was 2, from a note that said typer 81 reveals "roughly two characters
+ * a frame". It reveals one. `scr_texttype` passes `rate` into
+ * `scr_textsetup(font, colour, x, y, charline, shake, RATE, sound, hspace,
+ * vspace, special)`, and both typers this fight uses are rate 1:
+ *
+ *     case 75: scr_textsetup(dotumche, c_black, x, y, 33, 0, 1, snd_txtsus, 9, 20, 0)
+ *     case 81: scr_textsetup(dotumche, c_black, x, y, 33, 0, 1, snd_tv_voice_short, 9, 20, 0)
+ *
+ * and the writer's Alarm 0 re-arms with `alarm[0] = rate` while advancing
+ * `pos += 1` once. Alarms 1 and 2 only play the voice blip — neither adds a
+ * character, which is what makes "two a frame" wrong rather than a rounding.
+ * So the Susie exchange was typing at DOUBLE speed; the battle-message box
+ * was already correct because its call site passes `1` explicitly.
  *
  * PURE TEXT LOGIC, so it lives in sim/ rather than render/. The turn loop has
- * to know when a line has finished typing (to decide whether C advances or
+ * to know when a line has finished typing (to decide whether Z advances or
  * the line auto-holds), and a sim module importing from render/ to find that
  * out is the dependency arrow pointing the wrong way — sim/ is the half that
  * must run headless.
  */
-export const CHARS_PER_FRAME = 2;
+export const CHARS_PER_FRAME = 1;
 
 /** Characters revealed after `timer` frames at `cps` characters a frame. */
 
@@ -213,4 +227,17 @@ export function revealed(text, timer, cps = CHARS_PER_FRAME) {
 
 export function dialogueDone(text, timer) {
   return Math.floor(timer * CHARS_PER_FRAME) >= msgLines(text).join('').length;
+}
+
+/**
+ * The timer value at which `text` is fully revealed — obj_writer's
+ * `skipme` in this model's terms:
+ *
+ *     pos = string_length(mystring) + 1;
+ *
+ * X held is not a faster crawl in the original, it is the whole line at
+ * once, so the skip assigns this rather than adding to the rate.
+ */
+export function dialogueSkipTimer(text) {
+  return Math.ceil(msgLines(text).join('').length / CHARS_PER_FRAME);
 }

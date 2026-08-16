@@ -74,6 +74,13 @@ export const roaring2 = {
     // camerawidth() * 0.5, and the intro tween's settled value.
     e.fake_x = 320;
     e.fake_y = 24;
+    // `fake_alpha = 0` — THE PHANTOM STARTS INVISIBLE. It was never
+    // initialised here, and the renderer's `e.fake_alpha ?? 1` then drew the
+    // scanline knight at FULL alpha for the first 80 frames, until the
+    // timer-80 lerp reset it to 0 and faded it in again. Reported from play
+    // as the knight appearing, then appearing a second time — which is
+    // exactly what it was doing.
+    e.fake_alpha = 0;
     e.rand_angle = 0; // irandom(360) in the original; replayed by the scene
     e.rand_dist = 320;
     e.starcount_p1 = 0;
@@ -203,10 +210,13 @@ export const roaring2 = {
     e.image_xscale = 2;
     e.image_yscale = 2;
 
-    // The real knight is hidden for the whole attack and restored at
-    // roaring_timer 375 (below).
-    const km = state.entities.find((x) => x.alive && x.type.name === 'obj_knight_enemy');
-    if (km && e.roaring_timer < 375) km.image_alpha = 0;
+    // THE KNIGHT HIDES HIMSELF. obj_knight_roaring2 never touches his
+    // image_alpha — his own Draw does it, at the end of the con-2 burn-out
+    // (`if (chargeuptimer == 10) { chargeupcon = 3; image_alpha = 0; }`).
+    // Forcing it to 0 here every frame — the stand-in for a fade this file
+    // wrongly believed was dead — overwrote the burn-out on its first frame,
+    // so he vanished instantly instead of over ten. He is restored at
+    // roaring_timer 375 (below), which IS the CleanUp's job.
 
     // THE INTRO, which the oracle scene never exercised because it starts at
     // frame 149 with the settled values already seeded. In a real turn these
@@ -521,6 +531,14 @@ export const roaring2 = {
         // CleanUp also hands the knight back: `chargeupcon = 0` — he was
         // hidden from ROARING's launch (con 2, see create below).
         if (state.knight) state.knight.chargeupcon = 0;
+        // `siner2 = 0` — the THIRD thing the CleanUp does, and the sim was
+        // missing it. The bob is frozen for the whole attack (the Draw's
+        // `if (!i_ex(obj_knight_roaring2)) siner2++`), so without the reset
+        // he resumes from whatever phase the roar happened to freeze him at
+        // and the hover reads as drifting from the wrong height. Zeroing it
+        // puts him at `ystart + cos(0) * 8` — the top of the bob, the same
+        // place the fight starts him.
+        if (knight) knight.siner2 = 0;
 
         // `with (obj_growtangle) { growcon = 3; timer = 0; }` — the arena
         // collapses instead of just vanishing when the turn is swept.

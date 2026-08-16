@@ -75,6 +75,44 @@ export function scrEaseIn(t, curve) {
 export function scrEaseOut(t, curve) {
   if (curve < -3 || curve > 7) return t;
   switch (curve) {
+    // THE NEGATIVE CURVES ARE NOT POWERS — they are the three named easings,
+    // and they were missing. `default` caught them and computed
+    // `pow(t - 1, curve) + 1`, which for curve -1 is `1 / (t - 1) + 1`: -1 at
+    // the midpoint and INFINITY at the end. Nothing had called them yet; the
+    // intro's sword rise (curve -1) did the same shape by hand as a plain
+    // quadratic, which is why the flourish read as soft instead of snapping.
+    case -3:
+      // ease_out_bounce(t, 0, 1, 1)
+      if (t < 0.36363636363636365) return 7.5625 * t * t;
+      if (t < 0.7272727272727273) {
+        const u = t - 0.5454545454545454;
+        return 7.5625 * u * u + 0.75;
+      }
+      if (t < 0.9090909090909091) {
+        const u = t - 0.8181818181818182;
+        return 7.5625 * u * u + 0.9375;
+      }
+      {
+        const u = t - 0.9545454545454546;
+        return 7.5625 * u * u + 0.984375;
+      }
+    case -2: {
+      // ease_out_elastic(t, 0, 1, 1). With start 0 / change 1 / duration 1
+      // the guards collapse: `change < abs(change)` is false, so
+      // `_s = (_p / 2pi) * arcsin(1)` = _p / 4 with _p = 0.3.
+      if (t === 0) return 0;
+      if (t === 1) return 1;
+      const p = 0.3;
+      const s = p / 4;
+      return Math.pow(2, -10 * t) * Math.sin(((t - s) * (2 * Math.PI)) / p) + 1;
+    }
+    case -1: {
+      // ease_out_back(t, 0, 1, 1) — OVERSHOOTS past the target and settles
+      // back, with the standard 1.70158 constant.
+      const s = 1.70158;
+      const u = t - 1;
+      return u * u * ((s + 1) * u + s) + 1;
+    }
     case 0:
       return t;
     case 1:

@@ -226,10 +226,30 @@ export async function createRenderer(canvas) {
      */
     obj_knight_enemy(ctx, e, state) {
       const k = state.knight;
-      // ROARING's launch (chargeupcon 2+): he is gone until the CleanUp
-      // hands him back — the intended 10-frame fade is dead code (see
-      // sim/knight.js), so this is simply invisible.
-      if (k?.chargeupcon >= 2) return true;
+      // ROARING's launch. con 3 is "gone until the CleanUp hands him back";
+      // con 2 is the TEN-FRAME WHITE BURN-OUT that gets him there, and it is
+      // NOT dead code — the retraction this replaces assumed `chargeuptimer`
+      // was still ~60 from the charge-up turn, but obj_knight_roaring2's
+      // Create zeroes it on the same two lines that set con 2:
+      //
+      //     obj_knight_enemy.chargeupcon = 2;
+      //     obj_knight_enemy.chargeuptimer = 0;
+      //
+      // so `(10 - chargeuptimer) / 10` really does walk 0.9 -> 0 and the
+      // `== 10` handoff really does fire. sim/actors.js runs the timer; this
+      // draws it, fogged white like the charge-up's silhouette. The roar's
+      // own `darkness` lerp is delayed 20 frames, so the burn-out happens in
+      // full view — dropping it made him pop out in one frame.
+      if (k?.chargeupcon >= 3) return true;
+      if (k?.chargeupcon === 2) {
+        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
+        if (!entry || !entry.frames.length) return true;
+        const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
+        blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
+          e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, 0,
+          Math.max(0, e.image_alpha ?? 0));
+        return true;
+      }
       // THE CHARGE-UP TURN (chargeupcon 1) — the Draw's two layers:
       //
       //     d3d_set_fog(true, c_white, 0, 1);

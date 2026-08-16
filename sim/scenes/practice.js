@@ -27,7 +27,7 @@ import { endTurnItems } from '../menu.js';
 import { applyItem } from '../items.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_ITEM, HERO_SPELL } from '../heroes.js';
 import {
-  advanceBalloon, advanceReply, clearDialogue, dialogueDone,
+  advanceBalloon, advanceReply, clearDialogue, dialogueDone, dialogueSkipTimer,
 } from '../dialogue.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
@@ -523,15 +523,48 @@ const director = {
     // confirms does the enemy attack. The gap above is the beat before the
     // panels rise.
     if (state.dialogue.text) {
+      // X HELD JUMPS THE TYPING TO THE END. obj_writer's Draw:
+      //
+      //     if (halt == 0 && button2 == 1 && pos < length && skippable == 1)
+      //         skipme = 1;
+      //     if (skipme == 1) { pos = string_length(mystring) + 1; ... }
+      //
+      // so it is not a faster crawl, it is the whole line at once.
+      if (state.input?.focus) {
+        state.dialogue.timer = Math.max(
+          state.dialogue.timer, dialogueSkipTimer(state.dialogue.text));
+      }
       state.dialogue.timer += 1;
       const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
-      // `button3_p() && talktimer > 15` — C advances, but only after a beat,
-      // so the press that dismissed the previous line cannot eat this one.
-      const press = !!state.input?.button3 && !e.talkHeld;
+
+      // TWO BUTTONS ADVANCE THIS, and only one of them was wired up.
+      //
+      // The knight's own Step takes C: `(button3_p() && talktimer > 15)`.
+      // But the SAME condition's other arm is `|| !i_ex(obj_writer)`, and
+      // the writer dismisses ITSELF on Z once the line has finished typing:
+      //
+      //     if (halt != 0 && button1 == 1 && siner > 0) { ... instance_destroy(); }
+      //
+      // (`button1_p()` is Z or Enter; `button3_p()` is C or Ctrl — the
+      // default control map, input_k[4] and input_k[6].) So Z really does
+      // advance the exchange in the real game, one indirection away, and
+      // modelling only the C arm left the tool's own confirm key dead here —
+      // reported from play as the dialogue not being skippable with Z.
+      const cPress = !!state.input?.button3 && !e.talkHeld;
       e.talkHeld = !!state.input?.button3;
-      if ((press && state.dialogue.timer > 15) || (done && state.dialogue.timer > 90)) {
+      const zPress = !!state.input?.confirm && !e.talkConfirmHeld;
+      e.talkConfirmHeld = !!state.input?.confirm;
+
+      if ((cPress && state.dialogue.timer > 15)
+        || (zPress && done)
+        || (done && state.dialogue.timer > 90)) {
         if (state.dialogue.speaker === 'knight') advanceReply(state.dialogue);
         else clearDialogue(state.dialogue);
+        // The press that dismissed this line must not also eat the next one
+        // (the writer's `prevent_mash_buffer`, and the held-across-a-
+        // transition rule this project keeps relearning).
+        e.talkConfirmHeld = true;
+        e.talkHeld = true;
       }
       return;
     }

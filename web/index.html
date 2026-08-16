@@ -2,35 +2,52 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Black Knife Simulator</title>
 <style>
+  /* THE GAME FILLS THE WINDOW, and nothing else is on screen.
+     The page used to be a canvas with a debug readout under it (frame
+     counter, HP, sprite count, key legend) and the canvas sized to leave
+     room for that line. It read as a harness with a game inside it; the
+     real thing is 640x480 letterboxed into whatever it is given. */
   html, body {
-    margin: 0; height: 100%; background: #111; color: #ccc;
+    margin: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    color: #ccc;
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  canvas {
-    background: #000; border: 1px solid #333;
+  /* The letterbox: centre the canvas in the viewport and let the aspect
+     ratio decide which pair of bars appears. `min()` on both axes is what
+     keeps the WHOLE frame on screen — sizing on width alone once made the
+     canvas taller than the window and cropped the top ~65 rows, which is
+     exactly where the Stars cone opens and where the Knight stands. */
+  #game {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(100vw, calc(100vh * 4 / 3));
+    height: min(100vh, calc(100vw * 3 / 4));
+    background: #000;
+    /* Nearest-neighbour, like every other surface in this project. */
     image-rendering: pixelated;
-    /* FIT THE VIEWPORT ON BOTH AXES. Sizing on width alone made the canvas
-       922px tall in a 720px window: the flex centring then pushed its top off
-       screen and the game's top ~65 rows were simply not visible. That is
-       where the Stars cone sits (y 78) and where the knight stands, so it read
-       as "the battle box is too high" and "the stars never appear".
-       The height term subtracts the HUD line and border. */
-    width: min(96vw, 1280px);
-    /* max() floor: if 100vh resolves to 0 (it can, mid-layout), the height
-       term goes negative and the canvas collapses to its border. */
-    max-width: max(320px, calc((100vh - 80px) * 1.3333));
-    height: auto; aspect-ratio: 4 / 3;
   }
-  #hud { margin-top: 10px; opacity: .75; text-align: center; }
-  #picker { margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
-  #picker select {
-    background: #1b1b1b; color: #ddd; border: 1px solid #444; padding: 3px 6px;
-    font: inherit;
+  /* The status line is kept for bug reports but is OFF by default — the
+     driver only reveals it when `?hud=1` is in the URL. */
+  #hud {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 4px 8px;
+    text-align: center;
+    background: rgba(0, 0, 0, .6);
+    opacity: .75;
   }
-  #picker select:disabled { opacity: .4; }
+  body.hud #hud { display: block; }
 </style>
 </head>
 <body>

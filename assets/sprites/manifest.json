@@ -5504,5 +5504,27 @@
   "files": [
    "spr_smallbullet_0.png"
   ]
+ },
+ "spr_ralsei_walk_up": {
+  "w": 21,
+  "h": 41,
+  "ox": 0,
+  "oy": -3,
+  "frames": 4,
+  "bbox": [
+   2,
+   31,
+   18,
+   39
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_ralsei_walk_up_0.png",
+   "spr_ralsei_walk_up_1.png",
+   "spr_ralsei_walk_up_2.png",
+   "spr_ralsei_walk_up_3.png"
+  ]
  }
 }

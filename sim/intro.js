@@ -58,6 +58,10 @@
 // darkener, not staged — this stand-in is player-directed). Skippable with
 // confirm/cancel — a practice-tool addition.
 
+// The only import: the ease family, so the sword draw runs the source's own
+// `scr_lerpvar` curves rather than shapes fitted by eye.
+import { scrEaseOut } from './gml.js';
+
 /** The fx at the knight's overworld offset. */
 export function createIntroFx(x, y) {
   return {
@@ -318,24 +322,47 @@ export function stepIntroScene(sc, cues) {
       // The actor's Step: everything below gates on aetimer % move_speed(4).
       k.aetimer += 1;
       // The 15f sword rise runs on real frames (scr_lerpvar is per-frame).
+      //
+      // THE CURVES ARE THE SOURCE'S, not shapes that look about right:
+      //
+      //     scr_lerpvar("sword_alpha", 0, 1, 15, 4, "out");
+      //     scr_lerpvar("y_base_pos", y_base_pos, y_base_pos - 266, 15, -1, "out");
+      //
+      // Curve -1 is `ease_out_back` — the blade OVERSHOOTS its stop and
+      // settles back into the hand, which is the snap the flourish is built
+      // around. This ran a plain quadratic (curve 2) and a hand-fitted
+      // `min(1, t * 1.4)` alpha instead, so the draw glided up and stopped
+      // dead: reported from play as the sword looking wonky. Curve 4 is the
+      // quartic ease-out, `1 - (t - 1)^4`.
       if (k.y_base_t >= 0 && k.y_base_t < 15) {
         k.y_base_t += 1;
         const t = k.y_base_t / 15;
-        const out = 1 - (1 - t) * (1 - t); // "out"
-        k.y_base_pos = k.y_base_from - 266 * out;
-        k.sword_alpha = Math.min(1, t * 1.4); // 0 -> 1 over the same window
+        k.y_base_pos = k.y_base_from - 266 * scrEaseOut(t, -1);
+        k.sword_alpha = scrEaseOut(t, 4);
       }
       if (k.sword_appear) k.alpha_siner += 1.5;
+
+      // THE SPRITE ANIMATES EVERY FRAME, not once per 4-frame tick.
+      // `image_speed = 0.3` is set at draw_timer 1 and zeroed at 3, and
+      // GameMaker advances image_index by image_speed on EVERY step — the
+      // `aetimer % move_speed` gate below only decides when the draw_timer
+      // beats fire. Folding the animation into the gate (`index + 0.3 * 4`
+      // once every four frames) made the unsheathe jump in two hard steps
+      // instead of playing: part of the wonkiness reported from play.
+      k.index += k.speed;
+
       if (k.aetimer % 4 === 0) {
         k.draw_timer += 1;
         if (k.draw_timer === 1) {
           k.sword_active = true;
           k.sprite = 'spr_roaringknight_sword_appear';
           k.index = 0;
-          k.speed = 0; // animated by hand below (0.3 while it plays)
+          k.speed = 0.3;
         }
-        if (k.draw_timer < 3) k.index = Math.min(k.index + 0.3 * 4, 2);
         if (k.draw_timer === 3) {
+          // `image_speed = 0` — the unsheathe pose FREEZES here and the
+          // blade's own rise takes over.
+          k.speed = 0;
           k.sword_appear = true;
           k.y_base_from = k.y + 152; // y_base_pos anchors off the live y
           k.y_base_pos = k.y_base_from;

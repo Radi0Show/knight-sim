@@ -163,6 +163,10 @@ let lastFpsSample = last;
 let fps = 0;
 
 const hud = document.getElementById('hud');
+// `?hud=1` brings back the debug readout (frame, HP, TP, the key legend) for
+// bug reports. Default is the game alone, letterboxed.
+const hudOn = params.get('hud') === '1';
+if (hudOn) document.body.classList.add('hud');
 
 // Shown to the player, not decoration: this scene contains a faithfully
 // translated attack that the real fight never selects, so it must not be
@@ -723,6 +727,15 @@ function frame(now) {
   //
   // If an unlabelled placeholder is ever added back, the label goes on the
   // thing itself, not here.
+  // THE READOUT IS OFF UNLESS ASKED FOR. The page is the game and nothing
+  // else now (letterboxed 640x480, black bars, no chrome); this line stays
+  // behind `?hud=1` because a playtester filing a report still needs the
+  // frame number and the key legend. Skipping the work when it is hidden
+  // also keeps a per-frame string build out of the loop.
+  if (!hudOn) {
+    requestAnimationFrame(frame);
+    return;
+  }
   hud.innerHTML =
     // The Game Over SCREEN says this now, in the game own font.
 
