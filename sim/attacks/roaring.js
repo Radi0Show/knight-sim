@@ -159,6 +159,33 @@ export const roaring2 = {
       cueTune(state, 'snd_knight_stretch', e.stretchPitch);
     }
 
+    // THE ROAR CORRALS THE SOUL TO THE SCREEN. The Step's very first block,
+    // before anything else it does:
+    //
+    //     with (obj_heart) {
+    //         if (x < camerax())                        x = camerax();
+    //         if (x > camerax() + camerawidth() - 20)    x = camerax() + camerawidth() - 20;
+    //         if (y < cameray())                         y = cameray();
+    //         if (y > cameray() + cameraheight())        y = cameray() + cameraheight() - 20;
+    //     }
+    //
+    // This is the attack's arena: the battle box is gone, and the WHOLE
+    // SCREEN becomes the floor, with the pull dragging you across it. Without
+    // the clamp the soul could be shoved off the edge entirely and sit there
+    // for the rest of the roar, which is what it was doing — parked in a
+    // corner, out of play, while the attack happened without it.
+    //
+    // Note the asymmetry, kept: the left and top clamps snap to the edge
+    // exactly, the right and bottom to 20 inside it (the sprite's width).
+    if (state.soul) {
+      const vx = state.view.x;
+      const vy = state.view.y;
+      if (state.soul.x < vx) state.soul.x = vx;
+      if (state.soul.x > vx + 640 - 20) state.soul.x = vx + 640 - 20;
+      if (state.soul.y < vy) state.soul.y = vy;
+      if (state.soul.y > vy + 480) state.soul.y = vy + 480 - 20;
+    }
+
     // `if (jumpimages) scr_afterimagefast();` — Step line 20, ABOVE everything
     // else. One ghost per frame for the whole leap, which is what makes the
     // jump read as a streak rather than a teleport.

@@ -25,8 +25,8 @@
 //
 // LABELLED APPROXIMATIONS: the in-rush particles and sprite afterimages are
 // recreated from frame-seeded randoms with the original's counts, spawn ring
-// (40..240) and inward pull, but not its exact easing curves; the crush ring
-// stands in for obj_knight_crush's hsv ramp; the materialising sword is drawn
+// (40..240) and inward pull, but not its exact easing curves; the materialising
+// sword is drawn
 // at its flashing alpha with the original's below-hand slot cut out rather
 // than through spr_roaringknight_sword_mask's dest-alpha pass.
 
@@ -47,18 +47,82 @@ export function drawIntroFx(ctx, e, sprites) {
   const px = e.x + w * 0.42;
   const py = e.y + h * 0.5;
 
-  // The crush ring: radius 960 -> 160 over 24 frames, alpha 0.1, then gone
-  // when its alarm (24) fires. Drawn as a thick white ring.
+  // THE CHARGE-UP — obj_knight_crush, created at fx timer 16. Its Draw is a
+  // FILLED, TEXTURED, HUE-SWEPT DISC converging on the Knight, not the thin
+  // white ring this used to draw:
+  //
+  //     draw_circle_color(x - viewx, y - viewy, radius, c_black, ..., false)
+  //     gpu_set_colorwriteenable(true, true, true, false);
+  //     draw_sprite_tiled(spr_knight_bullet_flow, 0, global.time * 8, 0);
+  //     ... colour = make_color_hsv(hsv, 255, 255)
+  //     gpu_set_blendmode(bm_add);
+  //     repeat (4) draw_surface_ext(my_surface, ..., colour, alpha);
+  //     draw_set_alpha(alpha); draw_circle_color(x, y, radius, c_white, ...)
+  //
+  // The colour-write mask is the trick: the flow texture is written into the
+  // disc's RGB while its ALPHA stays the circle's, so the disc is filled with
+  // the scrolling flow pattern rather than flat. It is then blended FOUR
+  // TIMES additively — deliberate over-saturation — under a white core.
+  //
+  //     radius  960 -> 160 over 24      (scr_lerpvar)
+  //     alpha   0   -> 0.1  over 24
+  //     hsv     256 -> 64   over 64, ease "out"
+  //
+  // so it closes fast and reddens as it does. This is the beat the roar
+  // builds on, and a 24px outline read as nothing at all.
   if (e.crushTimer >= 0 && e.crushTimer <= 24) {
     const t = e.crushTimer / 24;
     const radius = 960 + (160 - 960) * t;
+    const alpha = 0.1 * t;
+    // hsv runs on its own 64-frame ease-out, not the 24-frame one.
+    const ht = Math.min(1, e.crushTimer / 64);
+    const hsv = 256 + (64 - 256) * (1 - (1 - ht) * (1 - ht));
+    const [r, g, b] = hsvToRgb255(hsv % 255, 255, 255);
+
+    crushCanvas = getCanvas(crushCanvas, VIEW_W, VIEW_H);
+    const cg = crushCanvas.getContext('2d');
+    cg.setTransform(1, 0, 0, 1, 0, 0);
+    cg.globalCompositeOperation = 'source-over';
+    cg.clearRect(0, 0, VIEW_W, VIEW_H);
+    cg.fillStyle = '#000';
+    cg.beginPath();
+    cg.arc(px, py, Math.max(1, radius), 0, Math.PI * 2);
+    cg.fill();
+    // `colorwriteenable(R, G, B, false)` — paint the flow into the disc's
+    // colour without touching its alpha. `source-in` keeps the disc's shape.
+    const flow = sprites.get('spr_knight_bullet_flow');
+    if (flow?.frames[0]) {
+      cg.globalCompositeOperation = 'source-in';
+      const img = flow.frames[0];
+      const ox = -((e.frame * 8) % img.width);
+      for (let x = ox; x < VIEW_W; x += img.width) {
+        for (let y = 0; y < VIEW_H; y += img.height) cg.drawImage(img, x, y);
+      }
+      cg.globalCompositeOperation = 'source-over';
+    }
+
     ctx.save();
-    ctx.globalAlpha = 0.1;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 24;
+    ctx.globalCompositeOperation = 'lighter';
+    // The tint, then four additive passes exactly as the repeat does.
+    tintCanvas = getCanvas(tintCanvas, VIEW_W, VIEW_H);
+    const tg = tintCanvas.getContext('2d');
+    tg.setTransform(1, 0, 0, 1, 0, 0);
+    tg.globalCompositeOperation = 'source-over';
+    tg.clearRect(0, 0, VIEW_W, VIEW_H);
+    tg.drawImage(crushCanvas, 0, 0);
+    tg.globalCompositeOperation = 'multiply';
+    tg.fillStyle = `rgb(${r},${g},${b})`;
+    tg.fillRect(0, 0, VIEW_W, VIEW_H);
+    tg.globalCompositeOperation = 'destination-in';
+    tg.drawImage(crushCanvas, 0, 0);
+
+    ctx.globalAlpha = alpha;
+    for (let i = 0; i < 4; i++) ctx.drawImage(tintCanvas, 0, 0);
+    // The white core, same radius, same alpha, still additive.
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(px, py, Math.max(1, radius), 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.fill();
     ctx.restore();
   }
 
@@ -186,6 +250,23 @@ const VIEW_H = 480;
 let bgCanvas = null;
 let swordCanvas = null;
 let ghostScratch = null; // per-ghost live copy of the canvas
+
+let crushCanvas = null;
+let tintCanvas = null;
+
+/** `make_color_hsv(h, s, v)` — GameMaker's 0..255 ranges, not 0..360. */
+function hsvToRgb255(h, sat, val) {
+  const H = (h / 255) * 6;
+  const S = sat / 255;
+  const V = val / 255;
+  const i = Math.floor(H) % 6;
+  const f = H - Math.floor(H);
+  const p = V * (1 - S);
+  const q = V * (1 - f * S);
+  const t = V * (1 - (1 - f) * S);
+  const [r, g, b] = [[V, t, p], [q, V, p], [p, V, t], [p, q, V], [t, p, V], [V, p, q]][i];
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
 
 function getCanvas(ref, w, h) {
   if (!ref || ref.width !== w || ref.height !== h) {

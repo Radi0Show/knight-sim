@@ -365,12 +365,20 @@ const FAILURE_AT = 150;
  * practice tool restarts constantly and the loss counter would mean something
  * different here than it does in a playthrough.
  */
+// THE LEADING SPACES ARE THE CENTRING. The Knight's lines are padded by hand
+// in the source string — `"\\M0     VERY^6& &  INTERESTING./%"` — and that
+// padding IS the layout; there is no centring code anywhere. Stripping it (as
+// this did) left every line flush against x 70 and the screen read as
+// left-aligned text rather than the Knight's measured address.
+//
+// `&` is the line break, so a `& &` pair is a BLANK LINE between them. Kept,
+// because the spacing between his phrases is most of their weight.
 const KNIGHT_LINES = [
-  ['VERY', 'INTERESTING.'],
-  ['YOUR LOSS HERE', 'IS ALL', 'BUT GUARANTEED.'],
-  ['AND YET', 'YOU PERSIST...'],
+  ['     VERY', '', '  INTERESTING.'],
+  [' YOUR LOSS HERE', '', '     IS ALL', '', ' BUT GUARANTEED.'],
+  ['    AND YET', '', ' YOU PERSIST...'],
   ['IF YOU ARE SO', 'DETERMINED', 'TO TRY ONCE MORE'],
-  ['THEN', 'SHALL WE HASTEN?'],
+  ['      THEN', '', 'SHALL WE HASTEN?'],
 ];
 
 /**
@@ -416,7 +424,16 @@ const rx = (v) => v * ROOM_SCALE;
 const C_YELLOW = [255, 255, 0];
 
 export function drawGameOver(ctx, over, sprites) {
-  const font = loadFont();
+  // TYPER 667 IS `fnt_main`, NOT fnt_mainbig:
+  //
+  //     case 667: scr_textsetup(scr_84_get_font("main"), c_white, x, y,
+  //                             33, 0, 2, snd_nosound, 12, 20, 2);
+  //
+  // charline 33, hspace 12, vspace 20 — a smaller, wider-spaced face than the
+  // battle box's. Drawing the death screen in mainbig made his words the
+  // wrong size and the wrong shape, which is the "weird font" this should
+  // have had all along.
+  const font = loadFont('../assets/fonts', 'fnt_main');
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -471,7 +488,12 @@ function drawFailure(ctx, over, font, heart) {
   const line = KNIGHT_LINES[Math.min(over.line, KNIGHT_LINES.length - 1)];
   if (over.choiceT < 0 && t > 2) {
     line.forEach((s, i) => {
-      drawText(ctx, font, s, rx(70), rx(80) + i * 30, { color: rgb(c_white) });
+      // `vspace = 20`, in the 320x240 room's coordinates — so rx(20) on
+      // screen. This stepped by a flat 30, mixing a scaled origin with an
+      // unscaled stride, and the block drifted tighter than the game's.
+      // `hspace = 12` is the per-character advance.
+      drawText(ctx, font, s, rx(70), rx(80) + i * rx(20),
+        { color: rgb(c_white), advance: 12 });
     });
   }
 
@@ -490,7 +512,8 @@ function drawFailure(ctx, over, font, heart) {
   CHOICES.forEach((c, i) => {
     const color = rgb(over.cur === i ? C_YELLOW : c_white);
     c.name.forEach((s, k) => {
-      drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * 30, { color });
+      drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * rx(20),
+        { color, advance: 12 });
     });
   });
   ctx.globalAlpha = 1;
