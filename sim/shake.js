@@ -42,8 +42,15 @@
 import { spawn, destroy } from './entity.js';
 
 function setView(state, x, y) {
-  // `global.flag[12]` gates both writes in the original — the "reduce motion"
-  // accessibility flag. Always 0 in the recordings, so the shake applies.
+  // `global.flag[12]` gates both writes in the original — DELTARUNE's own
+  // screen-shake switch. Always 0 in the recordings, so every oracle diff is
+  // taken with the shake ON, and it defaults to on here too. When the player
+  // turns it off the object still runs, still decays and still destroys
+  // itself on the same frame; it just never moves the view. That is exactly
+  // what the flag does in the original, so the timing of everything that
+  // READS the camera (ROARING aims its pull and its stars at `camerax() +
+  // fake_x`) is unchanged either way.
+  if (state.flag12) return;
   state.view.x = x;
   state.view.y = y;
 }

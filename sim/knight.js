@@ -493,6 +493,21 @@ export function startEndCutscene(state) {
 export function stepEndCutscene(state) {
   const k = state.knight;
   if (!k || k.endCutscene !== 1) return;
+  // THE KNIGHT HIMSELF IS HELD STILL. obj_knight_enemy's Draw, above the
+  // block that triggers all this:
+  //
+  //     if (end_cutscene_version == 1) { stronghurtanim = true;
+  //                                      state = 3; shakex = 0; }
+  //
+  // It runs EVERY FRAME of the ending, so the 9-pixel hurt shake that
+  // `scr_damage_enemy` gave him on the killing blow is wiped before he is
+  // drawn — he takes the hit and then stands rigid while the CAMERA does the
+  // shaking. Without this the sim ran both at once, so his sprite jittered
+  // against a view that was already jittering: twice the motion the game has,
+  // and on the one frame the fight is asking you to look at him.
+  k.shakex = 0;
+  k.stronghurtanim = true;
+  k.animState = 3;
   k.endtimer = (k.endtimer ?? 0) + 1;
   if (k.endtimer === 32) state.endFade = 0.0001;
   if (state.endFade) state.endFade = Math.min(1, state.endFade + 1 / 30);

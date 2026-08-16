@@ -66,6 +66,7 @@ export const SETTINGS_PAGES = [
   { id: 'equip', name: 'WEAPONS / ARMOR' },
   { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
+  { id: 'shake', name: 'SCREEN SHAKE' },
   { id: 'unused', name: 'UNUSED' },
 ];
 
@@ -98,6 +99,18 @@ export function createTitle() {
     gear: DEFAULT_GEAR.map((g) => ({ weapon: g.weapon, armor: [...g.armor] })),
     /** Master volumes 0..100 (persisted by the driver). */
     volumes: { music: 100, sfx: 100 },
+    /**
+     * `global.flag[12]`, DELTARUNE's own screen-shake switch, kept in the
+     * player's polarity: true here = the shake happens = flag 12 is 0.
+     *
+     * obj_shake moves the CAMERA, and both of its writes are wrapped in
+     * `if (global.flag[12] == 0)` — so with the flag set the object still
+     * runs and still destroys itself on schedule, it simply never touches the
+     * view. That is the game's answer to "the whole screen shakes and I don't
+     * want it to", and it is the only one: nothing in the fight shakes the
+     * Knight alone, and the ending explicitly zeroes his own `shakex`.
+     */
+    shake: true,
     /** Set when gear/volumes change; the driver persists and clears it. */
     dirty: false,
   };
@@ -138,6 +151,17 @@ function stepSettings(title, pressed) {
   // ---- items: a stub page; any press leaves ----
   if (s.page === 'items') {
     if (pressed('cancel') || pressed('confirm')) { s.page = null; out.moved = true; }
+    return out;
+  }
+
+  // ---- shake: one toggle ----
+  if (s.page === 'shake') {
+    if (pressed('left') || pressed('right') || pressed('confirm')) {
+      title.shake = !title.shake;
+      title.dirty = true;
+      out.moved = true;
+    }
+    if (pressed('cancel')) { s.page = null; out.moved = true; }
     return out;
   }
 

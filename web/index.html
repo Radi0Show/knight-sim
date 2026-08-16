@@ -22,7 +22,15 @@
      ratio decide which pair of bars appears. `min()` on both axes is what
      keeps the WHOLE frame on screen — sizing on width alone once made the
      canvas taller than the window and cropped the top ~65 rows, which is
-     exactly where the Stars cone opens and where the Knight stands. */
+     exactly where the Stars cone opens and where the Knight stands.
+
+     THIS IS THE PRE-SCRIPT FALLBACK ONLY. `fitCanvas()` in main.js
+     overrides both axes with an INTEGER-multiple size, because
+     `image-rendering: pixelated` at a fractional scale is what produced
+     the reported "weird" menu text: nearest-neighbour with a 4.725x
+     factor gives some source pixels 4 device pixels and others 5, so a
+     1px font stem is thick on one letter and thin on the next. There is
+     no filtering that fixes that — only landing on a whole number. */
   #game {
     position: absolute;
     top: 50%;
@@ -32,6 +40,8 @@
     height: min(100vh, calc(100vw * 3 / 4));
     background: #000;
     /* Nearest-neighbour, like every other surface in this project. */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
     image-rendering: pixelated;
   }
   /* The status line is kept for bug reports but is OFF by default — the

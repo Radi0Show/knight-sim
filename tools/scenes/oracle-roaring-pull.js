@@ -22,6 +22,7 @@ import { soul } from '../../sim/soul.js';
 import { roaring2 } from '../../sim/attacks/roaring.js';
 import { roaringStar } from '../../sim/attacks/roaring-star.js';
 import { scrShakescreen } from '../../sim/shake.js';
+import { lerpvar } from '../../sim/lerpvar.js';
 
 export const START_FRAME = 149;
 
@@ -114,7 +115,21 @@ export const ROARING_STATE = {
   starcount_p1: 2,
   rand_angle: 694,
   rand_dist: 600,
+  // THE VORTEX IS ALREADY FADING IN. This scene starts at timer 136 and the
+  // fade is cued at timer 118 with a 16-frame delay, so the cue is BEHIND the
+  // window and the value has to be seeded like every other mid-attack field.
+  // Leaving it at the Create default of 0 is what let the sim ship with the
+  // whole coloured background invisible and every suite still green — this
+  // scene simply never reached the line that turns it on.
+  //
+  // 0.1467304745 is the recording's own value at frame 149, and it identifies
+  // the curve exactly: `sin(3/32 * pi/2)` to ten decimals, i.e. three frames
+  // into a 32-frame ease_out-curve-1 lerp. See BALL_DARKNESS_TWEEN below.
+  ball_darkness: 0.1467304745,
 };
+
+/** The in-flight `ball_darkness` lerp at frame 149 — 3 of its 32 frames gone. */
+export const BALL_DARKNESS_TWEEN = { pointa: 0, pointb: 1, maxtime: 32, easetype: 1, time: 3 };
 
 /**
  * The six stars of the PREVIOUS ring, measured at frame 149 and still in
@@ -255,6 +270,10 @@ export function buildOracleRoaringPullScene(state) {
       if (e.done || st.frame !== START_FRAME) return;
       const r = spawn(st, roaring2, { x: 320, y: 88 });
       Object.assign(r, ROARING_STATE);
+      // Re-arm the tween itself, not just its current value: without it
+      // ball_darkness would freeze at the seeded 0.1467 for the whole run.
+      const tw = spawn(st, lerpvar, { x: 0, y: 0 });
+      Object.assign(tw, BALL_DARKNESS_TWEEN, { target: r, varname: 'ball_darkness', init: 1 });
 
       for (const s of PRE_RING_STARS) {
         const d = spawn(st, roaringStar, { x: s.x, y: s.y });

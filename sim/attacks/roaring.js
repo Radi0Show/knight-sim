@@ -44,12 +44,12 @@
 // them apart as the screen is cut.
 
 import { spawn, destroy } from '../entity.js';
-import { lengthdirX, lengthdirY, pointDirection, pointDistance, scrApproach } from '../gml.js';
+import { lengthdirX, lengthdirY, pointDirection, pointDistance, scrApproach, gmlEq } from '../gml.js';
 import { gmlChoose } from '../rng.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { cue, cueSustain, cueTune } from '../audio.js';
 import { roaringStar } from './roaring-star.js';
-import { screenPiece, scrAfterimage } from '../fx.js';
+import { screenPiece, scrAfterimage, knightCircle } from '../fx.js';
 
 export const roaring2 = {
   name: 'obj_knight_roaring2',
@@ -91,6 +91,7 @@ export const roaring2 = {
     e.star_angle3 = -1;
     e.ball_speed = 0;
     e.ball_darkness = 0;
+    e.ballDarknessDelay = 0;
 
     // ---- Draw-event state ---------------------------------------------------
     //
@@ -205,6 +206,49 @@ export const roaring2 = {
       if (e.darknessDelay === 0) scrLerpvar(state, spawn, e, 'darkness', 0, 1, 32);
     }
 
+    // THE COLOUR. This one line is the whole reason the roar looked black:
+    //
+    //     if (timer == 118)
+    //         scr_script_delayed(scr_lerpvar, 16, "ball_darkness", 0, 1, 32, 1, "out");
+    //
+    // `ball_darkness` is the ALPHA the Draw composites the vortex at —
+    // `draw_surface_part_ext(ball_surface, ..., color, ball_darkness)` — and
+    // it starts at 0. Without this it stays 0 for the entire attack, so the
+    // tiled `spr_knight_bullet_flow`, the six expanding rings that cut it into
+    // a vortex, the per-row sine ripple and the cycling HSV hue were all
+    // computed, composited and then multiplied by zero. Every layer was
+    // there; none of it reached the screen. Reported twice from play as the
+    // roar missing its background colours.
+    //
+    // It fades in from timer 134 (118 + the 16-frame delay) over 32 frames on
+    // ease_out curve 1 — arriving just as the stretch note starts bending.
+    // FIFTEEN, NOT SIXTEEN, and the recording is what says so.
+    //
+    // `scr_script_delayed(scr_lerpvar, 16, ...)` arms an alarm 16 frames out.
+    // GameMaker's event order is Alarms BEFORE Step, so the obj_lerpvar that
+    // alarm creates gets its own first Step on that SAME frame — its first
+    // write lands 16 frames after the cue. This engine freezes the entity list
+    // at the start of each phase (sim/entity.js), so a tween spawned here does
+    // not step until the next frame; counting 15 puts the first write back on
+    // frame 16 where the game has it.
+    //
+    // Checked against the trace, not reasoned into place: the fade-OUT is cued
+    // at frame 411 and `traces/roaring2.csv` has ball_darkness 0.9509323257 at
+    // frame 427, which is exactly `1 - sin((1/32) * pi/2)` — one frame of a
+    // 32-frame ease_out-curve-1 lerp, sixteen frames after the cue. At 16 the
+    // first write fell on 428 and every frame after was one behind.
+    const DELAYED_TWEEN = 15;
+    if (e.timer === 118) { e.ballDarknessDelay = DELAYED_TWEEN; e.ballDarknessTo = 1; }
+    if (e.ballDarknessDelay > 0) {
+      e.ballDarknessDelay -= 1;
+      if (e.ballDarknessDelay === 0) {
+        const to = e.ballDarknessTo ?? 1;
+        scrLerpvar(state, spawn, e, 'ball_darkness', 1 - to, to, 32, 1);
+      }
+    }
+    // It fades back OUT the same way at `intensity == 3.66` — see the gmlEq
+    // block below, which is where that equality is handled.
+
     // WHERE THE KNIGHT IS DRAWN. obj_knight_roaring2's own instance sits off
     // screen (the recording has it at y -242 all turn); the knight you see is
     // drawn by its Draw event at `camerax() + fake_x, cameray() + fake_y`.
@@ -293,28 +337,61 @@ export const roaring2 = {
 
     e.intensity = scrApproach(e.intensity, 4, 0.008);
 
-    // `if (intensity == 3.74 && knight_sprite == 664)` — he settles out of the
-    // idle front pose into the flourish just before the roar.
+    // THE TWO INTENSITY GATES, and they are the reason `gmlEq` exists.
     //
-    // DELIBERATE DEVIATION: the original tests EXACT EQUALITY against 3.74 on
-    // a value built by repeated `+= 0.008` from 1.5, and it fires — the
-    // recording switches at frame 421 with intensity printing 3.7400000000.
-    // The same 280 additions in f64 here land on 3.7400000000000019895, about
-    // nine ULPs above the literal, so `=== 3.74` never matches and the pose
-    // change was simply lost. `scr_approach` is identical to this engine's and
-    // the step count is the same, so the difference is in how the runner
-    // accumulates; the recorder's 10 decimals cannot discriminate 3.74 from
-    // 3.7400000000000019 and there is nothing else in the trace to settle it.
+    //     if (intensity == 3.66) { ...ball_darkness 1 -> 0, a white circle... }
+    //     if (intensity == 3.74 && knight_sprite == 664) { ...the flourish... }
     //
-    // `>=` instead of `==`. The `knight_sprite` guard is what makes it fire
-    // exactly once in either reading, so the observable behaviour is the same
-    // pose change on the same frame — but this is a rewritten condition, not a
-    // translated one, and is flagged as such.
-    if (e.intensity >= 3.74 && e.knight_sprite === 'spr_roaringknight_front') {
+    // Both test EXACT EQUALITY against a value built by repeated `+= 0.008`
+    // from 1.5, and both fire in the real game — GML compares reals with a
+    // tolerance, JS `===` does not. This was previously read two different
+    // wrong ways (a `>=` rewrite here, a "dead branch" retraction there); see
+    // sim/gml.js's gmlEq for the recording that settles it.
+    //
+    // NOTE the ORDER: 3.66 comes first, and its 16-frame delay means the
+    // vortex starts fading out ten frames before he changes pose.
+    if (gmlEq(e.intensity, 3.66)) {
+      // `scr_script_delayed(scr_lerpvar, 16, "ball_darkness", 1, 0, 32, 1, "out")`
+      e.ballDarknessDelay = 15; // see DELAYED_TWEEN above
+      e.ballDarknessTo = 0;
+      // The white bloom that covers the change: obj_knight_circle at the
+      // knight's centre, black and 480 wide, its r/g/b_goal all lerping to
+      // 255 over 48 frames while `size_goal` pulls it shut. `visible = false`
+      // and `draw_in_box = false` — it is composited by the roar's own Draw
+      // (the `with (obj_knight_circle) event_user(1)` pass), not by itself.
+      const c = spawn(state, knightCircle, {
+        x: state.view.x + e.fake_x,
+        y: state.view.y + e.fake_y + 55,
+      });
+      c.r = 0; c.g = 0; c.b = 0;
+      c.r_goal = 255; c.g_goal = 255; c.b_goal = 255;
+      c.fade_time = 48;
+      c.circle_size = 480;
+      c.size_goal = 0;
+      c.growth = 10;
+      c.draw_in_box = false;
+      c.visible = false;
+      c.destroyAt = 48;
+      scrLerpvar(state, spawn, c, 'r_goal', 0, 255, 48, 0);
+      scrLerpvar(state, spawn, c, 'g_goal', 0, 255, 48);
+      scrLerpvar(state, spawn, c, 'b_goal', 0, 255, 48, 1);
+    }
+
+    if (gmlEq(e.intensity, 3.74) && e.knight_sprite === 'spr_roaringknight_front') {
       e.knight_sprite = 'spr_roaringknight_front_flourish';
       e.knight_sprite_image = 0;
       e.knight_sprite_speed = 0;
       scrLerpvar(state, spawn, e, 'knight_sprite_image', 0, 4, 16);
+      // `scr_script_delayed(scr_lerpvar, 8, "fake_alpha", 1, 0, 32)` — he
+      // FADES OUT as he flourishes, which is what leaves the vortex alone on
+      // screen for the beat before the roar.
+      e.fakeAlphaDelay = 7; // `scr_script_delayed(..., 8, ...)`; see above
+    }
+    if (e.fakeAlphaDelay > 0) {
+      e.fakeAlphaDelay -= 1;
+      if (e.fakeAlphaDelay === 0) {
+        scrLerpvar(state, spawn, e, 'fake_alpha', 1, 0, 32);
+      }
     }
 
     if (e.roaring_timer < 1 && e.intensity < 4) {

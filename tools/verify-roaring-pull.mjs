@@ -76,6 +76,21 @@ const inputAt = makeInputTable(ORACLE_PULL_INPUT);
 let checked = 0;
 let pulled = 0;
 let shakenFrames = 0;
+// `ball_darkness` is the alpha the Draw composites the whole vortex at, and it
+// is the ONLY thing standing between "every layer computed" and "every layer
+// visible". It shipped stuck at 0 — the tiled flow, the six rings, the per-row
+// ripple and the cycling HSV hue were all built every frame and then drawn at
+// zero opacity, so the roar played out on a black screen. No suite could see
+// that: the sim was correct everywhere the sim was checked, and the missing
+// piece was one `if (timer == 118)` in the Step.
+let ballDarknessPeak = 0;
+let ballDarknessEarly = 0;
+// The wind-up is the part that was dark, and it is most of the attack. There
+// is a SECOND setter — `ball_darkness = 1` at roaring_timer 9, the roar itself
+// — so peaking at 1 proves nothing: with the Step's cue missing, the vortex
+// still lit up for the last stretch and stayed black through the two hundred
+// frames before it. Count the frames that are lit BEFORE the roar.
+let litWindupFrames = 0;
 const failures = [];
 const startY = 155.5500030518;
 
@@ -107,10 +122,25 @@ for (let frame = 0; frame <= to; frame++) {
 
   if (Math.abs(state.soul.y - startY) > 1) pulled += 1;
 
+  ballDarknessPeak = Math.max(ballDarknessPeak, r.ball_darkness ?? 0);
+  // 134 is the cue (timer 118 + a 16-frame delay), 166 the end of its
+  // 32-frame lerp; `roaring_timer < 1` is "the roar has not happened yet".
+  if ((r.timer ?? 0) > 166 && (r.roaring_timer ?? 0) < 1 && r.ball_darkness >= 1) {
+    litWindupFrames += 1;
+  }
+  // It must not be up BEFORE its cue: the lerp starts at timer 118 + 16.
+  if ((r.timer ?? 0) < 134) {
+    ballDarknessEarly = Math.max(ballDarknessEarly, r.ball_darkness ?? 0);
+  }
+
   const v = view.get(frame);
   const exact = [
     ['player_suck', c.player_suck, real(r.player_suck)],
     ['intensity', c.intensity, real(r.intensity)],
+    // The vortex's compositing alpha, compared against the recording rather
+    // than merely asserted non-zero — the trace carries the column, so the
+    // whole 32-frame ease_out curve is checked frame by frame.
+    ['ball_darkness', c.ball_darkness, real(r.ball_darkness)],
     ['roaring_timer', c.roaring_timer, real(r.roaring_timer)],
   ];
   if (v) {
@@ -314,6 +344,17 @@ if (checked < 150 || pulled < 30) {
 // stars over 150..461, and the frames on which stars are actually alive to
 // compare, are the measured counts — a translation that stopped firing would
 // not reach them.
+if (ballDarknessPeak < 1 || ballDarknessEarly > 0 || litWindupFrames < 100) {
+  console.log(
+    `EXECUTION ASSERTION FAILED: ball_darkness peaked at ${ballDarknessPeak}`
+    + ` (early ${ballDarknessEarly}), lit for ${litWindupFrames} wind-up frames`,
+  );
+  console.log('  expected 0 until timer 134, a lerp to a full 1, and >= 100'
+    + ' frames of a LIT wind-up — the vortex is composited at this alpha and'
+    + ' 0 means the roar builds on a black screen');
+  process.exit(1);
+}
+
 if (engineRings.size < 69 || ringStars < 194 || starFrames < 40 || shakenFrames < 32 || released < 16) {
   console.log(
     `EXECUTION ASSERTION FAILED: rings=${engineRings.size} stars=${ringStars} starFrames=${starFrames} shaken=${shakenFrames} released=${released}`,
@@ -338,4 +379,5 @@ console.log(
 );
 console.log(`→ ${released} stars released, ${burst} completed the full burst arc (release fires)`);
 console.log(`→ camera exact on every frame, ${shakenFrames} of them shaken (obj_shake computed)`);
+console.log(`→ ball_darkness 0 -> ${ballDarknessPeak}, lit for ${litWindupFrames} wind-up frames`);
 console.log(`\nPASS  frames ${from}..${to} — roaring soul pull + star rings + screen shake (ac 9)`);

@@ -396,6 +396,54 @@ If bit-exactness is ever needed, the next step is disassembling the runner's
 shuffle rather than more black-box probing; 18 samples were not enough and
 more of the same will not help.
 
+## GML `==` ON REALS IS NOT `===`
+
+GameMaker compares two reals with a TOLERANCE (`math_set_epsilon`; nothing in
+the dump overrides the default). JavaScript's `===` is bit-exact. So any
+translated `==` against an accumulated value fires in the game and **cannot**
+fire in a literal translation:
+
+```gml
+intensity = scr_approach(intensity, 4, 0.008);      // 1.5 + 0.008 * n
+if (intensity == 3.66) { ...ball_darkness fades out... }
+if (intensity == 3.74 && knight_sprite == 664) { ...the pose... }
+```
+
+270 additions of 0.008 onto 1.5 land on **3.6600000000000019** in f64 (and
+3.65997958 in f32). Neither is the literal, and both are inside any tolerance
+GameMaker has shipped.
+
+**This cost two sessions and produced two different wrong answers.** The 3.74
+pose was rewritten as `>= 3.74` and shipped labelled "deliberate deviation";
+the 3.66 fade was read as an ORIGINAL BUG and left unwritten — a wrong
+retraction, the failure mode this file already warns about twice. It was the
+whole reason ROARING played out on a black screen: `ball_darkness` is the
+alpha the roar's Draw composites its entire vortex at, and it never left 0.
+
+`traces/roaring2.csv` settles it. ball_darkness leaves 1 at frame 427 —
+exactly 16 frames (the `scr_script_delayed`) after intensity reaches 3.66 at
+frame 411 — and its value there is `1 - sin((1/32) * pi/2)` to ten decimals.
+The branch fires. The recording also BOUNDS the epsilon without needing the
+manual: it fired on one frame only, and consecutive steps are 0.008 apart, so
+anything in **(2e-15, 0.004)** reproduces it. `sim/gml.js` uses 1e-5 —
+GameMaker's documented default and inside that interval — but the interval is
+the part this project can defend.
+
+**Rule: use `gmlEq()` for any translated `==` between reals where either side
+is accumulated, lerped or computed.** Integers and literal-assigned values are
+safe with `===`. Grep for `=== <fractional literal>` when translating.
+
+### A delayed tween lands one frame earlier than it looks
+
+`scr_script_delayed(scr_lerpvar, 16, ...)` arms an alarm 16 frames out, and
+GameMaker runs **Alarms before Step** — so the `obj_lerpvar` that alarm creates
+gets its own first Step on that same frame, and its first write is 16 frames
+after the call. This engine freezes the entity list at the start of each phase
+(sim/entity.js), so a tween spawned during an alarm does not step until the
+next frame. **Count `n - 1`.** Measured, not reasoned: at 16 the roar's fade
+started on frame 428 against the recording's 427, and every frame after was one
+behind.
+
 ## Float32 built-ins
 
 **Every built-in instance field narrows to f32 on store.** Measured on a real

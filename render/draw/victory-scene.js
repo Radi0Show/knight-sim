@@ -243,12 +243,19 @@ export function drawVictoryScene(ctx, sc, sprites) {
     }
     // The text — fnt_mainbig at the dark typer's metrics (advance 16, line
     // height 36), shifted right of the face (writingx += 58 * f, f = 2).
+    //
+    // `special: 1` IS THE SHADOW, and it is not decoration here — c_speaker
+    // in a dark zone selects `global.typer = 6`, whose scr_textsetup call
+    // ends `..., snd_text, 16, 36, 1)`. That last argument is what puts a
+    // dkgray-to-navy copy one pixel down-right of every glyph. Reported from
+    // play as the ending's text missing "some kind of shadow background
+    // thing"; it was never in the typer table this renderer was reading.
     const font = loadFont('../assets/fonts', 'fnt_mainbig');
     if (font?.ready) {
       const lines = revealed(formatWriter(line.text, 26), sc.dialogue.timer, 1);
       for (let i = 0; i < lines.length; i++) {
         drawText(ctx, font, lines[i], writerX + 116, writerY + 8 + i * 36,
-          { color: 'rgb(255,255,255)', advance: 16 });
+          { color: 'rgb(255,255,255)', advance: 16, special: 1 });
       }
     }
   }

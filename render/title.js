@@ -187,6 +187,20 @@ function drawSettings(ctx, title, sprites, font) {
     return;
   }
 
+  if (s.page === 'shake') {
+    centred(ctx, font, 'SCREEN SHAKE', 60, c_white, 1.4);
+    if (heart) drawSpriteExt(ctx, heart, 0, 110 + bob, 194, 1, 1, 0, null, 1);
+    drawText(ctx, font, 'SCREEN SHAKE', 140, 190, { color: rgb(HILITE) });
+    drawText(ctx, font, title.shake ? 'ON' : 'OFF', 420, 190, { color: rgb(HILITE) });
+    // Say what it is, because the honest answer to the report behind this
+    // page is "the game really does shake the whole view".
+    centred(ctx, font, "obj_shake moves the CAMERA, so the party moves with it.", 270, DIM, 0.75);
+    centred(ctx, font, "OFF is the game's own global.flag[12] — the shake object still", 296, DIM, 0.75);
+    centred(ctx, font, 'runs, it just never touches the view.', 320, DIM, 0.75);
+    centred(ctx, font, 'arrows  toggle      X  back', 448, DIM, 0.75);
+    return;
+  }
+
   if (s.page === 'audio') {
     centred(ctx, font, 'MUSIC / SFX', 60, c_white, 1.4);
     const rows = [
@@ -492,8 +506,18 @@ function drawFailure(ctx, over, font, heart) {
       // screen. This stepped by a flat 30, mixing a scaled origin with an
       // unscaled stride, and the block drifted tighter than the game's.
       // `hspace = 12` is the per-character advance.
+      // `special = 2`, the eleventh argument of typer 667's scr_textsetup:
+      //
+      //     case 667: scr_textsetup(main, c_white, ..., snd_nosound, 12, 20, 2);
+      //
+      // A PULSING GLOW, not a shadow — the glyph is drawn at the four
+      // cardinals at `0.3 + sin(siner/14) * 0.1` and the four diagonals at
+      // `0.08 + sin(siner/14) * 0.04`, then solid on top. `specfade` scales
+      // all of it and is pinned at 1: DEVICE_FAILURE only lowers it inside
+      // `if (specfade <= 0.9)`, which can never be true starting from 1 —
+      // an ORIGINAL BUG, so the glow never dims on a held X.
       drawText(ctx, font, s, rx(70), rx(80) + i * rx(20),
-        { color: rgb(c_white), advance: 12 });
+        { color: rgb(c_white), advance: 12, special: 2, siner: over.t });
     });
   }
 
@@ -508,15 +532,19 @@ function drawFailure(ctx, over, font, heart) {
   const yoff = rx(20) * (1 - Math.min(1, over.choiceT / 20));
   if (xfade <= 0) return;
 
-  ctx.globalAlpha = xfade;
+  // THE FADE HAS TO BE PASSED IN, not set on the context: drawText does its
+  // own `save()` / `globalAlpha = alpha` / `restore()`, so an outer
+  // globalAlpha was being overwritten by the default 1 and the ten-frame
+  // fade-in never appeared. It also has to reach the glow copies, which scale
+  // their own 0.3/0.08 alphas by it — `specfade` in the original does exactly
+  // this, and DEVICE_FAILURE's ten-frame `xfade` is the same idea one layer up.
   CHOICES.forEach((c, i) => {
     const color = rgb(over.cur === i ? C_YELLOW : c_white);
     c.name.forEach((s, k) => {
       drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * rx(20),
-        { color, advance: 12 });
+        { color, advance: 12, special: 2, siner: over.t, alpha: xfade });
     });
   });
-  ctx.globalAlpha = 1;
 }
 
 /**

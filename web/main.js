@@ -32,6 +32,47 @@ import { resetTensionBar } from '../render/tensionbar.js';
 const canvas = document.getElementById('game');
 const renderer = await createRenderer(canvas);
 const ctx = renderer.ctx;
+
+/**
+ * THE CANVAS IS SIZED TO A WHOLE NUMBER OF DEVICE PIXELS PER GAME PIXEL.
+ *
+ * The letterbox used to be pure CSS — `width: min(100vw, 100vh * 4/3)` — which
+ * fills the window but lands on a fractional scale almost every time. With
+ * `image-rendering: pixelated` a factor of, say, 4.725 gives some source
+ * columns four device pixels and their neighbours five, so a one-pixel font
+ * stem is fat on one letter and thin on the next and a horizontal rule
+ * shimmers. Reported as the menu text looking "weird" after the fullscreen
+ * change; it is not a filtering setting, and no filtering setting fixes it.
+ *
+ * So: measure in DEVICE pixels (a 2x display makes 640 CSS px into 1280 real
+ * ones, and only the real count has to divide evenly), take the largest whole
+ * multiple that fits, and give that back to CSS divided by the ratio. Every
+ * game pixel is then exactly `scale` device pixels, everywhere on screen.
+ *
+ * Below 1x — a window smaller than 640x480 device pixels — there is no whole
+ * multiple to land on, so it falls back to the old fractional fit. Showing the
+ * whole frame slightly soft beats cropping the arena.
+ */
+function fitCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const availW = window.innerWidth * dpr;
+  const availH = window.innerHeight * dpr;
+  const fit = Math.min(availW / renderer.VIEW_W, availH / renderer.VIEW_H);
+  const scale = fit >= 1 ? Math.floor(fit) : fit;
+  canvas.style.width = `${(renderer.VIEW_W * scale) / dpr}px`;
+  canvas.style.height = `${(renderer.VIEW_H * scale) / dpr}px`;
+}
+fitCanvas();
+window.addEventListener('resize', fitCanvas);
+// A window dragged between displays changes devicePixelRatio without ever
+// firing `resize`; this is the documented way to hear about that.
+if (window.matchMedia) {
+  const watchDpr = () => {
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    mq.addEventListener('change', () => { fitCanvas(); watchDpr(); }, { once: true });
+  };
+  watchDpr();
+}
 const audio = createAudio();
 const keyboard = bindKeyboard(window);
 const gamepad = bindGamepad();
@@ -132,17 +173,31 @@ window.__intro = {
 // Deterministic single-frame inspection of the ENDING, auto-confirming the
 // dialogue gates. Same hold semantics as __intro.drive.
 window.__cutscene = {
-  drive(t) {
+  /**
+   * @param t         frames to run
+   * @param opts.hold if set, STOP pressing confirm from this frame on — the
+   *                  run parks on whichever dialogue gate it reaches next,
+   *                  which is the only way to inspect a textbox that a
+   *                  confirm-every-other-frame driver clears before you can
+   *                  screenshot it.
+   */
+  drive(t, opts = {}) {
     window.__intro.hold = true;
     const sc = createVictoryScene();
     const cues = [];
     // Alternate confirm every other frame: gates need a fresh edge.
-    for (let i = 0; i < t; i++) stepVictoryScene(sc, { confirm: i % 2 === 0 }, cues);
+    for (let i = 0; i < t; i++) {
+      const held = opts.hold !== undefined && i >= opts.hold;
+      stepVictoryScene(sc, { confirm: !held && i % 2 === 0 }, cues);
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
     drawVictoryScene(ctx, sc, renderer.sprites);
-    return { t: sc.t, done: sc.done, wait: sc.wait, scriptIndex: sc.scriptIndex };
+    return {
+      t: sc.t, done: sc.done, wait: sc.wait, scriptIndex: sc.scriptIndex,
+      dialogue: sc.dialogue ? { ...sc.dialogue } : null,
+    };
   },
 };
 window.__sim = {
@@ -242,6 +297,9 @@ function reset() {
   // THE LOADOUT COMES FROM SETTINGS. The title's equip menu edits title.gear;
   // every fresh fight is built with a copy of it (sim/damage.js gearOf).
   state.loadout.gear = title.gear.map((g) => ({ weapon: g.weapon, armor: [...g.armor] }));
+  // …and so does the shake switch. A fresh state starts with flag 12 clear, so
+  // without this an R-restart silently turned the camera shake back on.
+  state.flag12 = title.shake ? 0 : 1;
   // A reset starts a new recording — a token must describe exactly one run.
   recorder = createRecorder({ seed: state.seed, mode, attack: attackId, difficulty });
   state.spriteFrames = renderer.spriteFrames;
@@ -338,13 +396,18 @@ try {
     title.volumes.music = Math.max(0, Math.min(100, saved.volumes.music | 0));
     title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
   }
+  if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
 } catch { /* a corrupt entry falls back to the defaults */ }
 
 function persistSettings() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ gear: title.gear, volumes: title.volumes }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      gear: title.gear, volumes: title.volumes, shake: title.shake,
+    }));
   } catch { /* private mode etc. — the session still works, unsaved */ }
   audio.setVolumes(title.volumes.music / 100, title.volumes.sfx / 100);
+  // `global.flag[12]` in the sim's terms: SET means "do not move the view".
+  state.flag12 = title.shake ? 0 : 1;
 }
 persistSettings();
 if (replay || params.get('mode')) title.mode = mode === 'practice' ? 'single' : 'normal';

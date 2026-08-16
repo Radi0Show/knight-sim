@@ -17,7 +17,7 @@
 import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
-import { gmlCreate, gmlChoose } from '../rng.js';
+import { gmlCreate, gmlChoose, gmlIrandom, gmlRandom } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
@@ -28,6 +28,7 @@ import { applyItem } from '../items.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_ITEM, HERO_SPELL } from '../heroes.js';
 import {
   advanceBalloon, advanceReply, clearDialogue, dialogueDone, dialogueSkipTimer,
+  textSoundChar, TV_VOICE_COUNT,
 } from '../dialogue.js';
 import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
@@ -178,6 +179,14 @@ const director = {
       state.battlemsgTimer = 0;
     } else {
       state.battlemsgTimer = (state.battlemsgTimer ?? 0) + 1;
+      // ...and the blip that goes with each character. Typer 6's sound is
+      // `snd_text`; scr_textsound skips spaces and punctuation, so the line
+      // ticks rather than rattles. Held X mutes it, as it does the typing.
+      if (state.battlemsg
+        && textSoundChar(state.battlemsg, state.battlemsgTimer)
+        && !state.input?.focus) {
+        cue(state, 'snd_text', 1, 1);
+      }
     }
 
     // THE FIGHT IS LOST when all three are down. The real game goes to its
@@ -535,6 +544,25 @@ const director = {
           state.dialogue.timer, dialogueSkipTimer(state.dialogue.text));
       }
       state.dialogue.timer += 1;
+      // THE BALLOON'S VOICE, and the two speakers do not share one. Susie is
+      // typer 75 (`snd_txtsus`); the Knight is typer 81, whose sound is
+      // `snd_tv_voice_short` — and scr_textsound gives that one alone a
+      // special case: nine samples, `irandom(8) + 1` per character, gain 0.7
+      // and pitch `0.86 + random(0.35)`, with all nine stopped first so they
+      // never overlap. He is voiced by television static, which is the joke.
+      if (!state.input?.focus
+        && textSoundChar(state.dialogue.text, state.dialogue.timer)) {
+        if (state.dialogue.speaker === 'knight') {
+          const n = gmlIrandom(state.gmlRng, TV_VOICE_COUNT - 1) + 1;
+          const name = n >= 2 ? `snd_tv_voice_short_${n}` : 'snd_tv_voice_short';
+          for (let i = 1; i <= TV_VOICE_COUNT; i++) {
+            cueStop(state, i >= 2 ? `snd_tv_voice_short_${i}` : 'snd_tv_voice_short');
+          }
+          cue(state, name, 0.86 + gmlRandom(state.gmlRng, 0.35), 0.7);
+        } else {
+          cue(state, 'snd_txtsus', 1, 1);
+        }
+      }
       const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
 
       // TWO BUTTONS ADVANCE THIS, and only one of them was wired up.

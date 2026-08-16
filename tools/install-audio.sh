@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Install the fight's SFX into assets/audio/ from a local extraction.
 #
-# NOTHING HERE IS SHIPPED. `assets/audio/` is gitignored and empty in the repo:
-# DELTARUNE's audio is sold separately and is the most sensitive asset on this
-# project (CLAUDE.md, "Assets"). The tool ships silent, and each player points
-# it at their own copy of the game.
+# ~~NOTHING HERE IS SHIPPED — `assets/audio/` is gitignored and the tool ships
+# silent.~~ STALE, and it contradicted .gitignore for several sessions. The SFX
+# and the soundtrack are both recorded in CLAUDE.md as specifically permitted,
+# `.gitignore` carves `assets/audio/*.wav|*.ogg|index.json` back IN, and 80-odd
+# samples are tracked. This script is now for ADDING to that pack, not for
+# standing one up from nothing.
 #
-# Two steps, because the fight's 19 cues are all PACKED — not one of them is a
-# loose .ogg in the bundle:
+# Two steps, because the fight's cues are all PACKED — not one of them is a
+# loose .ogg in the bundle (the music is the exception; `knight.ogg` is loose
+# and was simply copied):
 #
 #   1. extract, from your own game file:
 #        cd ~/knight-research

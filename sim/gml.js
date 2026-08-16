@@ -50,6 +50,47 @@ export function inverselerp(a, b, v) {
   return (v - a) / (b - a);
 }
 
+/**
+ * GML `==` ON REALS IS NOT BIT-EXACT, AND THIS PROJECT LEARNED IT THE HARD WAY.
+ *
+ * GameMaker compares two reals with a TOLERANCE (`math_set_epsilon`; nothing in
+ * the dump overrides the default). JavaScript's `===` does not. So a GML branch
+ * written against an accumulated value —
+ *
+ *     intensity = scr_approach(intensity, 4, 0.008);   // 1.5 + 0.008 * n
+ *     if (intensity == 3.66) { ...ball_darkness fades out... }
+ *     if (intensity == 3.74 && knight_sprite == 664) { ...the pose... }
+ *
+ * — fires in the game and CANNOT fire in a literal translation. 270 additions
+ * of 0.008 onto 1.5 land on 3.6600000000000019 in f64 (and 3.65997958 in f32);
+ * neither is the literal `3.66`, but both are inside any tolerance GameMaker
+ * has ever shipped.
+ *
+ * Two separate sessions were bitten by this and got it wrong in two different
+ * ways: the 3.74 pose was patched to `>= 3.74` and labelled a deliberate
+ * deviation, and the 3.66 fade was read as an ORIGINAL BUG and left unwritten
+ * — which is a wrong retraction, the failure mode CLAUDE.md already warns
+ * about twice. The recording settles it: `traces/roaring2.csv` shows
+ * ball_darkness leaving 1 at frame 427, exactly 16 frames (the scr_script_
+ * delayed) after intensity reaches 3.66 at frame 411. The branch fires.
+ *
+ * The recording also BOUNDS the tolerance without needing GameMaker's docs: it
+ * fired on one frame only, and consecutive steps are 0.008 apart, so any
+ * epsilon in (2e-15, 0.004) reproduces what was recorded. 1e-5 is inside that
+ * window and is the default GameMaker's manual gives, so it is what is used
+ * here — but the assertion this project can actually defend is the interval,
+ * not the constant.
+ *
+ * USE THIS for any translated `==` between reals where either side is
+ * accumulated, lerped or otherwise computed. Integers and values assigned from
+ * a literal are safe with `===` and are left alone.
+ */
+export const GML_EPSILON = 1e-5;
+
+export function gmlEq(a, b) {
+  return Math.abs(a - b) < GML_EPSILON;
+}
+
 /** scr_ease_in(t, curve) — only the curves actually used are implemented. */
 export function scrEaseIn(t, curve) {
   if (curve < -3 || curve > 7) return t;

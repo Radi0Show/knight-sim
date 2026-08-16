@@ -241,3 +241,59 @@ export function dialogueDone(text, timer) {
 export function dialogueSkipTimer(text) {
   return Math.ceil(msgLines(text).join('').length / CHARS_PER_FRAME);
 }
+
+/**
+ * scr_textsound — THE TYPEWRITER BLIP, and it is per-typer, not one sound.
+ *
+ * `scr_textsetup`'s EIGHTH argument names it, from the same table row that
+ * carries the font, the spacing and the shadow:
+ *
+ *     case  6  mainbig   c_white  rate 1  snd_text             (message box,
+ *                                                               and the ending)
+ *     case 75  dotumche  c_black  rate 1  snd_txtsus           (Susie's balloon)
+ *     case 81  dotumche  c_black  rate 1  snd_tv_voice_short   (the Knight's)
+ *     case 667 main      c_white  rate 2  snd_nosound          (Game Over)
+ *
+ * So the Knight does not talk, he TRANSMITS — his balloon is voiced by the
+ * same TV-static syllables the chapter's televisions use, and the Game Over
+ * screen is deliberately silent. Neither is a detail a generic "text beep"
+ * would have got right.
+ *
+ * WHAT DOES NOT PLAY, from scr_textsound's own list: a space, and any of
+ * `^ ! . ? , : / \ | *`. That is not a nicety — "* We.. we actually beat
+ * it?" is thirteen silent characters out of twenty-seven, and blipping on
+ * all of them is the difference between speech and a machine gun. `&` and a
+ * newline look AHEAD one character instead (at rate < 3) and blip on that.
+ *
+ * Holding X mutes it (`button2_h()` -> `playtextsound = 0`) unless the line
+ * is unskippable. The caller passes `muted` because input lives outside this
+ * module.
+ */
+const SILENT_CHARS = new Set([' ', '^', '!', '.', '?', ',', ':', '/', '\\', '|', '*']);
+
+export function textSoundChar(text, timer, cps = CHARS_PER_FRAME) {
+  // The character revealed BY this frame: pos is 1-based in the original and
+  // `getchar = string_char_at(mystring, pos)` at rate <= 2.
+  const s = msgLines(text).join('\n');
+  const pos = Math.floor(timer * cps);
+  if (pos < 1 || pos > s.length) return null;
+  let ch = s[pos - 1];
+  // `if (getchar == "&" || getchar == "\n")` — at rate < 3 the blip belongs
+  // to the character AFTER the break, not to the break.
+  if ((ch === '&' || ch === '\n') && cps >= 0.5) ch = s[pos] ?? '';
+  if (!ch || SILENT_CHARS.has(ch)) return null;
+  return ch;
+}
+
+/**
+ * The Knight's voice is NINE SAMPLES, picked per character:
+ *
+ *     var rand = irandom(8) + 1;
+ *     soundindex = "snd_tv_voice_short" + (rand >= 2 ? "_" + rand : "");
+ *     ...all nine stopped...
+ *     snd_play_x(soundindex, 0.7, 0.86 + random(0.35));
+ *
+ * `global.flag[1054]` multiplies the pitch and is forced to 1 the first time
+ * it is read, so it is 1 here.
+ */
+export const TV_VOICE_COUNT = 9;

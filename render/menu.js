@@ -527,6 +527,11 @@ function drawBattleMsg(ctx, state, font) {
   const lines = revealed(formatted, state.battlemsgTimer ?? 1e9, 1);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i]) continue;
-    drawText(ctx, font, lines[i], 30, 376 + i * lh, { color: rgb(c_white), advance: 16 });
+    // The ELEVENTH argument of that same scr_textsetup call is `special = 1`
+    // — the dkgray-to-navy shadow one pixel down and right of each glyph.
+    // Same typer, same shadow, as the ending's dialogue; see render/font.js.
+    drawText(ctx, font, lines[i], 30, 376 + i * lh, {
+      color: rgb(c_white), advance: 16, special: 1,
+    });
   }
 }
