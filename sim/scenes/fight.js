@@ -34,6 +34,7 @@ import { swordTunnelManager } from '../attacks/sword-tunnel.js';
 import { swordVortexManager } from '../attacks/sword-vortex.js';
 import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { diagonalBulletManager } from '../attacks/diagonal-bullets.js';
+import { knightStream } from '../attacks/knight-stream.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -133,6 +134,9 @@ function invcFor(ac) {
  * move or resize it; everything else uses the default.
  */
 function arenaFor(ac) {
+  // `if (myattackchoice == 4) { obj_growtangle.maxxscale = 3.5;
+  //  obj_growtangle.maxyscale = 3.5; }` — the widest arena in the dispatch.
+  if (ac === 4) return { x: 320, y: 170, xscale: 3.5, yscale: 3.5 };
   if (ac === 11) return { x: 320, y: 190, xscale: 2, yscale: 2 };
   if (ac === 13) return { x: 300, y: 190, xscale: 3, yscale: 2 };
   if (ac === 1) return { x: 320, y: 170, xscale: 2.25, yscale: 1.75 };
@@ -389,6 +393,15 @@ export function launchAttack(state, entry) {
     // never choose (the phase blocks reassign `phaseturn` before their rows
     // can fire — see nextTurn). They exist for the SINGLE practice mode,
     // launched exactly as the dispatch table would.
+
+    case 4: {
+      // `dc.type = 103`: the arena is blown up to 3.5 x 3.5 (both in the
+      // knight's Step and again in the controller), the knight is hidden, and
+      // the manager takes over.
+      if (knight) knight.image_alpha = 0;
+      const mg = spawn(state, knightStream, { x: kx, y: ky });
+      return mg;
+    }
 
     case 12: {
       // `dc.type = 152` — obj_diagonal_bullet_manager at (growtangle.x,

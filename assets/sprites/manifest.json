@@ -5548,5 +5548,24 @@
    "spr_zapper_tvturnoff2_2.png",
    "spr_zapper_tvturnoff2_3.png"
   ]
+ },
+ "spr_diamondbullet": {
+  "w": 33,
+  "h": 32,
+  "ox": 16,
+  "oy": 15,
+  "frames": 1,
+  "bbox": [
+   10,
+   14,
+   23,
+   17
+  ],
+  "sepmasks": "Precise",
+  "playback": 1,
+  "playbacktype": "FramesPerGameFrame",
+  "files": [
+   "spr_diamondbullet_0.png"
+  ]
  }
 }

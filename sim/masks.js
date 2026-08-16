@@ -112,6 +112,15 @@ export const QUICKSLASH_MARKER_MASK = build(raw.quickslashmarker);
  *  sepmasks is AxisAlignedRect with bbox [6,6]..[9,9]: a 4x4 block centred
  *  in a 16x16 sheet, origin (8,8). */
 export const SMALLBULLET_MASK = build(raw.smallbullet);
+/**
+ * `spr_diamondbullet` — the knight stream's shed bullets. NOTE the near-miss:
+ * `spr_knight_diamondbullet_l` above is a DIFFERENT sprite (the sword
+ * tunnel's, 99x32) and owns the `diamondbullet` key; this one is 33x32 and is
+ * keyed `streamdiamond`. Writing it to the obvious key overwrote the tunnel's
+ * mask, which no suite would have caught quickly — the tunnel would simply
+ * have started missing.
+ */
+export const STREAMDIAMOND_MASK = build(raw.streamdiamond);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -141,6 +150,7 @@ export const SPRITE_MASKS = {
   spr_roaringknight_tooth: TOOTH_MASK,
   spr_rk_fountain_bullet: FOUNTAIN_MASK,
   spr_smallbullet: SMALLBULLET_MASK,
+  spr_diamondbullet: STREAMDIAMOND_MASK,
 };
 
 /**

@@ -38,10 +38,27 @@ const FRAMES = 900;
 // The bullets below legitimately keep a value the check would otherwise
 // flag, with the dump line that says so. Anything not listed must inherit.
 const EXPECTED = new Map([
-  // No entries today. Add one only with a dump citation showing the object
-  // is spawned WITHOUT an inherit and never overrides — not to silence a
-  // failure. A wrong entry here re-hides exactly the bug this file exists to
-  // catch.
+  // Add one only with a dump citation showing the object is spawned WITHOUT
+  // an inherit and never overrides — not to silence a failure. A wrong entry
+  // here re-hides exactly the bug this file exists to catch.
+  //
+  // THE X-ATTACK'S DIAMONDS REALLY DO 10, and the whole chain says so:
+  //
+  //   obj_dbulletcontroller Create      damage = -1   (the "leave alone"
+  //                                                    sentinel)
+  //   knight Step, myattackchoice 4     sets dc.type = 103 and nothing else
+  //   type 103                          scr_bullet_inherit(knight_stream)  —
+  //                                     copies nothing, damage being -1
+  //   obj_bullet_knight_stream Step     scr_fire_bullet(..., obj_regularbullet,
+  //                                     direction + 180, 15, spr_diamondbullet)
+  //                                     — arg7 (inherit) not passed, so false
+  //
+  // Nothing anywhere assigns this attack a damage value, so its bullets carry
+  // scr_bullet_init's 10 and land as 1. That is the original's behaviour in
+  // unreachable debug content (ac 4 is never selected — see CLAUDE.md), the
+  // same family as `destroy_on_hit`, `splitbox` and `linex`. Writing a real
+  // number here would be inventing one the dump does not contain.
+  ['obj_bullet_stream_diamond', PLACEHOLDER],
 ]);
 
 function damagingEntities(state) {

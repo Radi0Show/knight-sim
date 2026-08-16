@@ -29,6 +29,7 @@ import {
   drawSplitslashStrike,
 } from './draw/swords.js';
 import { drawKnightCircle } from './draw/knight-circle.js';
+import { drawKnightStream } from './draw/knight-stream.js';
 import { drawRotatingSlashTelegraph } from './draw/rotating-slash.js';
 import { createSplitBox } from './splitbox.js';
 import { scrEaseOut, clamp01, lerp } from '../sim/gml.js';
@@ -143,6 +144,12 @@ export async function createRenderer(canvas) {
 
   const DRAW_EVENTS = {
     obj_knight_pointing_cone: drawPointingCone,
+    // The stream draws its beams, its streamlines AND its diamonds itself,
+    // clipped to the box — see render/draw/knight-stream.js.
+    obj_knight_stream: drawKnightStream,
+    obj_bullet_knight_stream: () => true,
+    obj_knight_streamline: () => true,
+    obj_bullet_stream_diamond: () => true,
     obj_knight_pointing_star: drawPointingStar,
     obj_knight_roaring2: drawRoaring,
     obj_marker_screenpiece: drawScreenPiece,
