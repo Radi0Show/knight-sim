@@ -168,7 +168,12 @@ export function battleMsgFor(phase, phaseturn, opts = {}) {
     const down = downMsg(partyHp, downSeen);
     if (down) return down;
   }
-  if (phase === 4 && phase4turn !== undefined) {
+  // `if (phase == 4 || haveusedroaring == true)` — the CALLER encodes that
+  // condition by passing a `phase4turn` at all, because the second half of it
+  // is true while `phase` reads 3. Testing `phase === 4` here instead dropped
+  // every message after ROARING sends the fight back to phase 3, which is
+  // exactly when the guard-drop line is supposed to be up.
+  if (phase4turn !== undefined) {
     return phase4Msg(phase4turn, partyHp?.[1] ?? 1, haveusedroaring, progamer);
   }
   return BATTLE_MSG[phase]?.[phaseturn] ?? null;

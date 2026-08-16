@@ -394,8 +394,39 @@ const director = {
       // `global.battlemsg[0]` is never cleared between turns, so a null here
       // leaves the previous line up rather than blanking the box.
       {
+        // PHASE4TURN IS 1-BASED AND THIS PASSED THE 0-BASED ROW INDEX.
+        // `phase4turn++` runs at the top of the selector, so the turn that
+        // launches ROARING reads 3 — while the sim's phase-4 rows are 0/1/2.
+        // Every phase-4 line therefore arrived one turn late, and the value
+        // 3 was never reached at all, which is where the NO-DAMAGE line
+        // lives:
+        //
+        //     if (phase4turn == 3 && progamer == true)
+        //         "* Kris coughed.&* The enemy slowly tilted its head..."
+        //
+        // so a flawless run could not produce it. Reported from play.
+        //
+        // Three cases, in the game's own order:
+        //
+        //  * THE GATE TRIPS. `if (hp <= maxhp * 0.8 ...) phase = 4;` sits
+        //    directly ABOVE the message block, so the turn that opens phase
+        //    4 already reads as phase 4 with `phase4turn` still 0 — the
+        //    entry line, "Your heartbeat becomes twisted."
+        //  * INSIDE PHASE 4. Row index + 1.
+        //  * AFTER ROARING. The counter FREEZES at 3 (Other_10 only
+        //    increments it inside `if (phase == 4)`) while `haveusedroaring`
+        //    keeps the block alive, so the guard-drop line — or the progamer
+        //    line — stays up for every remaining turn. That is the fight
+        //    telling you to swing.
+        const gateTrips = state.runMode !== 'endless' && e.phase !== 4
+          && phase4Reached(state) && !state.knight?.haveusedroaring;
+        let p4;
+        if (gateTrips) p4 = 0;
+        else if (e.phase === 4) p4 = e.turn + 1;
+        else if (state.knight?.haveusedroaring) p4 = 3;
+
         const msg = battleMsgFor(e.phase, state.phaseturn ?? 0, {
-          phase4turn: e.phase === 4 ? e.turn : undefined,
+          phase4turn: p4,
           partyHp: state.partyHp,
           haveusedroaring: state.knight?.haveusedroaring,
           progamer: state.knight?.progamer,

@@ -169,8 +169,15 @@ buildPracticeScene(g, { seed: 12345 });
 
 const gateFailures = [];
 const seen = [];
+const msgs = [];
 let prev = null;
 let gated = false;
+
+// NO CONTACT EVER LANDS, so `progamer` stays true and this doubles as the
+// FLAWLESS-RUN scenario. The phase order under test does not depend on the
+// party taking damage, and the payoff is that the phase-4 message track —
+// whose gating value only exists on a no-damage run — is checked end to end.
+g.damageEnabled = false;
 
 for (let f = 0; f < 30000 && seen.length < 24; f++) {
   stepFrame(g, menuInput(g));
@@ -190,6 +197,9 @@ for (let f = 0; f < 30000 && seen.length < 24; f++) {
 
   if (g.phase !== prev) {
     seen.push(g.phase);
+    // The line ON SCREEN as this turn opens — written at the end of the one
+    // before it, exactly as the game writes `global.battlemsg[0]`.
+    msgs.push(g.battlemsg);
     prev = g.phase;
   }
 }
@@ -235,6 +245,41 @@ if (idx4 >= 0 && seen.slice(idx4 + 3).some((t) => t.startsWith('phase 4'))) {
   gateFailures.push('phase 4 was entered TWICE — the haveusedroaring guard is not holding');
 }
 
+// THE PHASE-4 MESSAGE TRACK, which is 1-BASED and was fed the 0-based row
+// index — so every line arrived a turn late and `phase4turn == 3` was never
+// reached. That value is the only thing the no-damage line hangs off:
+//
+//     if (phase4turn == 3 && progamer == true)
+//         "* Kris coughed.&* The enemy slowly tilted its head..."
+//
+// Asserted from a RUN rather than by calling phase4Msg directly, because the
+// pure function was always right — the call site was not, and a unit test on
+// the function could never have caught it.
+const PROGAMER = '* Kris coughed.&* The enemy slowly tilted its head...';
+if (idx4 >= 0) {
+  // The charge-up telegraph is up DURING ROARING (set at the charge-up's
+  // end). A late track shows "Susie grew pale." here instead.
+  if (msgs[idx4 + 2] !== "* The Knight's hands glow a strange color...") {
+    gateFailures.push(`the ROARING turn read ${JSON.stringify(msgs[idx4 + 2])}, `
+      + 'wanted the charge-up telegraph — the phase-4 message track is off by a turn');
+  }
+  // Nothing has touched the party, so progamer is intact and the finale line
+  // replaces "The enemy suddenly let down its guard!".
+  if (msgs[idx4 + 3] !== PROGAMER) {
+    gateFailures.push(`after ROARING a flawless run read ${JSON.stringify(msgs[idx4 + 3])}, `
+      + 'wanted the progamer line');
+  }
+  // And it STAYS up: phase4turn freezes at 3 and haveusedroaring keeps the
+  // block alive, so the phase-3 flavour lines must not take the box back.
+  if (msgs[idx4 + 4] !== undefined && msgs[idx4 + 4] !== PROGAMER) {
+    gateFailures.push(`the turn after that read ${JSON.stringify(msgs[idx4 + 4])}, `
+      + 'wanted the line to persist while the guard is down');
+  }
+  if (!g.knight.progamer) {
+    gateFailures.push('progamer was cleared in a run where no contact was enabled');
+  }
+}
+
 if (gateFailures.length) {
   for (const f of gateFailures) console.log(`→ FAILURE  ${f}`);
   console.log(`\n  turns seen: ${seen.join(' | ')}`);
@@ -244,4 +289,5 @@ if (gateFailures.length) {
 console.log(`→ phase 4 opened on the HP gate at turn ${idx4 + 1}, ran `
   + 'Rotating Slash → Charge-up → ROARING, then fell back to phase 3');
 console.log('→ the gate is one-shot: no second phase 4 despite HP staying under 5840');
+console.log('→ the flawless run earns "Kris coughed." on the guard drop, and it stays up');
 console.log('\nPASS  the playable scene runs the real fight order end to end');
