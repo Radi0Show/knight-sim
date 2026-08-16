@@ -15,6 +15,7 @@ import {
   regularbulletStep,
   collidebulletOther15,
 } from '../bullets/regularbullet.js';
+import { scrEaseIn } from '../gml.js';
 
 export const splitBullet = {
   name: 'obj_roaringknight_split_bullet',
@@ -53,6 +54,25 @@ export const splitBullet = {
   step(e, state) {
     regularbulletStep(e, state); // event_inherited()
     e.grazepoints = 3;
+
+    // THE TOOTH WARPS AS IT LEAVES THE CUT — its Draw's first two lines:
+    //
+    //     image_index = floor(scr_ease_in(anim_timer, 2) * image_number);
+    //     if (anim_timer < 1) anim_timer += 0.1;
+    //
+    // `image_number` is 2, and curve 2 is `power(t, 2)`, so the frame eases
+    // from 0 to 1 over ten frames instead of cutting straight over — the
+    // shape distorting as it forms. Neither the timer nor the index was
+    // advanced here, so every tooth drew frame 0 for its whole life
+    // (GitHub #5: the projectiles have no warping animation).
+    //
+    // ORDER MATTERS and is preserved: the index is computed from the CURRENT
+    // timer, then the timer advances. The float error is load-bearing too —
+    // ten additions of 0.1 land on 0.9999999999999999, so `floor(t * t * 2)`
+    // ends on 1 rather than the wrap-to-0 an exact 1.0 would give.
+    const frames = state.spriteFrames?.[e.sprite_index] ?? 2;
+    e.image_index = Math.floor(scrEaseIn(e.anim_timer, 2) * frames);
+    if (e.anim_timer < 1) e.anim_timer += 0.1;
 
     if (e.speed_mult < 1) {
       e.speed_mult += 0.2;

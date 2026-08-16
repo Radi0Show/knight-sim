@@ -425,11 +425,30 @@ export function stepIntroScene(sc, cues) {
           // so its opening y is 78 + cos(0)*8 = 86. Handing off mid-bob
           // popped the swap frame by up to 16px (reported from play).
           k.hoverPause = true;
+          // THE GLIDE IS HORIZONTAL. scr_battle's monstertype-104 branch:
+          //
+          //     with (obj_ch3_PTB02_roaringknight) stopsiner2 = true;
+          //     scr_move_to_point_over_time(global.monstermakex[__ien],
+          //         obj_ch3_PTB02_roaringknight.ystart
+          //             + cos(obj_ch3_PTB02_roaringknight.siner2 / 8) * 8, 20);
+          //
+          // the target Y is the OVERWORLD knight's OWN frozen hover — his
+          // ystart plus the cosine at the moment `stopsiner2` stopped it —
+          // not the battle anchor's. So the marker slides sideways and holds
+          // its height; the vertical difference between the two anchors
+          // (overworld ystart 100, battle ystart 78) is resolved in the
+          // single frame where obj_doom destroys the marker and
+          // obj_knight_enemy takes its place, under the battle's own opening.
+          //
+          // Gliding to 86 instead made him drift DOWNWARD across the handoff,
+          // which is the part that read as floaty. Horizontally it is only
+          // 2670 -> 2655, fifteen pixels, which is why the real seam does not
+          // look like a move at all.
           sc.glide = {
             fromX: k.x,
             fromY: k.y,
             toX: sc.camX + 425,
-            toY: 86,
+            toY: k.y,
           };
           // obj_encounterbasic's Create: the party become dark markers at
           // their overworld spots — Kris spr_kris_sword_jump_down, Susie

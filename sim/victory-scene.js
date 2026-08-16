@@ -210,7 +210,28 @@ function fiveCuts(cues) {
   }
 }
 
+/**
+ * `obj_shake` with `shakex = 10, shakespeed = 2, shakesign = 2` — the camera
+ * shake PTB02 fires at each swoon reveal. Modelled properly rather than as a
+ * frame counter, because all three of its characteristics were wrong:
+ *
+ *     Step (active == 0):  view = camera + shakex;  shakesign = -shakesign
+ *     Alarm 0 (every shakespeed frames):
+ *         view = camera + shakex * shakesign
+ *         if (shakex > 0) shakex -= 1
+ *         shakesign = -shakesign
+ *         if (shakex == 0) instance_destroy()
+ *
+ * so it is HORIZONTAL ONLY (`shakey` is never assigned, so the vertical term
+ * is always 0), it DECAYS from 10 to 0, and it steps every TWO frames rather
+ * than re-rolling per frame. `shakesign` is 2, not 1 — a multiplier — so the
+ * swings after the first reach +/-20 before decaying.
+ *
+ * This was a random jitter of constant amplitude on BOTH axes, re-rolled
+ * every frame for 20 frames: harsher, longer and noisier than the real one.
+ */
 function bigShake(sc, cues) {
+  sc.shake = { x: 10, sign: -2, speed: 2, timer: 0, offset: 10 };
   sc.bigShake = 20;
   cues.push({ name: 'snd_impact', pitch: 1, gain: 1 });
   cues.push({ name: 'snd_closet_impact', pitch: 1, gain: 1 });
@@ -291,6 +312,18 @@ export function stepVictoryScene(sc, input, cues) {
     if (sc.flash.t > 18) sc.flash = null;
   }
   if (sc.bigShake > 0) sc.bigShake -= 1;
+  // obj_shake's alarm chain (see bigShake).
+  if (sc.shake) {
+    const sh = sc.shake;
+    sh.timer += 1;
+    if (sh.timer >= sh.speed) {
+      sh.timer = 0;
+      sh.offset = sh.x * sh.sign;
+      if (sh.x > 0) sh.x -= 1;
+      sh.sign = -sh.sign;
+      if (sh.x === 0) sc.shake = null;
+    }
+  }
   sc.bg.fountain_speed += 0.1;
   sc.hitFx = sc.hitFx.filter((f) => sc.t - f.born < f.life);
   sc.deferred = sc.deferred.filter((d) => {

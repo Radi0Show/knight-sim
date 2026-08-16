@@ -52,9 +52,11 @@ function drawActor(ctx, sprites, a, cam) {
 }
 
 export function drawVictoryScene(ctx, sc, sprites) {
-  const shakeJitter = sc.bigShake > 0
-    ? [Math.floor(srand(sc.t, 51) * 21) - 10, Math.floor(srand(sc.t, 52) * 9) - 4]
-    : [0, 0];
+  // obj_shake moves the CAMERA, so the party shakes with everything else —
+  // that part was right. What was wrong is the motion: the real one is
+  // horizontal only, decays 10 -> 0, and steps every two frames (see
+  // sim/victory-scene.js bigShake). The sim now carries the live offset.
+  const shakeJitter = [sc.shake ? sc.shake.offset : 0, 0];
   ctx.save();
   ctx.translate(shakeJitter[0], shakeJitter[1]);
   const cam = Math.round(sc.camX);

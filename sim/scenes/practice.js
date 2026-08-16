@@ -937,7 +937,14 @@ const director = {
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
-        e.arenaOpen = true;
+        // THE CHARGE-UP TURN RAISES NO BOARD. `openArena` already refuses it
+        // (`myattackchoice == -1` is an EMPTY branch where every other choice
+        // creates an obj_growtangle) — but this flag was set unconditionally
+        // straight afterwards, so the board became VISIBLE again carrying the
+        // previous turn's geometry, flashed, and only then did the wind-up
+        // start. GitHub #4: "the battle box shows briefly before the charging
+        // animation begins". The Knight winds up over an empty screen.
+        e.arenaOpen = upcoming.ac !== -1;
         // THE SOUL FLIES IN; IT DOES NOT APPEAR. obj_baseenemy's mnfight-1.5
         // block calls `scr_moveheart()`, which sets `global.inv = 0` and
         // creates obj_moveheart at Kris (+10, +40). Its Create aims it at the

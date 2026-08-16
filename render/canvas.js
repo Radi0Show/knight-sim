@@ -436,11 +436,28 @@ export async function createRenderer(canvas) {
     return c;
   })();
 
-  function drawEntity(e, name) {
-    const sx = e.image_xscale ?? e.xscale ?? 1;
-    const sy = e.image_yscale ?? e.yscale ?? 1;
+  function drawEntity(e, name, simFrame = 0) {
+    let sx = e.image_xscale ?? e.xscale ?? 1;
+    let sy = e.image_yscale ?? e.yscale ?? 1;
     const ang = e.image_angle ?? 0;
     const alpha = e.image_alpha ?? 1;
+
+    // THE SPLIT TEETH PULSE. Their Draw jitters BOTH scales every frame:
+    //
+    //     draw_sprite_ext(sprite_index, image_index, x, y,
+    //         image_xscale + random_range(-0.1, 0.1),
+    //         image_yscale + random_range(-0.1, 0.1), ...)
+    //
+    // which is the warping the rhombus projectiles have in the real fight
+    // (GitHub #5). It was stripped deliberately once — it would consume two
+    // draws per tooth per frame and swamp the oracle's RNG stream — so it is
+    // reinstated the way this project reinstates any Draw-random: seeded from
+    // the SIM FRAME, not advanced per paint, so it runs at 30Hz on any
+    // monitor and a paused inspection redraws identically.
+    if (name === 'obj_roaringknight_split_bullet') {
+      sx += (frandCanvas(simFrame, e.seq * 2 + 1) - 0.5) * 0.2;
+      sy += (frandCanvas(simFrame, e.seq * 2 + 2) - 0.5) * 0.2;
+    }
 
     const entry = sprites.get(e.sprite_index ?? e.sprite ?? SPRITE_FOR[name]);
     if (entry && entry.frames.length) {
@@ -557,7 +574,7 @@ export async function createRenderer(canvas) {
         continue;
       }
 
-      drawEntity(e, name);
+      drawEntity(e, name, state.frame ?? 0);
     }
 
     // The boxsplitter's surface telegraph sits above the arena, below the soul.
