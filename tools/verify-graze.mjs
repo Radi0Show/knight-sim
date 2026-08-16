@@ -123,6 +123,50 @@ console.log(`\nturn clock: ${spent.toFixed(1)} spent over ${FRAMES} frames — $
   if (e.grazepoints !== 2) failures.push(`at variant 1 the slash pays ${e.grazepoints}, expected 2`);
 }
 
+// ── THE ROTATING SLASH DOES NOT PRINT TP ────────────────────────────────
+//
+// obj_roaringknight_slash's Create asks for `grazepoints = 50` and its End
+// Step re-asserts that every frame — but the rotating slash runs
+// `scr_bullet_inherit(slashid)` right after creating it, which overwrites the
+// field with its own scr_bullet_init value of 1. The event order decides what
+// that is worth:
+//
+//     Step       the slash is created, inherit -> grazepoints 1
+//     Collision  obj_grazebox pays the ENTRY bonus, at 1
+//     End Step   Step_2 restores 50, and the trickle runs at 50/30
+//
+// A slash spawns on top of the soul, so its graze almost always BEGINS on the
+// spawn frame, and that entry award is the dominant term. Skipping the
+// inherit billed 50 a slash across the whole fan.
+//
+// ASSERTED ON THE TP ACTUALLY PAID, not on the field: `grazepoints` reads 50
+// at every frame boundary either way (the End Step puts it back), so only the
+// outcome can tell the two builds apart. Measured over a fixed window: 344
+// with the inherit, 2267 without, against 100-235 for every other attack and
+// a bar that caps at 250.
+{
+  const s = createState({ seed: 9, traceBulletSlots: 0 });
+  buildSingleAttackScene(s, { seed: 9, attack: 'rotating', difficulty: 0 });
+  s.damageEnabled = false;
+  let tp = 0;
+  let prev = 0;
+  for (let f = 0; f < 900; f++) {
+    stepFrame(s, {});
+    const t = s.tension ?? 0;
+    if (t > prev) tp += t - prev;
+    prev = t;
+    // Unsaturate so the cap cannot hide the size of the award.
+    if (t >= MAX_TENSION) { s.tension = 0; prev = 0; }
+  }
+  if (tp > 900) {
+    failures.push(`the rotating slash paid ${Math.round(tp)} TP in 900 frames — `
+      + 'the 50-point entry graze is back (scr_bullet_inherit(slashid) missing)');
+  }
+  if (tp < 50) {
+    failures.push(`the rotating slash paid only ${Math.round(tp)} TP — it should still be grazeable`);
+  }
+}
+
 if (failures.length) {
   console.log('');
   for (const f of failures) console.log(`→ FAILURE  ${f}`);

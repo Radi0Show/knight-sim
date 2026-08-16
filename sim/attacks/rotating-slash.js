@@ -53,6 +53,7 @@ import { knightCircle } from '../fx.js';
 import { cue, cueLoop, cueStop } from '../audio.js';
 import { scrApproach } from '../gml.js';
 import { gmlChoose, gmlIrandom, gmlU32 } from '../rng.js';
+import { scrBulletInherit } from '../bullets/regularbullet.js';
 
 /** Fisher-Yates over the real generator. See SHUFFLE CAVEAT above. */
 function shuffleList(list, rng) {
@@ -335,6 +336,34 @@ export const rotatingSlash = {
         // sprite. Same call made for the roaring stars.
         s.width = s.width * 2;
         s.aoe = true;
+        // `scr_bullet_inherit(slashid)` — THE LINE THAT PRICES THE ENTRY GRAZE.
+        //
+        // obj_roaringknight_slash's Create asks for `grazepoints = 50`, and
+        // this call overwrites it with the ROTATING SLASH's own value, which
+        // its Create leaves at `scr_bullet_init`'s 1. (The controller cannot
+        // interfere: obj_dbulletcontroller's Create sets `grazepoints = -1`,
+        // the sentinel scr_bullet_inherit treats as "leave alone".)
+        //
+        // THE 50 IS NOT DEAD — the slash's own End Step (Step_2) re-asserts
+        // it every frame. What the inherit changes is the ONE frame that
+        // matters most, because of the event order:
+        //
+        //     Step       the slash is created, inherit -> grazepoints 1
+        //     Collision  obj_grazebox pays the ENTRY bonus, at 1
+        //     End Step   Step_2 restores 50, and the trickle runs at 50/30
+        //
+        // A slash spawns on top of the soul, so its graze almost always
+        // BEGINS on the spawn frame — and that entry award is the dominant
+        // term. Skipping the inherit priced it at 50 instead of 1: measured
+        // at 2267 TP over a 900-frame turn against 100-235 for every other
+        // attack, the 250-point bar filled nine times over. With the inherit
+        // it is 344, which sits where the fan of slashes should. Reported
+        // from play as the rotating slash giving too much TP.
+        //
+        // (The one creator that legitimately keeps 50 from the first frame is
+        // obj_knight_tunnel_slasher, which never inherits — dc type 101,
+        // myattackchoice 20 "knightlines", which the selector cannot reach.)
+        scrBulletInherit(e, s);
       }
 
       if (e.timer === e.slash_timer) {
