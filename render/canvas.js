@@ -31,6 +31,7 @@ import {
 import { drawKnightCircle } from './draw/knight-circle.js';
 import { drawKnightStream } from './draw/knight-stream.js';
 import { drawFallingSword, drawSwordfallKnight } from './draw/swordfall.js';
+import { drawWeirdCircle, drawWeirdBottomManager } from './draw/underbox.js';
 import { drawRotatingSlashTelegraph } from './draw/rotating-slash.js';
 import { createSplitBox } from './splitbox.js';
 import { scrEaseOut, clamp01, lerp } from '../sim/gml.js';
@@ -152,6 +153,10 @@ export async function createRenderer(canvas) {
     // pose at a fixed screen x — see render/draw/swordfall.js.
     obj_fallingsword: drawFallingSword,
     obj_knight_swordfall: drawSwordfallKnight,
+    // The underbox orb is drawn as 12 wobbling scanlines, not as a sprite,
+    // and its manager breathes on a sine — see render/draw/underbox.js.
+    obj_knight_weird_circle: drawWeirdCircle,
+    obj_knight_weird_bottom_manager: drawWeirdBottomManager,
     obj_bullet_knight_stream: () => true,
     obj_knight_streamline: () => true,
     obj_bullet_stream_diamond: () => true,

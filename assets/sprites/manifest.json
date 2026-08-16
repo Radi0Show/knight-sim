@@ -5567,5 +5567,24 @@
   "files": [
    "spr_diamondbullet_0.png"
   ]
+ },
+ "spr_knight_weird_shadow": {
+  "w": 48,
+  "h": 12,
+  "ox": 24,
+  "oy": 6,
+  "frames": 1,
+  "bbox": [
+   0,
+   0,
+   47,
+   11
+  ],
+  "sepmasks": "AxisAlignedRect",
+  "playback": 1,
+  "playbacktype": "FramesPerSecond",
+  "files": [
+   "spr_knight_weird_shadow_0.png"
+  ]
  }
 }

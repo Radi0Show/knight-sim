@@ -134,6 +134,49 @@ export function scrEaseOut(t, curve) {
 }
 
 /**
+ * scr_ease_inout(t, curve) — the two-sided easing.
+ *
+ * The named curves short-circuit to their own ease_inout_* forms, and
+ * EVERYTHING ELSE falls through to the generic split, which is what the
+ * underbox's spin lerps (curve 2) actually use:
+ *
+ *     arg0 *= 2;
+ *     if (arg0 < 1) return 0.5 * scr_ease_in(arg0, arg1);
+ *     else { arg0--; return 0.5 * (scr_ease_out(arg0, arg1) + 1); }
+ *
+ * NOTE curve 1's branch, which is NOT the standard cosine ease and is very
+ * probably an ORIGINAL BUG: `-0.5 * cos(pi*t - 1)` — the `- 1` is inside the
+ * cosine where every other implementation has `(cos(pi*t) - 1)`. It never
+ * reaches 0 or 1 (it runs from about -0.27 to 0.27), so a "1, inout" lerp
+ * lands nowhere near its endpoints. Reproduced as written; nothing translated
+ * so far passes curve 1 with "inout".
+ *
+ * -3 / -2 are left to throw rather than guessed at: no caller uses them, and
+ * an invented easing curve is exactly the kind of thing that ships as fact.
+ */
+export function scrEaseInout(t, curve) {
+  if (curve < -3 || curve > 7) return t;
+  if (curve === -1) {
+    // ease_inout_back(t, 0, 1, 1)
+    const s = 1.70158 * 1.525;
+    let u = t * 2;
+    if (u < 1) return 0.5 * (u * u * ((s + 1) * u - s));
+    u -= 2;
+    return 0.5 * (u * u * ((s + 1) * u + s) + 2);
+  }
+  if (curve === -3 || curve === -2) {
+    throw new Error(`scr_ease_inout curve ${curve} not translated`);
+  }
+  if (curve === 1) return -0.5 * Math.cos(Math.PI * t - 1);
+  if (curve === 0) return t;
+
+  let u = t * 2;
+  if (u < 1) return 0.5 * scrEaseIn(u, curve);
+  u -= 1;
+  return 0.5 * (scrEaseOut(u, curve) + 1);
+}
+
+/**
  * GML lengthdir_x / lengthdir_y — degrees, y down on screen.
  *
  * BOTH OPERANDS NARROW TO FLOAT32 before the multiply. This is not a guess:

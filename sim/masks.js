@@ -121,6 +121,22 @@ export const SMALLBULLET_MASK = build(raw.smallbullet);
  * have started missing.
  */
 export const STREAMDIAMOND_MASK = build(raw.streamdiamond);
+/**
+ * `spr_knight_weird_shape` — the underbox's big central shot, 55x20 Precise
+ * with only 9 inked rows: a horizontal sliver, which is why the yscale lerp
+ * from 3 down to 2 matters more than it looks (the mask is scaled, and a
+ * 20px sheet at yscale 3 is a 60px-tall hitbox).
+ */
+export const WEIRDSHAPE_MASK = build(raw.weirdshape);
+/**
+ * `spr_diamondbullet_form` — the underbox's fan shots. THE THIRD DIAMOND: the
+ * sword tunnel's `spr_knight_diamondbullet_l` (99x32) owns `diamondbullet`,
+ * the stream's `spr_diamondbullet` (33x32) owns `streamdiamond`, and this one
+ * is 33x32 as well but with a 5-row inked core rather than the stream's full
+ * 32. Same near-miss the streamdiamond note warns about, one sprite further
+ * along; keyed `diamondform` for the same reason.
+ */
+export const DIAMONDFORM_MASK = build(raw.diamondform);
 
 /**
  * sprite name -> its precise mask, for the DEFAULT contact test.
@@ -151,6 +167,8 @@ export const SPRITE_MASKS = {
   spr_rk_fountain_bullet: FOUNTAIN_MASK,
   spr_smallbullet: SMALLBULLET_MASK,
   spr_diamondbullet: STREAMDIAMOND_MASK,
+  spr_knight_weird_shape: WEIRDSHAPE_MASK,
+  spr_diamondbullet_form: DIAMONDFORM_MASK,
 };
 
 /**

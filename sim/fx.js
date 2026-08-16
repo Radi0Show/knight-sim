@@ -16,6 +16,8 @@
 
 import { spawn, destroy } from './entity.js';
 import { scrApproach } from './gml.js';
+import { scrLerpvar } from './lerpvar.js';
+import { cue } from './audio.js';
 
 /**
  * `scr_afterimage()` — a ghost of the caller, copying everything that affects
@@ -136,8 +138,10 @@ export const knightCircle = {
  * lock-on at fade 0.3 — a fast three-frame flare that says "this one is
  * committed"; obj_knight_roaring2 composites others into its vortex surface.
  *
- * `target` (follow an instance) and `destroytime` exist in the original and are
- * unused by the knight's callers.
+ * `destroytime` exists in the original and is unused by the knight's callers.
+ * `target` IS used — by the underbox's orbs, through
+ * `scr_afterimage_grow_attached`, which is the same ghost pinned to the
+ * spawner so it swells around a MOVING object instead of being left behind.
  */
 export const afterimageGrow = {
   name: 'obj_afterimage_grow',
@@ -148,9 +152,16 @@ export const afterimageGrow = {
     e.fade = 0.1;
     e.destroytime = -1;
     e.image_speed = 0;
+    e.target = -4;
   },
 
   step(e) {
+    // `if (target != -4 && i_ex(target))` — a dead target is simply not
+    // followed; the ghost stays where it was and fades out on its own.
+    if (e.target && e.target !== -4 && e.target.alive) {
+      e.x = e.target.x;
+      e.y = e.target.y;
+    }
     e.image_alpha -= e.fade;
     e.image_xscale += e.xrate;
     e.image_yscale += e.yrate;
@@ -159,6 +170,101 @@ export const afterimageGrow = {
     if (e.destroytime === 0) destroy(e);
   },
 };
+
+/** `scr_afterimage_grow()` — the same copy scr_afterimage makes, other type. */
+export function scrAfterimageGrow(state, e) {
+  const a = spawn(state, afterimageGrow, { x: e.x, y: e.y });
+  a.sprite_index = e.sprite_index;
+  a.image_index = e.image_index;
+  a.image_blend = e.image_blend;
+  a.image_speed = 0;
+  a.depth = e.depth;
+  a.image_xscale = e.image_xscale;
+  a.image_yscale = e.image_yscale;
+  a.image_angle = e.image_angle;
+  return a;
+}
+
+/**
+ * `scr_afterimage_grow_attached(target, blend, behind)` — one of the above,
+ * pinned to an instance and re-tinted. `behind == true` puts it one step in
+ * front of the CALLER's depth (`other.depth - 1`), which is what the third
+ * argument really controls; the underbox passes false.
+ */
+export function scrAfterimageGrowAttached(state, e, target, blend, behind) {
+  const a = scrAfterimageGrow(state, e);
+  a.target = target;
+  a.image_blend = blend;
+  if (behind === true) a.depth = (e.depth ?? 0) - 1;
+  return a;
+}
+
+/**
+ * obj_knight_warp — THE TELEPORT FLASH, and the only thing that hides and
+ * restores the Knight when an attack takes him off the field.
+ *
+ *   event_user(0)  "warp IN":  master.image_alpha = 0, index 6 then a
+ *                  5 -> 8 lerp over 4, and alarm[0] at 4 sets the master
+ *                  BACK to alpha 1 before destroying itself
+ *   event_user(1)  "warp OUT": master.image_alpha = 0, index 8 then an
+ *                  8 -> 5 lerp over 4, alarm[1] destroys it and the master
+ *                  STAYS hidden
+ *
+ * So the two directions are not symmetric: only the in-warp hands the Knight
+ * his alpha back. An attack that warps him out is responsible for putting him
+ * back itself — the underbox manager does it from its Destroy.
+ *
+ * It follows its master every Step (`x = master.x + master_xoffset`), has no
+ * Draw event (so it is a plain draw_self at scr_darksize's 2x) and no mask.
+ */
+export const knightWarp = {
+  name: 'obj_knight_warp',
+
+  create(e, state) {
+    e.master = null;
+    e.master_xoffset = 0;
+    e.master_yoffset = 0;
+    e.image_xscale = 2;
+    e.image_yscale = 2;
+    e.image_speed = 0;
+    e.sprite_index = 'spr_knight_warp'; // object definition
+    e.image_index = 8;
+    cue(state, 'snd_knight_teleport', 1, 1);
+  },
+
+  step(e) {
+    if (e.master && e.master.alive) {
+      e.x = e.master.x + e.master_xoffset;
+      e.y = e.master.y + e.master_yoffset;
+    }
+  },
+
+  alarm: {
+    0(e) {
+      if (e.master && e.master.alive) e.master.image_alpha = 1;
+      destroy(e);
+    },
+    1(e) {
+      destroy(e);
+    },
+  },
+};
+
+/** obj_knight_warp's event_user(0) — warp in, and give the master back. */
+export function knightWarpIn(state, e) {
+  if (e.master && e.master.alive) e.master.image_alpha = 0;
+  e.image_index = 6;
+  scrLerpvar(state, spawn, e, 'image_index', 5, 8, 4);
+  e.alarm[0] = 4;
+}
+
+/** obj_knight_warp's event_user(1) — warp out; the master stays hidden. */
+export function knightWarpOut(state, e) {
+  if (e.master && e.master.alive) e.master.image_alpha = 0;
+  e.image_index = 8;
+  scrLerpvar(state, spawn, e, 'image_index', 8, 5, 4);
+  e.alarm[1] = 4;
+}
 
 /**
  * obj_knight_split_growtangle_effect — THE CUT.

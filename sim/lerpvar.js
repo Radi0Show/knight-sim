@@ -21,7 +21,7 @@
 // fidelity; roaring always passes a number.
 
 import { destroy } from './entity.js';
-import { lerp, scrEaseOut } from './gml.js';
+import { lerp, scrEaseOut, scrEaseIn, scrEaseInout } from './gml.js';
 
 export const lerpvar = {
   name: 'obj_lerpvar',
@@ -62,9 +62,20 @@ export const lerpvar = {
         e.pointb,
         scrEaseOut(e.time / e.maxtime, e.easetype),
       );
+    } else if (e.easeinout === 'in') {
+      e.target[e.varname] = lerp(
+        e.pointa,
+        e.pointb,
+        scrEaseIn(e.time / e.maxtime, e.easetype),
+      );
+    } else if (e.easeinout === 'inout') {
+      // The underbox's spin lurch is the first caller of this arm (curve 2).
+      e.target[e.varname] = lerp(
+        e.pointa,
+        e.pointb,
+        scrEaseInout(e.time / e.maxtime, e.easetype),
+      );
     } else {
-      // "in" and "inout" exist in the original and are unused by anything
-      // translated so far. Left unimplemented rather than guessed at.
       throw new Error(`lerpvar easeinout "${e.easeinout}" not translated`);
     }
 
@@ -76,7 +87,9 @@ export const lerpvar = {
  * `scr_lerpvar(...)`, with the caller passed explicitly since JS has no `id`.
  * Returns the tween so a caller can adjust it, as the original's return does.
  */
-export function scrLerpvar(state, spawnFn, target, varname, pointa, pointb, maxtime, easetype) {
+export function scrLerpvar(
+  state, spawnFn, target, varname, pointa, pointb, maxtime, easetype, easeinout,
+) {
   const t = spawnFn(state, lerpvar, { x: 0, y: 0 });
   t.target = target;
   t.varname = varname;
@@ -84,5 +97,6 @@ export function scrLerpvar(state, spawnFn, target, varname, pointa, pointb, maxt
   t.pointb = pointb;
   t.maxtime = maxtime;
   if (easetype !== undefined) t.easetype = easetype;
+  if (easeinout !== undefined) t.easeinout = easeinout;
   return t;
 }

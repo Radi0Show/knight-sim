@@ -36,6 +36,7 @@ import { trackingSwordsManager } from '../attacks/tracking-swords.js';
 import { diagonalBulletManager } from '../attacks/diagonal-bullets.js';
 import { knightStream } from '../attacks/knight-stream.js';
 import { knightSwordfall } from '../attacks/swordfall.js';
+import { launchUnderbox } from '../attacks/underbox.js';
 import { roaring2 } from '../attacks/roaring.js';
 import { gmlIrandom, gmlCreate, gmlChoose, gmlRandom } from '../rng.js';
 import { KNIGHT } from '../actors.js';
@@ -402,6 +403,16 @@ export function launchAttack(state, entry) {
       if (knight) knight.image_alpha = 0;
       const mg = spawn(state, knightStream, { x: kx, y: ky });
       return mg;
+    }
+
+    case 6: {
+      // `dc.type = 106` — underboxattack. The controller warps the Knight out
+      // (obj_knight_warp event_user(1), which does NOT give his alpha back),
+      // forces the arena to 2 x 2 and pins `global.turntimer` at 999999; the
+      // manager's own `local_turntimer` runs the turn and its Destroy releases
+      // both. All of that is launchUnderbox, so the dispatch stays one line.
+      state.turntimer = 999999;
+      return launchUnderbox(state, kx, ky);
     }
 
     case 10: {

@@ -268,26 +268,36 @@ still in use; only their status as *attacks* is retracted.
   path.
 - ~~**Box splitter** — the selector never picks it.~~ **WRONG — retracted.**
   The cut-box organism IS in the fight. I checked one creator and stopped.
-  `obj_knight_split_growtangle` has two paths in, and only the first is dead:
+  `obj_knight_split_growtangle` has two paths in, and BOTH are live:
 
   ```
   obj_knight_split_growtangle
-    <- obj_roaringknight_splitslash      <- boxsplitter_attack (ac 6, UNUSED)
+    <- obj_roaringknight_splitslash      <- boxsplitter_attack  <- type 99
+                                                                   (ac 2, FLURRY)
     <- obj_roaringknight_quickslash_big  <- obj_roaringknight_quickslash_attack
-                                            <- obj_knight_combinations   (ac 7, USED)
+                                            <- obj_knight_combinations   (ac 7, unreachable)
                                             <- obj_knight_rotating_slash (ac 5, USED)
   ```
 
-  `rotatingslash` (ac 5) runs in EVERY phase and `combinationattack` (ac 7)
-  closes phase 1, so `sim/attacks/split-growtangle.js` is verified work that
-  the real fight actually uses.
+  `rotatingslash` (ac 5) runs in EVERY phase and Flurry (ac 2) runs in phases
+  1/2/3, so `sim/attacks/split-growtangle.js` is verified work that the real
+  fight actually uses.
 
-  Only `obj_roaringknight_boxsplitter_attack` itself (the ac 6 wrapper) is
-  unreachable — it is created solely by `dc.type = 106`.
+  ~~Only `obj_roaringknight_boxsplitter_attack` itself (the ac 6 wrapper) is
+  unreachable — it is created solely by `dc.type = 106`.~~ **WRONG —
+  retracted, twice over.** `obj_roaringknight_boxsplitter_attack` is created
+  by **`type == 99`**, which is Flurry, so it is not a wrapper and not
+  unreachable — it is the manager of an attack the fight runs three times a
+  loop. And ac 6 (`type == 106`) creates something else entirely,
+  `obj_knight_weird_bottom_manager` — the underbox orbs, translated in
+  `sim/attacks/underbox.js`. Two objects were conflated on the strength of
+  the word "splitter" appearing in both stories.
 
   **The recurring mistake:** tracing one creator, or reading the dispatch
   table instead of the selector, and concluding "unused". Trace EVERY creator
-  to a selector-reachable root before calling anything dead.
+  to a selector-reachable root before calling anything dead — and read the
+  `if (type == N)` the object is actually inside, rather than the nearest one
+  remembered.
 
 ## Architecture
 
@@ -820,7 +830,9 @@ combinations get an oracle spot-check as part of their translation.
   (underscores) but the damage gate reads `destroyonhit` (= 1 from
   scr_bullet_init) — different variables, so fountain bullets DO destroy
   on hit. Oracle-confirmed at the contact frame.
-- **Attack 3 — the box splitter. Engine work DONE; NOT IN THE FIGHT** (ac=6 underboxattack, never selected — see above). `node tools/verify-splitter.mjs`:
+- **Attack 3 — the box splitter. DONE, and it IS in the fight** (~~ac=6
+  underboxattack, never selected~~ — retracted above: its manager is created
+  by `type == 99`, which is Flurry, ac 2, phases 1/2/3). `node tools/verify-splitter.mjs`:
   rows 4..193 of `traces/t6-splitter.csv`, all columns row-exact — soul, the
   `con` state machine, timer, distance, the first four teeth (x, y AND
   image_angle), and the running contact count.
@@ -944,10 +956,11 @@ combinations get an oracle spot-check as part of their translation.
   which exists nowhere in the fight. Deleted, along with its dead fountain
   import.
 
-  What remains is the box splitter: faithfully translated and row-exact, but
-  `underboxattack` (ac=6), which the selector never picks. So the scene is an
-  **engine sandbox**, and the HUD says so in the player's view
-  (`SANDBOX_NOTE`). Rule: nothing invented ships, and anything
+  What remained at the time was the box splitter, believed then to be
+  `underboxattack` (ac=6) and unreachable — so the scene was labelled an
+  **engine sandbox** in the player's view (`SANDBOX_NOTE`). Both halves have
+  since moved on: the splitter turned out to be Flurry's, and the scene now
+  runs the real fight order. Rule stands: nothing invented ships, and anything
   unrepresentative is labelled where the player will see it.
 
   Remaining before this is a practice tool for the real fight: translate
