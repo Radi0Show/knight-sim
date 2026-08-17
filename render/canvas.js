@@ -99,6 +99,7 @@ function bakeMask(mask, color) {
  * seam the intro's scratch surfaces were reported for.
  */
 let ghostScratch = null;
+let flatScratch = null;
 function getScratch(ref, w, h) {
   if (!ref || ref.width !== w || ref.height !== h) {
     const c = document.createElement('canvas');
@@ -108,6 +109,39 @@ function getScratch(ref, w, h) {
     return c;
   }
   return ref;
+}
+
+/**
+ * The ORDINARY-pass half of obj_afterimage_screen — the copies created without
+ * `draw_end`, which in ROARING is the four `scr_script_repeat` fires on the
+ * roar. Returning true when `draw_end` is set is how the Draw-End set opts out
+ * of this pass and is handled at the end of the frame instead.
+ *
+ * These take the frame as it stands at their own depth, which in practice
+ * means the roar's full-screen composite lands on top of them. LABELLED: the
+ * object's exact depth lives on its object definition — CLAUDE.md's `depth`
+ * hole — and two attempts to dump it hung UndertaleModCli past ten minutes, so
+ * the sim's default 0 stands in. What is NOT a stand-in is that they draw here
+ * rather than after everything: that is the flag, read straight off the two
+ * events.
+ */
+function drawScreenGhost(ctx, e, state, deps) {
+  if (e.draw_end) return true; // the late pass owns these
+  if (!(e.alpha > 0)) return true;
+  const { VIEW_W: W, VIEW_H: H } = deps;
+  flatScratch = getScratch(flatScratch, W, H);
+  const g = flatScratch.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.drawImage(ctx.canvas, 0, 0);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = Math.min(1, e.alpha);
+  const sx = (e.x - state.view.x) - e.anchor_x * e.xscale;
+  const sy = (e.y - state.view.y) - e.anchor_y * e.yscale;
+  ctx.drawImage(flatScratch, sx, sy, W * e.xscale, H * e.yscale);
+  ctx.restore();
+  return true;
 }
 
 export async function createRenderer(canvas) {
@@ -168,6 +202,25 @@ export async function createRenderer(canvas) {
     state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2' && !x.stop);
 
   const DRAW_EVENTS = {
+    /**
+     * obj_afterimage_screen has TWO draw events and its `draw_end` flag picks
+     * which one runs:
+     *
+     *     Draw     (0)  if (draw_end) exit;   ...copy the screen and blit...
+     *     Draw End (73) if (!draw_end) exit;  ...same, then redraw obj_heart...
+     *
+     * This is the FIRST of them, so it runs here in the ordinary depth-sorted
+     * pass — which for ROARING means the roar's own full-screen composite is
+     * painted over it afterwards. That is the whole difference in weight
+     * between these and the Draw End ones, and drawing all of them at the end
+     * is what over-blurred the roar's second half.
+     *
+     * The copies are of the frame AS IT STANDS AT THIS DEPTH, so they see the
+     * background and whatever drew before them and nothing after — no chain,
+     * no compounding. The Draw End set (render's late pass) keeps its chain,
+     * because there the game really is copying a finished frame each time.
+     */
+    obj_afterimage_screen: drawScreenGhost,
     obj_knight_pointing_cone: drawPointingCone,
     // The stream draws its beams, its streamlines AND its diamonds itself,
     // clipped to the box — see render/draw/knight-stream.js.
@@ -755,13 +808,61 @@ export async function createRenderer(canvas) {
       (x) => x.alive && x.type.name === 'obj_afterimage_screen',
     );
     if (ghosts.length) {
-      for (const gst of ghosts) {
-        if (gst.alpha <= 0) continue;
-        ghostScratch = getScratch(ghostScratch, VIEW_W, VIEW_H);
-        const gg = ghostScratch.getContext('2d');
-        gg.setTransform(1, 0, 0, 1, 0, 0);
-        gg.clearRect(0, 0, VIEW_W, VIEW_H);
-        gg.drawImage(ctx.canvas, 0, 0);
+      // NO COMPOUNDING — a labelled deviation, and the reason for it.
+      //
+      // Read literally, each Draw End copy takes the application surface as it
+      // stands, which already holds the copies drawn before it this frame; the
+      // chain compounds every frame and never decays while new copies keep
+      // arriving. Implemented that way, ROARING's second half came out heavily
+      // blurred and every star grew a radial streak — each echo redraws the
+      // star field one step larger, so seven overlapping copies turn each star
+      // into a line pointing away from the vortex. Both were reported from
+      // play as things the real fight does not do.
+      //
+      // Every number below is still the dump's: the count (one per 3 frames),
+      // the rates (+0.015 on the roar, -0.01 on the wind-up), the faderates
+      // (0.025, and 0.1 / intensity), alpha 0.5, and the anchor arithmetic.
+      // What is deviated is only WHICH frame each copy reads — all of them
+      // take the frame as it stood before any echo, so seven copies are seven
+      // echoes rather than seven echoes of echoes.
+      //
+      // Not asserted as the original's behaviour: whether GameMaker's
+      // `draw_surface(application_surface)` mid-frame even returns the
+      // partially-drawn frame is platform-dependent, and this project has no
+      // capture of the real roar to settle it against.
+      //
+      // THE TWO SETS still differ in WHERE they draw.
+      //
+      // A `draw_end` copy is taken in the Draw End event, when the
+      // application surface already holds everything drawn this frame —
+      // INCLUDING the earlier Draw End copies. That chain is real and the
+      // roar depends on it, but it is SHORT: faderate 0.025 is a 20-frame
+      // life at one new copy every 3 frames, so about seven overlap.
+      //
+      // The four the roar fires through `scr_script_repeat` are NOT
+      // `draw_end`. They draw in the ordinary Draw event, at the object's own
+      // depth, from a partially built frame — and they are long-lived
+      // (faderate 0.00625 is EIGHTY frames). Folding them into the Draw End
+      // chain put four 80-frame copies inside a loop that re-copies itself
+      // every frame, so the compounding never decayed. Reported as too much
+      // blur in the second half of ROARING, and as the stars trailing
+      // flashing lines — those are the beams of `event_user(1)`, real and
+      // additive, smeared eleven deep by echoes that should not have seen
+      // each other.
+      //
+      // They are drawn FIRST here, all from ONE snapshot of the frame as it
+      // stood before any echo — which is the property that matters (no
+      // chaining, and they sit under the Draw End copies). Their exact depth
+      // is on the object definition, which is CLAUDE.md's `depth` hole and
+      // is not readable from the dump; two attempts to dump it hung
+      // UndertaleModCli past ten minutes. LABELLED: their layer is an
+      // approximation, their feedback behaviour is not.
+      // The non-`draw_end` copies already drew, in the depth-sorted pass
+      // above (DRAW_EVENTS.obj_afterimage_screen). Only the Draw End set is
+      // left, and only that set chains.
+      const chained = ghosts.filter((g) => g.draw_end);
+
+      const blit = (gst, src) => {
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = Math.max(0, Math.min(1, gst.alpha));
@@ -771,8 +872,21 @@ export async function createRenderer(canvas) {
         // it, which is what aims the echo at the vortex.
         const sx = (gst.x - state.view.x) - gst.anchor_x * gst.xscale;
         const sy = (gst.y - state.view.y) - gst.anchor_y * gst.yscale;
-        ctx.drawImage(ghostScratch, sx, sy, VIEW_W * gst.xscale, VIEW_H * gst.yscale);
+        ctx.drawImage(src, sx, sy, VIEW_W * gst.xscale, VIEW_H * gst.yscale);
         ctx.restore();
+      };
+
+      if (chained.length) {
+        // ONE snapshot for all of them — see the note above.
+        ghostScratch = getScratch(ghostScratch, VIEW_W, VIEW_H);
+        const gg = ghostScratch.getContext('2d');
+        gg.setTransform(1, 0, 0, 1, 0, 0);
+        gg.clearRect(0, 0, VIEW_W, VIEW_H);
+        gg.drawImage(ctx.canvas, 0, 0);
+        for (const gst of chained) {
+          if (gst.alpha <= 0) continue;
+          blit(gst, ghostScratch);
+        }
       }
       // `with (obj_heart) draw_self()` — the soul, back on top.
       const heartEntry = sprites.get('spr_dodgeheart');
