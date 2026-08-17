@@ -27,7 +27,11 @@
 
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
+  ITEM_PICKER,
 } from '../sim/modes.js';
+import {
+  ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE, freshInventory,
+} from '../sim/items.js';
 
 const ROSTER = [
   { id: 'stars', name: 'Stars', difficulties: [0, 1, 2] },
@@ -211,9 +215,115 @@ function atRoster() {
   check(t.settings.page === null, 'X did not return to the settings hub');
 }
 
+// ---- THE ITEMS PAGE: any item, any of the twelve slots --------------------
+// It was a stub that any keypress closed. The failure modes now are all quiet
+// ones — a page that edits the wrong slot, or edits a copy the run never
+// reads — so each half is pinned separately.
+{
+  // Every battle-usable item is offered, and the roster leads with EMPTY so a
+  // slot can be cleared. A picker that cannot clear is a page you can fill and
+  // never un-fill.
+  check(ITEM_PICKER[0] === 0, 'the picker should lead with the empty slot');
+  check(ITEM_PICKER.length === ITEM_IDS.length + 1,
+    `the picker offers every item plus empty; ${ITEM_PICKER.length} vs ${ITEM_IDS.length}`);
+  check(ITEM_IDS.length > 25,
+    `the roster should be the whole battle-usable list, got ${ITEM_IDS.length}`);
+  // Names come from scr_iteminfo's `itemnameb`, which is where the casing
+  // lives — CLAUDE.md's Spincake note. scr_itemnamelist spells three of them
+  // differently and is NOT what the menu draws.
+  check(ITEMS[7].name === 'Spincake', `it is Spincake, got ${ITEMS[7].name}`);
+  check(ITEMS[11].name === 'ClubsSandwich', `got ${ITEMS[11].name}`);
+  // ORIGINAL: LancerCookie's description says 50 and scr_itemuse heals 1.
+  check(ITEMS[9].amount === 1,
+    `LancerCookie heals 1 in scr_itemuse whatever its description says, got ${ITEMS[9].amount}`);
+  check(ITEMS[9].desc.includes('50'), 'and its description still says 50 — both are the game');
+
+  const nav = () => {
+    const t = createTitle();
+    for (let i = 0; i < MODES.length; i++) tap(t, 'down');
+    tap(t, 'confirm'); // SETTINGS
+    const items = SETTINGS_PAGES.findIndex((p) => p.id === 'items');
+    for (let i = 0; i < items; i++) tap(t, 'down');
+    tap(t, 'confirm'); // ITEMS
+    return t;
+  };
+
+  const t = nav();
+  check(t.settings?.page === 'items', 'ITEMS should open its page, not close the menu');
+  check(t.bag.length === INVENTORY_SIZE, `the bag is ${INVENTORY_SIZE} slots`);
+
+  // TWO COLUMNS: up/down step by TWO, left/right toggle the column and are
+  // each other's inverse. Straight off obj_battlecontroller's own grid.
+  const it = t.settings.items;
+  check(it.slot === 0, 'the cursor starts on slot 0');
+  tap(t, 'down');
+  check(it.slot === 2, `down steps by two in a two-column grid, got ${it.slot}`);
+  tap(t, 'right');
+  check(it.slot === 3, `right toggles the column, got ${it.slot}`);
+  tap(t, 'left');
+  check(it.slot === 2, `and left toggles it back, got ${it.slot}`);
+  // Clamped at the ends, like the battle menu — not wrapped.
+  for (let i = 0; i < 20; i++) tap(t, 'down');
+  check(it.slot < INVENTORY_SIZE, `the cursor must stay in the bag, got ${it.slot}`);
+  for (let i = 0; i < 20; i++) tap(t, 'up');
+  check(it.slot >= 0, `and not run off the top, got ${it.slot}`);
+
+  // Confirm opens the picker ON the slot's current contents, so nudging one
+  // slot is a keypress rather than a walk down a 32-item list.
+  const t2 = nav();
+  const i2 = t2.settings.items;
+  i2.slot = 0;
+  const had = t2.bag[0];
+  tap(t2, 'confirm');
+  check(i2.stage === 'pick', 'confirm should open the picker');
+  check(ITEM_PICKER[i2.pick] === had,
+    `the picker should open on what the slot holds (${had}), not the top`);
+
+  // Setting writes THAT slot and nothing else, and marks the settings dirty
+  // so the driver persists it.
+  const before = [...t2.bag];
+  tap(t2, 'down');
+  const want = ITEM_PICKER[i2.pick];
+  t2.dirty = false;
+  tap(t2, 'confirm');
+  check(i2.stage === 'slots', 'setting an item returns to the grid');
+  check(t2.bag[0] === want, `slot 0 should now hold ${want}, got ${t2.bag[0]}`);
+  check(t2.dirty === true, 'a bag change must mark the settings dirty, or it is never saved');
+  check(t2.bag.slice(1).join() === before.slice(1).join(),
+    'setting one slot must not disturb the others');
+
+  // X out of the picker CHANGES NOTHING — the escape hatch has to be real.
+  const t3 = nav();
+  const i3 = t3.settings.items;
+  const keep = [...t3.bag];
+  tap(t3, 'confirm');
+  tap(t3, 'down');
+  tap(t3, 'down');
+  tap(t3, 'cancel');
+  check(i3.stage === 'slots', 'X should back out of the picker');
+  check(t3.bag.join() === keep.join(), 'and leave the bag alone');
+  // ...and X from the grid goes back to the hub, one stage at a time.
+  tap(t3, 'cancel');
+  check(t3.settings?.page === null, 'X from the grid returns to the settings hub');
+}
+
+// ---- and the bag REACHES the fight ----------------------------------------
+// The page could be perfect and edit a copy nothing reads. `freshInventory` is
+// the one funnel, and it DROPS empty slots because scr_itemshift_temp compacts
+// the list and everything downstream assumes there are no holes.
+{
+  const custom = [39, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const bag = freshInventory(custom);
+  check(bag.join() === '39,7', `empty slots are dropped, got [${bag.join()}]`);
+  check(freshInventory().join() === DEFAULT_BAG.join(),
+    'no custom bag falls back to the default loadout');
+  check(freshInventory([]).join() === '', 'an all-empty bag is empty, not the default');
+}
+
 console.log('title navigation — modes, roster, difficulties, settings\n');
 console.log(`→ ${MODES.length} modes + ${TITLE_EXTRAS.map((e) => e.name).join(' + ')},`
   + ` ${SETTINGS_PAGES.length} settings pages`);
+console.log(`→ ITEMS: ${INVENTORY_SIZE} slots, any of ${ITEM_IDS.length} items or empty in each`);
 console.log('→ X steps back exactly one stage at each level');
 
 if (failures.length) {

@@ -20,7 +20,7 @@ import { createDialogue } from './dialogue.js';
 import { createKnight } from './knight.js';
 import { createRng, gmlCreate } from './rng.js';
 
-export function createState({ seed, traceBulletSlots = 0 } = {}) {
+export function createState({ seed, traceBulletSlots = 0, bag = null } = {}) {
   if (!Number.isInteger(seed)) {
     throw new Error(`seed must be an integer, got ${seed}`);
   }
@@ -92,7 +92,7 @@ export function createState({ seed, traceBulletSlots = 0 } = {}) {
     /** TP. `global.tension` / `global.maxtension` — see sim/tension.js. */
     tension: 0,
     /** The fight's twelve slots — see sim/items.js. */
-    inventory: freshInventory(),
+    inventory: freshInventory(bag),
     grazeTimer: 0,
     grazeCount: 0,
 

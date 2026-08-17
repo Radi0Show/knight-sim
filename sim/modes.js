@@ -61,6 +61,14 @@ export const MODES = [
 
 import { WEAPONS, ARMOR, canEquip, statsOf } from './equipment.js';
 import { DEFAULT_GEAR, PARTY } from './damage.js';
+import { ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE } from './items.js';
+
+/**
+ * THE ITEMS PAGE'S ROSTER — every battle-usable item, plus an EMPTY entry at
+ * the front so a slot can be cleared. `0` is the dump's own empty id
+ * (`itemname[0] = " "`), which is why it is the value and not a `null`.
+ */
+export const ITEM_PICKER = [0, ...ITEM_IDS];
 
 export const SETTINGS_PAGES = [
   { id: 'equip', name: 'WEAPONS / ARMOR' },
@@ -128,6 +136,12 @@ export function createTitle() {
     settings: null,
     /** The loadout the next fight is built with (persisted by the driver). */
     gear: DEFAULT_GEAR.map((g) => ({ weapon: g.weapon, armor: [...g.armor] })),
+    /**
+     * The twelve item slots the next fight is built with. Same lifecycle as
+     * `gear`: the page edits it, `dirty` tells the driver to persist, and the
+     * run reads it once at start.
+     */
+    bag: [...DEFAULT_BAG],
     /** Master volumes 0..100 (persisted by the driver). */
     volumes: { music: 100, sfx: 100 },
     /**
@@ -170,6 +184,7 @@ function openSettings(title) {
     page: null, // null = the hub
     cursor: 0,
     equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
+    items: { stage: 'slots', slot: 0, pick: 0 },
   };
 }
 
@@ -184,6 +199,7 @@ function openCredits(title) {
     root: true,
     cursor: 0,
     equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
+    items: { stage: 'slots', slot: 0, pick: 0 },
   };
 }
 
@@ -211,9 +227,54 @@ function stepSettings(title, pressed) {
     return out;
   }
 
-  // ---- items: a stub page; any press leaves ----
+  // ---- items: TWELVE SLOTS, and any item can go in any of them --------------
+  //
+  // Navigation is `obj_battlecontroller`'s own, from the battle item menu:
+  // a single 0..11 cursor from which page, row and column are derived, UP AND
+  // DOWN STEP BY TWO because the list is two columns wide, and LEFT AND RIGHT
+  // DO THE SAME THING — with two columns a toggle is its own inverse. Copying
+  // that here means the page a player learns in the fight is the page they
+  // get in the menu.
+  //
+  // What is NOT copied is the battle menu's refusal to move onto an empty
+  // slot: here every slot is a target, because filling the empty ones is the
+  // entire point of the page.
   if (s.page === 'items') {
-    if (pressed('cancel') || pressed('confirm')) { s.page = null; out.moved = true; }
+    const it = s.items;
+    if (it.stage === 'slots') {
+      if (pressed('up') && it.slot >= 2) { it.slot -= 2; out.moved = true; }
+      if (pressed('down') && it.slot <= INVENTORY_SIZE - 3) { it.slot += 2; out.moved = true; }
+      // The column toggle, both keys, exactly as the battle menu has it.
+      if (pressed('left') || pressed('right')) {
+        it.slot += it.slot % 2 === 0 ? 1 : -1;
+        out.moved = true;
+      }
+      if (pressed('cancel')) { s.page = null; out.moved = true; }
+      if (pressed('confirm')) {
+        it.stage = 'pick';
+        // Open the picker ON the slot's current contents, so a nudge is one
+        // keypress rather than a walk from the top of a 32-item list.
+        it.pick = Math.max(0, ITEM_PICKER.indexOf(title.bag[it.slot] ?? 0));
+        out.selected = true;
+      }
+      return out;
+    }
+    // the picker
+    if (pressed('up')) {
+      it.pick = (it.pick + ITEM_PICKER.length - 1) % ITEM_PICKER.length;
+      out.moved = true;
+    }
+    if (pressed('down')) {
+      it.pick = (it.pick + 1) % ITEM_PICKER.length;
+      out.moved = true;
+    }
+    if (pressed('cancel')) { it.stage = 'slots'; out.moved = true; }
+    if (pressed('confirm')) {
+      title.bag[it.slot] = ITEM_PICKER[it.pick];
+      title.dirty = true;
+      it.stage = 'slots';
+      out.selected = true;
+    }
     return out;
   }
 

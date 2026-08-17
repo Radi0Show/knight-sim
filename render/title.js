@@ -13,8 +13,10 @@
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import {
-  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, pocketOf, previewStats,
+  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER,
+  pocketOf, previewStats,
 } from '../sim/modes.js';
+import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
 import { PARTY } from '../sim/damage.js';
@@ -187,9 +189,82 @@ function drawSettings(ctx, title, sprites, font) {
   }
 
   if (s.page === 'items') {
+    const small = loadFont('../assets/fonts', 'fnt_main');
+    const it = s.items;
     centred(ctx, font, 'ITEMS', 60, c_white, 1.4);
-    centred(ctx, font, 'Not built yet — the bag is fixed for now.', 220, DIM, 0.85);
-    centred(ctx, font, 'Z / X  back', 448, DIM, 0.75);
+
+    // TWO STAGES, TWO LAYOUTS, and the picker REPLACES the grid rather than
+    // sitting over it. Overlaying them put the picker box on top of the right
+    // column of slots, so half the thing you were editing was hidden while you
+    // edited it.
+    //
+    // Nothing is squeezed in either stage. The battle item menu's
+    // `xscale = min(1, 200 / string_width(s))` is the right idiom there, where
+    // names rarely reach 200 — but ClubsSandwich and LancerCookie do, and a
+    // fractional xscale on a bitmap font is the same fuzz the credits page was
+    // reported for. The columns are spaced to fit the longest name at 1:1
+    // instead.
+    const describe = (id, x, y) => {
+      if (!small?.ready) return;
+      const item = ITEMS[id];
+      const lines = item ? item.desc.split('#') : ['empty slot'];
+      lines.forEach((line, i) => {
+        drawText(ctx, small, line, x, y + i * 20, { color: rgb(DIM) });
+      });
+    };
+
+    if (it.stage === 'slots') {
+      const COL = [60, 340];
+      for (let i = 0; i < INVENTORY_SIZE; i++) {
+        const x = COL[i % 2];
+        const y = 140 + Math.floor(i / 2) * 32;
+        const on = i === it.slot;
+        const item = ITEMS[title.bag[i] ?? 0];
+        if (on && heart) drawSpriteExt(ctx, heart, 0, x - 30 + bob, y + 4, 1, 1, 0, null, 1);
+        // An empty slot draws a rule rather than nothing: twelve slots should
+        // always read as twelve, and a blank looks like the list ended.
+        drawText(ctx, font, item ? item.name : '- - -', x, y,
+          { color: rgb(on ? HILITE : (item ? c_white : DIM)) });
+      }
+      describe(title.bag[it.slot] ?? 0, 60, 350);
+      centred(ctx, font, 'arrows  move      Z  change      X  back', 448, DIM, 0.75);
+      return;
+    }
+
+    // The picker. The slot being filled is named at the top, because by the
+    // time you have scrolled a 32-item roster it is easy to forget which one
+    // you opened.
+    centred(ctx, font, `SLOT ${it.slot + 1}`, 104, DIM, 0.9);
+    const WIN = 9;
+    const first = Math.min(
+      Math.max(0, it.pick - Math.floor(WIN / 2)),
+      Math.max(0, ITEM_PICKER.length - WIN),
+    );
+    for (let r = 0; r < WIN && first + r < ITEM_PICKER.length; r++) {
+      const idx = first + r;
+      const entry = ITEMS[ITEM_PICKER[idx]];
+      const y = 140 + r * 32;
+      const on = idx === it.pick;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 130 + bob, y + 4, 1, 1, 0, null, 1);
+      drawText(ctx, font, entry ? entry.name : '- - -', 160, y,
+        { color: rgb(on ? HILITE : c_white) });
+    }
+    describe(ITEM_PICKER[it.pick], 400, 140);
+
+    // MORE ABOVE / MORE BELOW — `spr_morearrow`, the item menu's own cue that
+    // the list runs past the window, bobbing on `sin(siner / 10) * 2` with the
+    // upper one mirrored so the two lean away from the list.
+    const arrow = sprites.get('spr_morearrow');
+    if (arrow) {
+      const abob = Math.sin(title.siner / 10) * 2;
+      // Clear of both the SLOT header (centred) and the description column,
+      // which is where they landed first — the up arrow sat on the header.
+      if (first > 0) drawSpriteExt(ctx, arrow, 0, 560, 150 - abob, 1, -1, 0, null, 1);
+      if (first + WIN < ITEM_PICKER.length) {
+        drawSpriteExt(ctx, arrow, 0, 560, 140 + WIN * 32 - 8 + abob, 1, 1, 0, null, 1);
+      }
+    }
+    centred(ctx, font, 'arrows  move      Z  set      X  back', 448, DIM, 0.75);
     return;
   }
 

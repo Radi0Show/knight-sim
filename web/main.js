@@ -130,9 +130,44 @@ if (replayToken) {
   }
 }
 
+// ---- THE TITLE SCREEN AND THE FOUR MODES --------------------------------
+//
+// `title.mode` is null while the menu is up. A URL that names a mode skips it
+// entirely, which is what keeps ?attack= links working.
+const title = createTitle();
+
+// SETTINGS PERSISTENCE — the loadout and the volumes survive reloads.
+const SETTINGS_KEY = 'knightsim.settings';
+try {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
+  if (saved?.gear?.length === 3) {
+    title.gear = saved.gear.map((g) => ({ weapon: g.weapon | 0, armor: (g.armor ?? []).map((a) => a | 0) }));
+  }
+  if (Array.isArray(saved?.bag)) {
+    // Length-checked and id-checked on the way in: a stale entry from before
+    // an item was renumbered must not put an unknown id in a slot, and the
+    // page has no way to show one.
+    const bag = saved.bag.map((v) => v | 0).slice(0, 12);
+    while (bag.length < 12) bag.push(0);
+    title.bag = bag;
+  }
+  if (saved?.volumes) {
+    title.volumes.music = Math.max(0, Math.min(100, saved.volumes.music | 0));
+    title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
+  }
+  if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
+  if (saved?.scaling === 'fit' || saved?.scaling === 'pixel') title.scaling = saved.scaling;
+} catch { /* a corrupt entry falls back to the defaults */ }
+
 let state = createState({
   seed: replay ? replay.meta.seed : Number(params.get('seed') ?? 12345),
   traceBulletSlots: 0,
+  // THE SAVED BAG APPLIES HERE TOO. A `?mode=` deep link never reaches
+  // `startRun` — it runs on THIS state — so with the title built after it,
+  // a link ran the default loadout however the ITEMS page was set. The title
+  // and its persistence load moved above this for that reason; they depend on
+  // nothing here, while this depends on them.
+  bag: title.bag,
 });
 state.spriteFrames = renderer.spriteFrames;
 state.spriteRate = renderer.spriteRate;
@@ -294,7 +329,15 @@ function reset() {
   // The vista's animation accumulator survives a reset — an R-restart is a
   // fresh battle in the SAME room, not a re-run of the story intro.
   const vistaFs = state?.vistaFsBase ?? 0;
-  state = createState({ seed: (Math.floor(performance.now()) % 100000) + 1, traceBulletSlots: 0 });
+  state = createState({
+    seed: (Math.floor(performance.now()) % 100000) + 1,
+    traceBulletSlots: 0,
+    // THE BAG COMES FROM SETTINGS TOO, the same way the gear does. It has to
+    // be passed to createState rather than assigned after, because the battle
+    // menu snapshots `state.inventory` into its per-character tempitem lists
+    // as soon as the scene is built.
+    bag: title.bag,
+  });
   state.runMode = runMode;
   state.vistaFsBase = vistaFs;
   // THE LOADOUT COMES FROM SETTINGS. The title's equip menu edits title.gear;
@@ -382,32 +425,11 @@ function showReplay(token, copied) {
   box.querySelector('#replayclose').onclick = () => box.remove();
 }
 
-// ---- THE TITLE SCREEN AND THE FOUR MODES --------------------------------
-//
-// `title.mode` is null while the menu is up. A URL that names a mode skips it
-// entirely, which is what keeps ?attack= links working.
-const title = createTitle();
-
-// SETTINGS PERSISTENCE — the loadout and the volumes survive reloads.
-const SETTINGS_KEY = 'knightsim.settings';
-try {
-  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
-  if (saved?.gear?.length === 3) {
-    title.gear = saved.gear.map((g) => ({ weapon: g.weapon | 0, armor: (g.armor ?? []).map((a) => a | 0) }));
-  }
-  if (saved?.volumes) {
-    title.volumes.music = Math.max(0, Math.min(100, saved.volumes.music | 0));
-    title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
-  }
-  if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
-  if (saved?.scaling === 'fit' || saved?.scaling === 'pixel') title.scaling = saved.scaling;
-} catch { /* a corrupt entry falls back to the defaults */ }
-
 function persistSettings() {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-      gear: title.gear, volumes: title.volumes, shake: title.shake,
-      scaling: title.scaling,
+      gear: title.gear, bag: title.bag, volumes: title.volumes,
+      shake: title.shake, scaling: title.scaling,
     }));
   } catch { /* private mode etc. — the session still works, unsaved */ }
   audio.setVolumes(title.volumes.music / 100, title.volumes.sfx / 100);
