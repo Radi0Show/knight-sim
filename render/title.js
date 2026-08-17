@@ -12,7 +12,9 @@
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
-import { MODES, SETTINGS_PAGES, CREDITS, pocketOf, previewStats } from '../sim/modes.js';
+import {
+  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, pocketOf, previewStats,
+} from '../sim/modes.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
 import { PARTY } from '../sim/damage.js';
@@ -138,15 +140,19 @@ export function drawTitle(ctx, title, sprites, attacks) {
     }
   }
 
-  // SETTINGS — the extra row, visually separated from the modes.
+  // SETTINGS and CREDITS — the extra rows, visually separated from the modes
+  // by a gap so they read as somewhere else to go rather than a fifth mode.
   if (!title.pickingAttack) {
-    const y = top + MODES.length * pitch + 30;
-    const on = title.index === MODES.length;
-    if (on && heart) {
-      const bob = Math.sin(title.siner / 6) * 1.5;
-      drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+    for (let i = 0; i < TITLE_EXTRAS.length; i++) {
+      const y = top + MODES.length * pitch + 30 + i * pitch;
+      const on = title.index === MODES.length + i;
+      if (on && heart) {
+        const bob = Math.sin(title.siner / 6) * 1.5;
+        drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+      }
+      drawText(ctx, font, TITLE_EXTRAS[i].name, 190, y,
+        { color: rgb(on ? HILITE : DIM) });
     }
-    drawText(ctx, font, 'SETTINGS', 190, y, { color: rgb(on ? HILITE : DIM) });
   }
 
   centred(ctx, font, title.pickingAttack

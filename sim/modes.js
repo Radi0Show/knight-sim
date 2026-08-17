@@ -67,8 +67,20 @@ export const SETTINGS_PAGES = [
   { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
   { id: 'graphics', name: 'GRAPHICS' },
-  { id: 'credits', name: 'CREDITS' },
   { id: 'unused', name: 'UNUSED' },
+];
+
+/**
+ * THE TWO ROWS UNDER THE MODES. Both are top-level: SETTINGS opens the hub
+ * above, CREDITS opens its page directly.
+ *
+ * CREDITS was a settings page first and was moved out — settings is where you
+ * go to CHANGE something, and the credits change nothing. Their index is
+ * `MODES.length + n`, which is what `stepTitle` branches on.
+ */
+export const TITLE_EXTRAS = [
+  { id: 'settings', name: 'SETTINGS' },
+  { id: 'credits', name: 'CREDITS' },
 ];
 
 /**
@@ -155,6 +167,20 @@ function openSettings(title) {
 }
 
 /**
+ * CREDITS, opened from the title rather than through the hub. `root` is what
+ * X means on the page: without it, cancelling would drop the player into the
+ * settings hub they never asked for.
+ */
+function openCredits(title) {
+  title.settings = {
+    page: 'credits',
+    root: true,
+    cursor: 0,
+    equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
+  };
+}
+
+/**
  * One frame of the settings pages. Same edge-detected input as the title.
  * Returns { moved, selected, error } for the driver's sounds.
  */
@@ -193,7 +219,12 @@ function stepSettings(title, pressed) {
   if (s.page === 'credits') {
     if (pressed('up')) { s.cursor = (s.cursor + CREDITS.length - 1) % CREDITS.length; out.moved = true; }
     if (pressed('down')) { s.cursor = (s.cursor + 1) % CREDITS.length; out.moved = true; }
-    if (pressed('cancel')) { s.page = null; out.moved = true; }
+    // X goes back to wherever the page was opened FROM — the title now, not
+    // the hub, which no longer lists it.
+    if (pressed('cancel')) {
+      if (s.root) title.settings = null; else s.page = null;
+      out.moved = true;
+    }
     return out;
   }
 
@@ -305,10 +336,10 @@ export function stepTitle(title, input, attacks) {
     return { moved: r.moved, chosen: false, selected: r.selected, error: r.error };
   }
 
-  // The cursor walks the modes plus the SETTINGS row below them.
+  // The cursor walks the modes plus the TITLE_EXTRAS rows below them.
   const list = title.pickingDifficulty
     ? title.difficultyCount
-    : title.pickingAttack ? attackCount : MODES.length + 1;
+    : title.pickingAttack ? attackCount : MODES.length + TITLE_EXTRAS.length;
   const cur = title.pickingDifficulty
     ? 'difficultyIndex'
     : title.pickingAttack ? 'attackIndex' : 'index';
@@ -350,8 +381,9 @@ export function stepTitle(title, input, attacks) {
   }
 
   if (pressed('confirm')) {
-    if (!title.pickingAttack && title.index === MODES.length) {
-      openSettings(title);
+    if (!title.pickingAttack && title.index >= MODES.length) {
+      const extra = TITLE_EXTRAS[title.index - MODES.length];
+      if (extra.id === 'credits') openCredits(title); else openSettings(title);
       return { moved: false, chosen: false, selected: true };
     }
     if (!title.pickingAttack && MODES[title.index].id === 'single') {

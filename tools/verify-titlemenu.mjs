@@ -25,7 +25,9 @@
 // recur, so every stage transition is asserted here rather than just the one
 // that was broken.
 
-import { createTitle, stepTitle, MODES, SETTINGS_PAGES } from '../sim/modes.js';
+import {
+  createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS,
+} from '../sim/modes.js';
 
 const ROSTER = [
   { id: 'stars', name: 'Stars', difficulties: [0, 1, 2] },
@@ -90,10 +92,43 @@ function atRoster() {
   const t = createTitle();
   check(t.index === 0, 'the title should start on the first mode');
   tap(t, 'up');
-  // MODES + the SETTINGS row.
-  check(t.index === MODES.length, 'up from the top should wrap onto SETTINGS');
+  // MODES + the two TITLE_EXTRAS rows, so the wrap lands on the LAST of them.
+  check(t.index === MODES.length + TITLE_EXTRAS.length - 1,
+    'up from the top should wrap onto the last extra row');
   tap(t, 'down');
-  check(t.index === 0, 'down from SETTINGS should wrap to the top');
+  check(t.index === 0, 'down from the last row should wrap to the top');
+}
+
+// ---- CREDITS IS TOP-LEVEL NOW, not a settings page ------------------------
+// It moved out of the hub (settings is where you change something; the credits
+// change nothing), and the two halves of that are easy to do independently:
+// leaving it listed in both places, or moving the row and leaving X to drop
+// the player into the hub they never opened.
+{
+  check(!SETTINGS_PAGES.some((p) => p.id === 'credits'),
+    'CREDITS should no longer be a settings page');
+  check(TITLE_EXTRAS.map((e) => e.id).join(',') === 'settings,credits',
+    `the title's extra rows should be SETTINGS then CREDITS, got `
+    + TITLE_EXTRAS.map((e) => e.id).join(','));
+
+  const t = createTitle();
+  for (let i = 0; i < MODES.length + 1; i++) tap(t, 'down');
+  check(t.index === MODES.length + 1, 'the cursor should reach the CREDITS row');
+  tap(t, 'confirm');
+  check(t.settings?.page === 'credits', 'confirm on CREDITS should open it directly');
+  check(t.settings?.root === true, 'it opens as a ROOT page, not through the hub');
+
+  // The cursor walks its three rows...
+  tap(t, 'down');
+  check(t.settings.cursor === 1, 'down should walk the credits rows');
+  tap(t, 'up');
+  check(t.settings.cursor === 0, 'and up should come back');
+  check(CREDITS.length === 3, `three credit rows, got ${CREDITS.length}`);
+
+  // ...and X leaves for the TITLE, not for the settings hub.
+  tap(t, 'cancel');
+  check(t.settings === null,
+    'X out of CREDITS should return to the title, not open the settings hub');
 }
 {
   const t = atRoster();
@@ -140,7 +175,8 @@ function atRoster() {
 }
 
 console.log('title navigation — modes, roster, difficulties, settings\n');
-console.log(`→ ${MODES.length} modes + SETTINGS, ${SETTINGS_PAGES.length} settings pages`);
+console.log(`→ ${MODES.length} modes + ${TITLE_EXTRAS.map((e) => e.name).join(' + ')},`
+  + ` ${SETTINGS_PAGES.length} settings pages`);
 console.log('→ X steps back exactly one stage at each level');
 
 if (failures.length) {
