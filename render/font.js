@@ -86,7 +86,7 @@ export function textHeight(font) {
 export function drawText(ctx, font, text, x, y, {
   xscale = 1, yscale = 1, color = null, alpha = 1, halign = 'left',
   // obj_writer's layout, not draw_text's: a FIXED advance per character
-  // (`wx += hspace` — 16 for the battle message's typer 6, 9 for the
+  // (`wx += hspace` — 16 for the battle message's typer 4, 9 for the
   // balloons' 81) instead of the glyph's own shift, and `|` consumed as an
   // hspace-wide skip (the formatter's continuation indent under a "* ").
   advance = null,

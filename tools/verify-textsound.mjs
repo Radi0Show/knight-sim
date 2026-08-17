@@ -7,6 +7,9 @@
 //
 //     case   4  mainbig   c_white  rate 1  snd_text            16  28  1
 //     case   6  mainbig   c_white  rate 1  snd_text            16  36  1
+//                       (the fight's message box is case 4, not 6 — see
+//                        render/menu.js: obj_battlecontroller overwrites
+//                        the Knight's `global.typer = 6` with battletyper)
 //     case  50  dotumche  c_black  rate 1  snd_text             9  20  0
 //     case  75  dotumche  c_black  rate 1  snd_txtsus           9  20  0
 //     case  81  dotumche  c_black  rate 1  snd_tv_voice_short   9  20  0

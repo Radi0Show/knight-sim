@@ -83,7 +83,7 @@ export const msgLines = (s) => String(s).split('&');
  * (each `|` is one hspace-wide skip in the writer's Draw, so the wrapped
  * text hangs under the message rather than under the asterisk).
  *
- * `charline` comes from scr_texttype: 33 for the battle message (typer 6)
+ * `charline` comes from scr_texttype: 33 for the battle message (typer 4)
  * and the balloons (81) both. The dump's own battle strings arrive UNSPLIT —
  * "* You felt something hovering close behind your head..." is one 55-char
  * line — and the game wraps them here at draw time, which is why copying the

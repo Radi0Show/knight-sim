@@ -503,12 +503,27 @@ function drawBattleMsg(ctx, state, font) {
   // second line straight through the party's names — which is what the
   // spacing is chosen to avoid. The game's own number for this message is the
   // one that clears the strip.
-  // TYPER 6 — the battle message's writer, from scr_texttype:
+  // TYPER 4, NOT 6 — and the difference is eight pixels a line.
   //
-  //     case 6: scr_textsetup(scr_84_get_font("mainbig"), c_white, x, y,
-  //                           33, 0, 1, snd_text, 16, 36, 1);
+  // `obj_knight_enemy`'s Step sets `global.typer = 6; global.fc = 0;` right
+  // before it picks the flavour string (line 593), and that is where this
+  // block used to stop reading. `obj_battlecontroller`'s Step then CREATES
+  // the writer, and its first act is
   //
-  // charline 33, rate 1 (one character a frame), hspace 16, vspace 36 —
+  //     global.msg[0] = global.battlemsg[0];
+  //     global.typer = global.battletyper;      // Step line 212
+  //     ... scr_battletext();
+  //
+  // `global.battletyper` is 4 everywhere except the board rooms, where
+  // `obj_tennabattleconvo_controller` raises it to 80 — and that controller
+  // is created only in `room_board_1/2/3`, which the Knight's PTB02 is not.
+  // So the Knight's 6 is a DEAD ASSIGNMENT, exactly like the `global.typer =
+  // 81` the balloons overwrite with 75 one line later.
+  //
+  //     case 4: scr_textsetup(scr_84_get_font("mainbig"), c_white, x, y,
+  //                           33, 0, 1, snd_text, 16, 28, 1);
+  //
+  // charline 33, rate 1 (one character a frame), hspace 16, vspace 28 —
   // scr_textsetup runs at the writer's birth and OVERRIDES the Create
   // defaults this block used to quote (vspace 18 was the pre-override
   // default, and 18px lines under 26px glyphs is exactly the "text is too
@@ -519,7 +534,7 @@ function drawBattleMsg(ctx, state, font) {
   // The string is wrapped by the writer's own formatter (charline 33, last
   // space becomes the break, `||` hangs the continuation under the "* ") —
   // the dump's strings arrive unsplit and were drawn off the canvas edge.
-  const lh = 36;
+  const lh = 28;
   const formatted = formatWriter(state.battlemsg, 33);
   // Typed, not shown: one character a frame from the moment the message was
   // set. The director owns the clock (state.battlemsgTimer).

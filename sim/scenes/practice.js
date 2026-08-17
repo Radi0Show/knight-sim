@@ -171,7 +171,7 @@ const director = {
 
   endStep(e, state) {
     // THE BATTLE MESSAGE'S TYPEWRITER CLOCK. obj_writer reveals one character
-    // a frame (typer 6, rate 1); the renderer reads this timer and the sim
+    // a frame (typer 4, rate 1); the renderer reads this timer and the sim
     // resets it whenever a new message is set, so text scrolls in rather than
     // popping whole — the writer is created fresh per message in the game.
     if (state.battlemsg !== e.lastBattlemsg) {
@@ -179,7 +179,7 @@ const director = {
       state.battlemsgTimer = 0;
     } else {
       state.battlemsgTimer = (state.battlemsgTimer ?? 0) + 1;
-      // ...and the blip that goes with each character. Typer 6's sound is
+      // ...and the blip that goes with each character. Typer 4's sound is
       // `snd_text`; scr_textsound skips spaces and punctuation, so the line
       // ticks rather than rattles. Held X mutes it, as it does the typing.
       if (state.battlemsg
