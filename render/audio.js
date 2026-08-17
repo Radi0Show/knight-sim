@@ -186,11 +186,32 @@ export function createAudio() {
   let sfxVol = 1;
   const liveGains = new Set();
 
+  /**
+   * A MASTER TRIM UNDER THE SLIDERS — the whole output, halved.
+   *
+   * The samples are the game's own, at the game's own levels, and the game
+   * mixes them against a system volume the player has already set for
+   * everything else. A browser tab has no such context: it plays at whatever
+   * the machine is at, and this fight is wall-to-wall loud. Reported as far
+   * too loud even after the default slider dropped to 50.
+   *
+   * It sits BELOW the sliders on purpose, so the sliders keep their full
+   * 0..100 range and their labels stay honest — 100 still means "as loud as
+   * this tool goes", it is simply a quieter ceiling. Scaling the slider values
+   * instead would have made the top of the range unreachable and the numbers
+   * a lie.
+   */
+  const MASTER = 0.5;
+
+  const levelFor = (entry) => (
+    Math.min(1, entry.base) * (entry.loop ? musicVol : sfxVol) * MASTER
+  );
+
   function setVolumes(music, sfx) {
     musicVol = music;
     sfxVol = sfx;
     for (const entry of liveGains) {
-      entry.g.gain.value = Math.min(1, entry.base) * (entry.loop ? musicVol : sfxVol);
+      entry.g.gain.value = levelFor(entry);
     }
   }
 
@@ -208,8 +229,8 @@ export function createAudio() {
     src.loop = !!loop;
     const g = c.createGain();
     const base = gain ?? 1;
-    g.gain.value = Math.min(1, base) * (loop ? musicVol : sfxVol);
     const entry = { g, base, loop: !!loop };
+    g.gain.value = levelFor(entry);
     liveGains.add(entry);
     src.onended = () => liveGains.delete(entry);
     src.connect(g).connect(c.destination);

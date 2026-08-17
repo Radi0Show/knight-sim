@@ -184,6 +184,17 @@ function drawSettings(ctx, title, sprites, font) {
       drawText(ctx, font, SETTINGS_PAGES[i].name, 190, y,
         { color: rgb(on ? HILITE : (unused ? DIM : c_white)) });
     }
+    // SHARE SETUP's confirmation, on the row itself rather than as a popup —
+    // `s.shared` is a frame countdown the step sets, so it clears itself even
+    // if the player walks away from the row.
+    if (s.shared > 0) {
+      const small = loadFont('../assets/fonts', 'fnt_main');
+      const row = SETTINGS_PAGES.findIndex((p) => p.id === 'share');
+      if (small?.ready && row >= 0) {
+        drawText(ctx, small, 'link copied', 420, 170 + row * 40 + 6,
+          { color: rgb(HILITE) });
+      }
+    }
     centred(ctx, font, 'Z  open      X  back', 448, DIM, 0.75);
     return;
   }

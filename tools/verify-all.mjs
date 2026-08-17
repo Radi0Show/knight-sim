@@ -86,6 +86,7 @@ const SUITES = [
   ['verify-textsound.mjs', 'the typewriter — per-typer voice, skipped punctuation'],
   ['verify-victory.mjs', 'the ending cutscene — positions, the walk, the exit'],
   ['verify-roaring-fx.mjs', "ROARING's effect layer — screen echoes, streaks, the return"],
+  ['verify-share.mjs', 'shareable setups — ?cfg= round trip and hostile tokens'],
   ['verify-titlemenu.mjs', 'title navigation — stages, X back, the GRAPHICS toggles'],
   ['verify-battlemsg.mjs', 'the battle message box — 15 lines, phase 4 gates, down messages'],
   // The whole-fight diff. Skips loudly without ~/knight-research/traces, so on

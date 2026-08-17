@@ -307,6 +307,41 @@ function atRoster() {
   check(t3.settings?.page === null, 'X from the grid returns to the settings hub');
 }
 
+// ---- SHARE SETUP copies, it does not open ---------------------------------
+// It sits in the hub's page list but is not a page: confirming returns
+// `out.share` for the driver to act on and STAYS on the hub. Two ways to get
+// that wrong that both look plausible — opening a blank page, or firing the
+// share every frame the row is highlighted.
+{
+  const t = createTitle();
+  for (let i = 0; i < MODES.length; i++) tap(t, 'down');
+  tap(t, 'confirm');
+  const row = SETTINGS_PAGES.findIndex((p) => p.id === 'share');
+  check(row >= 0, 'SHARE SETUP should be in the settings hub');
+  for (let i = 0; i < row; i++) tap(t, 'down');
+
+  const r = tap(t, 'confirm');
+  check(r.share === true, 'confirming SHARE should return share:true for the driver');
+  check(t.settings.page === null, 'and STAY on the hub — it is not a page');
+  check(t.settings.shared > 0, 'it should raise the copied confirmation');
+
+  // The confirmation is a COUNTDOWN, not a latch, so it cannot stick on after
+  // the player moves away.
+  const held = t.settings.shared;
+  tap(t, 'down');
+  check(t.settings.shared < held, 'the confirmation should tick down');
+  for (let i = 0; i < 200; i++) stepTitle(t, { ...NONE }, ROSTER);
+  check(t.settings.shared === 0, 'and reach zero on its own');
+
+  // Walking onto the row does NOT fire it — only a press does.
+  const t2 = createTitle();
+  for (let i = 0; i < MODES.length; i++) tap(t2, 'down');
+  tap(t2, 'confirm');
+  let fired = false;
+  for (let i = 0; i < row; i++) { if (tap(t2, 'down').share) fired = true; }
+  check(!fired, 'moving the cursor onto SHARE must not copy anything');
+}
+
 // ---- and the bag REACHES the fight ----------------------------------------
 // The page could be perfect and edit a copy nothing reads. `freshInventory` is
 // the one funnel, and it DROPS empty slots because scr_itemshift_temp compacts

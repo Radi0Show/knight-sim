@@ -8,7 +8,10 @@ import { createState, stepFrame } from '../sim/index.js';
 import { drain, MS_PER_FRAME } from '../sim/clock.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { createRecorder, recordInput, encodeReplay, decodeReplay } from '../sim/replay.js';
-import { createTitle, stepTitle } from '../sim/modes.js';
+import { createTitle, stepTitle, MODES } from '../sim/modes.js';
+import { encodeConfig, decodeConfig, NONE } from '../sim/share.js';
+import { WEAPONS, ARMOR, canEquip } from '../sim/equipment.js';
+import { ITEMS } from '../sim/items.js';
 import { drawTitle, drawGameOver, stepGameOver, makeGameOver } from '../render/title.js';
 import { loadFont, drawText } from '../render/font.js';
 import { drawBackground } from '../render/background.js';
@@ -167,6 +170,49 @@ try {
   if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
   if (saved?.scaling === 'fit' || saved?.scaling === 'pixel') title.scaling = saved.scaling;
 } catch { /* a corrupt entry falls back to the defaults */ }
+
+// ?cfg=<token> — A SHARED SETUP, and it WINS over the saved settings.
+//
+// Following someone's link is an explicit act: it should show you their fight,
+// not yours with their name on it. That is why this is applied after the load
+// above. It does NOT touch volume, shake or scaling — those are how a person
+// sits in front of a screen, and a link that silently reset them would be a
+// bad trade for a share button. See sim/share.js.
+//
+// Everything in the token is validated against the real tables before it is
+// used: `canEquip` is the game's own char-flag rule, so a link cannot put
+// Susie's axe on Ralsei any more than the equip menu can, and an unknown item
+// id becomes an empty slot rather than reaching a renderer that cannot draw it.
+const sharedCfg = decodeConfig(params.get('cfg'), {
+  weaponOk: (id, c) => id === 0 || (!!WEAPONS[id] && canEquip('weapon', id, c)),
+  armorOk: (id, c) => id === 0 || (!!ARMOR[id] && canEquip('armor', id, c)),
+  itemOk: (id) => !!ITEMS[id],
+  modeCount: MODES.length,
+  attackCount: ATTACK_MENU.length,
+});
+if (sharedCfg) {
+  if (sharedCfg.gear) title.gear = sharedCfg.gear;
+  if (sharedCfg.bag) title.bag = sharedCfg.bag;
+  if (sharedCfg.attack !== null) {
+    title.attackIndex = sharedCfg.attack;
+    attackId = ATTACK_MENU[sharedCfg.attack].id;
+  }
+  if (sharedCfg.difficulty !== null) {
+    const entry = ATTACK_MENU[title.attackIndex];
+    // The token carries the INDEX the picker shows; the launch needs the
+    // selector's raw value behind it (0/3/4 for the tunnel), and a link from
+    // an older roster can point past the end of a shorter list.
+    const di = Math.min(sharedCfg.difficulty, entry.difficulties.length - 1);
+    title.difficultyIndex = Math.max(0, di);
+    difficulty = entry.difficulties[title.difficultyIndex] ?? 0;
+  }
+  // A pinned MODE skips the title, the same way `?mode=` does — the sharer
+  // chose the fight, so the link opens it rather than a menu.
+  if (sharedCfg.mode !== null) {
+    title.mode = MODES[sharedCfg.mode].id;
+    mode = title.mode === 'single' ? 'practice' : 'fight';
+  }
+}
 
 let state = createState({
   seed: replay ? replay.meta.seed : Number(params.get('seed') ?? 12345),
@@ -434,14 +480,8 @@ function showReplay(token, copied) {
   box.querySelector('#replayclose').onclick = () => box.remove();
 }
 
-function persistSettings() {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-      v: 1, // see the load above: pre-`v` entries hold the old 100 default
-      gear: title.gear, bag: title.bag, volumes: title.volumes,
-      shake: title.shake, scaling: title.scaling,
-    }));
-  } catch { /* private mode etc. — the session still works, unsaved */ }
+/** Push the settings at the things that consume them. No storage. */
+function applySettings() {
   audio.setVolumes(title.volumes.music / 100, title.volumes.sfx / 100);
   // `global.flag[12]` in the sim's terms: SET means "do not move the view".
   state.flag12 = title.shake ? 0 : 1;
@@ -450,8 +490,85 @@ function persistSettings() {
     fitCanvas();
   }
 }
-persistSettings();
+
+function persistSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      v: 1, // see the load above: pre-`v` entries hold the old 100 default
+      gear: title.gear, bag: title.bag, volumes: title.volumes,
+      shake: title.shake, scaling: title.scaling,
+    }));
+  } catch { /* private mode etc. — the session still works, unsaved */ }
+  applySettings();
+}
+
+// FOLLOWING A LINK MUST NOT OVERWRITE YOUR OWN SETUP.
+//
+// This used to be an unconditional `persistSettings()`, which writes
+// `title.gear` and `title.bag` — and the shared config has already replaced
+// both by this point. So opening someone's "beat my settings" link silently
+// destroyed the loadout the visitor had built, permanently, before they had
+// pressed anything. Caught by loading a link with a distinctive local bag set
+// and watching the saved entry become the sharer's.
+//
+// A link now APPLIES without saving. Changing something afterwards still
+// persists, which is right: adopting a setup you were shown is a deliberate
+// act, arriving at it is not.
+if (sharedCfg) applySettings(); else persistSettings();
 if (replay || params.get('mode')) title.mode = mode === 'practice' ? 'single' : 'normal';
+
+/**
+ * The current setup as a URL. Gear, bag, mode, attack and difficulty — the
+ * things that make a run hard — and nothing about how the player's screen or
+ * speakers are set.
+ *
+ * The MODE is only pinned once one has been chosen. Sharing from the settings
+ * hub, before you have picked, produces a link that carries the loadout and
+ * opens on the title, which is the honest thing: you configured a party, not
+ * a fight.
+ */
+function shareUrl() {
+  const modeIndex = title.mode ? MODES.findIndex((m) => m.id === title.mode) : NONE;
+  const cfg = encodeConfig({
+    mode: modeIndex < 0 ? NONE : modeIndex,
+    attack: title.attackIndex,
+    difficulty: title.difficultyIndex,
+    gear: title.gear,
+    bag: title.bag,
+  });
+  const url = new URL(location.href);
+  // A share link is the setup and nothing else — `?frames=`, `?seed=` and a
+  // `?replay=` token are all debugging state from whatever the sharer happened
+  // to have open, and carrying them would hand someone a fast-forwarded or
+  // pre-played run instead of a fight.
+  url.search = '';
+  url.searchParams.set('cfg', cfg);
+  return url.toString();
+}
+
+/**
+ * Copy it. `navigator.clipboard` needs a secure context and a user gesture —
+ * a keypress is one — and is missing on plain http, so the textarea fallback
+ * is not optional politeness: the dev server runs on http://localhost and
+ * would have no working share button without it.
+ */
+function shareSetup() {
+  const url = shareUrl();
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* nothing else to try */ }
+    ta.remove();
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).catch(fallback);
+  } else {
+    fallback();
+  }
+}
 
 let musicOn = true;
 function cueLoopNow(name) {
@@ -555,6 +672,8 @@ function frame(now) {
       // `noopener` because the tool has no reason to hand a third-party page
       // a handle back to this one.
       if (r.link) window.open(r.link, '_blank', 'noopener,noreferrer');
+      // SHARE SETUP — build the link and put it on the clipboard.
+      if (r.share) shareSetup();
       if (title.dirty) {
         title.dirty = false;
         persistSettings();

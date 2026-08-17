@@ -75,6 +75,9 @@ export const SETTINGS_PAGES = [
   { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
   { id: 'graphics', name: 'GRAPHICS' },
+  // SHARE is not a page — confirming on it copies a link and stays put, which
+  // is why it returns `out.share` instead of setting `s.page`.
+  { id: 'share', name: 'SHARE SETUP' },
   { id: 'unused', name: 'UNUSED' },
 ];
 
@@ -192,6 +195,7 @@ function openSettings(title) {
   title.settings = {
     page: null, // null = the hub
     cursor: 0,
+    shared: 0,
     equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
     items: { stage: 'slots', slot: 0, pick: 0 },
   };
@@ -222,12 +226,28 @@ function stepSettings(title, pressed) {
 
   // ---- the hub ----
   if (s.page === null) {
+    // The "copied" confirmation is on a clock rather than latched, so it
+    // cannot get stuck on after the player walks away from the row.
+    if (s.shared > 0) s.shared -= 1;
     if (pressed('up')) { s.cursor = (s.cursor + SETTINGS_PAGES.length - 1) % SETTINGS_PAGES.length; out.moved = true; }
     if (pressed('down')) { s.cursor = (s.cursor + 1) % SETTINGS_PAGES.length; out.moved = true; }
     if (pressed('cancel')) { title.settings = null; out.moved = true; return out; }
     if (pressed('confirm')) {
       const page = SETTINGS_PAGES[s.cursor].id;
       if (page === 'unused') { out.error = true; return out; } // reserved, inert
+      // SHARE copies rather than opens. The driver builds the URL and talks to
+      // the clipboard — `sim/` has neither, and a headless verifier must be
+      // able to run this path without either.
+      if (page === 'share') {
+        out.share = true;
+        out.selected = true;
+        // NINETY frames — three seconds. Long enough to read and to be sure
+        // the press registered; a shorter flash reads as nothing happening,
+        // which on a button whose whole output is invisible (a clipboard) is
+        // the difference between working and appearing broken.
+        s.shared = 90;
+        return out;
+      }
       s.page = page;
       s.cursor = 0;
       s.equip = { stage: 'char', char: 0, row: 0, pocket: 0 };
@@ -417,7 +437,7 @@ export function stepTitle(title, input, attacks) {
     const r = stepSettings(title, pressed);
     return {
       moved: r.moved, chosen: false, selected: r.selected, error: r.error,
-      link: r.link ?? null,
+      link: r.link ?? null, share: r.share ?? false,
     };
   }
 
