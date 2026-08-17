@@ -41,7 +41,7 @@ import { spawn, destroy } from '../entity.js';
 import { lengthdirX, lengthdirY, scrApproach } from '../gml.js';
 import { gmlIrandomRange, gmlIrandom, gmlChoose } from '../rng.js';
 import { scrBulletInit, regularbulletCreate, regularbulletStep, collidebulletOther15 } from '../bullets/regularbullet.js';
-import { STREAMDIAMOND_MASK, scrPreciseHit } from '../masks.js';
+import { STREAMDIAMOND_MASK, enginePairHit } from '../masks.js';
 
 /** obj_knight_streamline — the grey precursor line. Visual only. */
 export const knightStreamline = {
@@ -101,7 +101,7 @@ export const streamDiamond = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, STREAMDIAMOND_MASK, 0);
+    return enginePairHit(heart, e, STREAMDIAMOND_MASK);
   },
 
   other15: collidebulletOther15,

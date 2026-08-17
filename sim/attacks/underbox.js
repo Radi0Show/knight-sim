@@ -71,7 +71,7 @@ import {
   scrAfterimage, scrAfterimageGrow, scrAfterimageGrowAttached,
   knightWarp, knightWarpOut,
 } from '../fx.js';
-import { WEIRDSHAPE_MASK, DIAMONDFORM_MASK, scrPreciseHit } from '../masks.js';
+import { WEIRDSHAPE_MASK, DIAMONDFORM_MASK, enginePairHit } from '../masks.js';
 import { cue } from '../audio.js';
 
 /**
@@ -126,7 +126,7 @@ export const weirdCircleBullet = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, WEIRDSHAPE_MASK, 0);
+    return enginePairHit(heart, e, WEIRDSHAPE_MASK);
   },
 
   other15: collidebulletOther15,
@@ -148,7 +148,7 @@ export const weirdFanBullet = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, DIAMONDFORM_MASK, 0);
+    return enginePairHit(heart, e, DIAMONDFORM_MASK);
   },
 
   other15: collidebulletOther15,

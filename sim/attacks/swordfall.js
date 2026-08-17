@@ -50,7 +50,7 @@ import { scrApproach, pointDirection, clamp } from '../gml.js';
 import { gmlRandom, gmlIrandom } from '../rng.js';
 import { scrBulletInit, regularbulletCreate, regularbulletStep, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { scrLerpvar } from '../lerpvar.js';
-import { SWORDOL_MASK, scrPreciseHit } from '../masks.js';
+import { SWORDOL_MASK, enginePairHit } from '../masks.js';
 import { chainNext, registerComboAttack } from './combination.js';
 import { cue } from '../audio.js';
 
@@ -130,7 +130,7 @@ export const fallingSword = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, SWORDOL_MASK, 0);
+    return enginePairHit(heart, e, SWORDOL_MASK);
   },
 
   other15: collidebulletOther15,

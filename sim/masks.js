@@ -445,6 +445,18 @@ function rintHalfEven(x) {
  * precise WITH.
  */
 export function masksOverlap(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
+  // A ZERO SCALE HAS NO AREA — and both routines invert through it.
+  //
+  // `Math.floor(v / 0 + originY)` is NaN, which passes `sy < 0 || sy >= h`
+  // because every comparison with NaN is false, and then `maskB.px[NaN][sx]`
+  // throws. obj_fallingsword's Create opens with `image_yscale = 0` and lerps
+  // out of it, so every falling sword spends its first frames here — the
+  // crash only appeared once these bullets started using the pair test
+  // instead of a probe that happened to guard it upstream.
+  //
+  // Returning false is also the right ANSWER, not just a safe one: GameMaker
+  // collides nothing at zero scale.
+  if (!bsx || !bsy) return false;
   if (maskA.axisRect) {
     return masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
   }

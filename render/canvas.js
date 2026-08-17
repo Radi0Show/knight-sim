@@ -250,6 +250,55 @@ export async function createRenderer(canvas) {
         e.image_xscale ?? 2, e.image_yscale ?? 2, 0, e.image_alpha ?? 1, e.image_blend);
       return true;
     },
+    /**
+     * obj_knight_tunnel_slasher_2_revised — THE POSE IS TWO SPRITES, and only
+     * one of them was being drawn.
+     *
+     *     siner++;
+     *     var ymod = sin(siner / 30) * 8;
+     *     if (sprite_index == spr_roaringknight_noarm)
+     *         draw_sprite_ext(spr_roaringknight_armpoint, armpoint_index,
+     *                         x + 116, y + 62 + ymod,
+     *                         image_xscale, image_yscale, armpoint,
+     *                         image_blend, image_alpha);
+     *     draw_sprite_ext(sprite_index, image_index, x, y + ymod, ...);
+     *
+     * The finale swaps the body to `spr_roaringknight_noarm` — a pose drawn
+     * WITHOUT an arm, on purpose — and draws `spr_roaringknight_armpoint`
+     * separately so it can ROTATE: `scr_lerpvar("armpoint", 0, -75, 12, 2,
+     * "out")` swings it up to point over twelve frames, and `armpoint_index`
+     * flips to its second frame on the cut at timer 33.
+     *
+     * Without this the generic blit drew the armless body and nothing else,
+     * which is exactly the report: the Knight points and his arm is gone. The
+     * sim had `armpoint` and `armpoint_index` right the whole time — the sprite
+     * they drive simply never reached the screen.
+     *
+     * `ymod` is a slow eight-pixel breathe over the WHOLE figure, arm included,
+     * which is why the arm reads as attached rather than as a floating prop.
+     */
+    obj_knight_tunnel_slasher_2_revised(ctx2, e, state2, deps) {
+      const entry = deps.sprites.get(e.sprite_index);
+      const ymod = Math.sin((e.siner ?? 0) / 30) * 8;
+      const xs = e.image_xscale ?? 2;
+      const ys = e.image_yscale ?? 2;
+      const alpha = e.image_alpha ?? 1;
+      // The arm FIRST — it is behind the body in the original's order, so the
+      // shoulder joint is covered rather than sitting on top of the chest.
+      if (e.sprite_index === 'spr_roaringknight_noarm') {
+        const arm = deps.sprites.get('spr_roaringknight_armpoint');
+        if (arm && arm.frames.length) {
+          const f = Math.abs(Math.floor(e.armpoint_index ?? 0)) % arm.frames.length;
+          blit(arm.frames[f], arm.meta.ox, arm.meta.oy,
+            e.x + 116, e.y + 62 + ymod, xs, ys, e.armpoint ?? 0, alpha, e.image_blend);
+        }
+      }
+      if (!entry || !entry.frames.length) return true;
+      blit(entry.frames[Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length],
+        entry.meta.ox, entry.meta.oy,
+        e.x, e.y + ymod, xs, ys, 0, alpha, e.image_blend);
+      return true;
+    },
     obj_bullet_knight_stream: () => true,
     obj_knight_streamline: () => true,
     obj_bullet_stream_diamond: () => true,

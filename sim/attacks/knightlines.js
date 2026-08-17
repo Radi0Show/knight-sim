@@ -65,7 +65,7 @@ import {
 } from '../bullets/regularbullet.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { scrAfterimage, afterimage } from '../fx.js';
-import { SLASHTUNNEL_MASK, scrPreciseHit } from '../masks.js';
+import { SLASHTUNNEL_MASK, enginePairHit } from '../masks.js';
 import { roaringknightSlash } from './roaringknight-slash.js';
 import { cue } from '../audio.js';
 
@@ -185,7 +185,7 @@ export const tunnelslashBullet = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, SLASHTUNNEL_MASK, 0);
+    return enginePairHit(heart, e, SLASHTUNNEL_MASK);
   },
 
   other15: collidebulletOther15,

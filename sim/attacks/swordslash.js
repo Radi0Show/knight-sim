@@ -64,7 +64,7 @@ import {
 } from '../bullets/regularbullet.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { scrAfterimage, knightWarp, knightWarpIn, knightWarpOut } from '../fx.js';
-import { CRESCENT_MASK, scrPreciseHit } from '../masks.js';
+import { CRESCENT_MASK, enginePairHit } from '../masks.js';
 import { cue } from '../audio.js';
 
 /** The Knight's opening near-immunity, which this attack reads as a difficulty. */
@@ -108,7 +108,7 @@ export const knightCrescent = {
 
   collides(e, heart) {
     if (e.active !== 1 && e.active !== true) return false;
-    return scrPreciseHit(heart, e, CRESCENT_MASK, 0);
+    return enginePairHit(heart, e, CRESCENT_MASK);
   },
 
   other15: collidebulletOther15,
