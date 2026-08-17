@@ -142,8 +142,17 @@ export function createTitle() {
      * run reads it once at start.
      */
     bag: [...DEFAULT_BAG],
-    /** Master volumes 0..100 (persisted by the driver). */
-    volumes: { music: 100, sfx: 100 },
+    /**
+     * Master volumes 0..100 (persisted by the driver).
+     *
+     * FIFTY, not a hundred — a player request, and the right default for what
+     * this is. The fight opens on a roar and stays loud; a practice tool that
+     * blasts on the first frame is one you turn down before you play it, and
+     * a first impression at half volume is easier to correct upward than a
+     * startle is to undo. Anyone who has already moved the sliders keeps
+     * their setting: the driver's saved entry is applied over this.
+     */
+    volumes: { music: 50, sfx: 50 },
     /**
      * `global.flag[12]`, DELTARUNE's own screen-shake switch, kept in the
      * player's polarity: true here = the shake happens = flag 12 is 0.

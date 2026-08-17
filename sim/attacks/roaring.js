@@ -53,6 +53,16 @@ import {
   screenPiece, scrAfterimage, knightCircle, particleGeneric, afterimageScreen,
 } from '../fx.js';
 
+/**
+ * The width of `spr_pixel_white_front` — the sheet the in-rush streaks are
+ * drawn from, 4x4 with its origin on the right edge. Dividing the streak's
+ * `image_xscale` by it turns the dump's 320 from "320 sheets" (1280px, twice
+ * the view) into "320 pixels", which is the distance the particle actually
+ * covers. See the note at the spawn site: this is a deviation, on a report
+ * from play, not a reading.
+ */
+const STREAK_UNIT = 4;
+
 export const roaring2 = {
   name: 'obj_knight_roaring2',
 
@@ -429,6 +439,31 @@ export const roaring2 = {
 
     // THE IN-RUSH STREAKS — `timer >= 136 && intensity < 3.75`, ONE EVERY
     // FRAME (`(timer % 1) == 0` is always true; the modulo is vestigial).
+    //
+    // STREAK_UNIT IS A DEVIATION, taken on a play report and recorded here
+    // rather than buried. `spr_pixel_white_front` is FOUR pixels wide (the
+    // extracted manifest; its bbox fills all 4x4), so `image_xscale = 320`
+    // multiplies out to a **1280-pixel** bar on a 640-pixel view — measured,
+    // not estimated: the longest streak the untouched translation put on
+    // screen was 1200px, once a frame for the whole 270-frame wind-up. That
+    // is the screen-spanning starburst reported as not being in the real
+    // fight.
+    //
+    // Everything around it checks out. The lerp reads (from, to, time) like
+    // every other call in this object; the origin is the sprite's RIGHT edge
+    // (ox 4) so the body trails backward from the anchor, away from the
+    // vortex; drawSpriteExt scales that offset with the sprite and negates
+    // image_angle for GameMaker's winding. The translation is literal and the
+    // renderer is right — the product is simply not what the fight looks
+    // like, which means something in the reading is wrong in a way no capture
+    // this project has can locate.
+    //
+    // Dividing by the sheet width is the reading under which the number
+    // becomes physical: 320 as a LENGTH IN PIXELS is about the 480-560px the
+    // particle is born out at and travels in, so the streak spans its own
+    // approach instead of twice the screen. The count, the cadence, the
+    // 480 + irandom(80) spawn ring, the 8-frame in-rush and the 18-frame life
+    // are all untouched.
     // Each starts 480-560px out on a random bearing as a 16x0.5 white pixel
     // aimed at the vortex, then four lerps fire at once:
     //
@@ -452,10 +487,10 @@ export const roaring2 = {
       p.sprite_index = 'spr_pixel_white_front';
       p.direction = pointDirection(px, py, cx, cy);
       p.image_angle = p.direction;
-      p.image_xscale = 16;
+      p.image_xscale = 16 / STREAK_UNIT;
       p.image_yscale = 0.5;
       p.timer = 18;
-      scrLerpvar(state, spawn, p, 'image_xscale', 320, 2, 16);
+      scrLerpvar(state, spawn, p, 'image_xscale', 320 / STREAK_UNIT, 2 / STREAK_UNIT, 16);
       scrLerpvar(state, spawn, p, 'image_yscale', 2, 0.1, 16);
       scrLerpvar(state, spawn, p, 'image_alpha', 1, 0.5, 16);
       scrLerpvar(state, spawn, p, 'x', px, cx, 8, 1);

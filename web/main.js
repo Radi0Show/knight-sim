@@ -151,7 +151,16 @@ try {
     while (bag.length < 12) bag.push(0);
     title.bag = bag;
   }
-  if (saved?.volumes) {
+  // A SAVED VOLUME ONLY WINS IF IT WAS A CHOICE.
+  //
+  // `persistSettings()` runs once at load, so every entry written before the
+  // default dropped to 50 holds `100` whether or not anyone touched a slider
+  // — the old default, saved automatically. Honouring those would have meant
+  // the new default reached nobody who had ever opened the page. `v` marks
+  // entries written since, and only those carry their volumes forward;
+  // everything else in a pre-`v` entry (gear, bag, shake, scaling) is still
+  // read, because those only ever change by hand.
+  if (saved?.volumes && (saved.v | 0) >= 1) {
     title.volumes.music = Math.max(0, Math.min(100, saved.volumes.music | 0));
     title.volumes.sfx = Math.max(0, Math.min(100, saved.volumes.sfx | 0));
   }
@@ -428,6 +437,7 @@ function showReplay(token, copied) {
 function persistSettings() {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      v: 1, // see the load above: pre-`v` entries hold the old 100 default
       gear: title.gear, bag: title.bag, volumes: title.volumes,
       shake: title.shake, scaling: title.scaling,
     }));
