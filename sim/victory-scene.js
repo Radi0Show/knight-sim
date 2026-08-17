@@ -649,7 +649,26 @@ export function stepVictoryScene(sc, input, cues) {
         const ra = A.ralsei;
         ra.sprite = 'spr_ralsei_walk_right_unhappy'; // rsprite 359
         ra.speed = 0.25;
-        ra.lerp = { field: 'x', from: ra.x, to: ra.x + 8, t: 0, dur: 10, curve: 'linear' };
+        // `c_walkwait("r", 8, 10)` IS 80 PIXELS, NOT 8. The second argument is
+        // a SPEED and the third a duration — this was read as a distance, so
+        // Ralsei took one step and stopped, ten times short of Susie.
+        // Reported from play as him not walking up far enough.
+        //
+        // `scr_cutscene_commands`, the "walk" branch, states the product
+        // itself in its own skip path:
+        //
+        //     actor_move.speed = command_arg2[i];   // 8, px per frame
+        //     actor_move.time  = command_arg3[i];   // 10 frames
+        //     // ...and when the cutscene is being SKIPPED:
+        //     command_actor[i].x += lengthdir_x(command_arg2[i] * command_arg3[i], ...)
+        //
+        // The instant branch has to land the actor exactly where the animated
+        // one would, so `speed * time` is the game's own statement of what the
+        // walk is worth. obj_move_actor then holds `target.speed = 8` until
+        // `timer >= time` and zeroes it, which is the same 80 give or take the
+        // frame the counter trips on.
+        const WALK = 8 * 10;
+        ra.lerp = { field: 'x', from: ra.x, to: ra.x + WALK, t: 0, dur: 10, curve: 'linear' };
         // ...AND THEN HE TURNS TO FACE THE KNIGHT. The script is
         //
         //     c_autowalk(1); c_walkwait("r", 8, 10); c_facing("u");
