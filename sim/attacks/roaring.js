@@ -45,11 +45,13 @@
 
 import { spawn, destroy } from '../entity.js';
 import { lengthdirX, lengthdirY, pointDirection, pointDistance, scrApproach, gmlEq } from '../gml.js';
-import { gmlChoose } from '../rng.js';
+import { gmlChoose, gmlIrandom, gmlIrandomRange } from '../rng.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { cue, cueSustain, cueTune } from '../audio.js';
 import { roaringStar } from './roaring-star.js';
-import { screenPiece, scrAfterimage, knightCircle } from '../fx.js';
+import {
+  screenPiece, scrAfterimage, knightCircle, particleGeneric, afterimageScreen,
+} from '../fx.js';
 
 export const roaring2 = {
   name: 'obj_knight_roaring2',
@@ -377,6 +379,37 @@ export const roaring2 = {
       scrLerpvar(state, spawn, c, 'b_goal', 0, 255, 48, 1);
     }
 
+    // THE SCREEN IS PULLED IN. Every third frame until the intensity is
+    // nearly maxed, a copy of the WHOLE SCREEN is taken at a jittered point
+    // near the vortex and shrunk toward it:
+    //
+    //     if ((timer % 3) == 0 && intensity < 3.9)
+    //         with (instance_create(camerax() + fake_x + irandom_range(-30, 30),
+    //                               cameray() + fake_y + 55 + irandom_range(-30, 30),
+    //                               obj_afterimage_screen))
+    //         { faderate = 0.1 / other.intensity; draw_end = true;
+    //           xrate = -0.01; yrate = -0.01; }
+    //
+    // NEGATIVE rates, so the copies close INWARD — the screen itself being
+    // dragged into the vortex, and the visual half of the `player_suck` that
+    // is already dragging the soul there. The roar later uses POSITIVE rates
+    // for the opposite reading. Missing entirely; reported as the attack
+    // being short of effects.
+    //
+    // `faderate = 0.1 / intensity` means they last LONGER as it winds up
+    // (0.1/1.5 clears 0.5 alpha in 8 frames; 0.1/3.9 takes 20), so the echoes
+    // pile deeper the closer he gets to roaring.
+    if (e.timer % 3 === 0 && e.intensity < 3.9) {
+      const g = spawn(state, afterimageScreen, {
+        x: state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30),
+        y: state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30),
+      });
+      g.faderate = 0.1 / e.intensity;
+      g.draw_end = true;
+      g.xrate = -0.01;
+      g.yrate = -0.01;
+    }
+
     if (gmlEq(e.intensity, 3.74) && e.knight_sprite === 'spr_roaringknight_front') {
       e.knight_sprite = 'spr_roaringknight_front_flourish';
       e.knight_sprite_image = 0;
@@ -392,6 +425,41 @@ export const roaring2 = {
       if (e.fakeAlphaDelay === 0) {
         scrLerpvar(state, spawn, e, 'fake_alpha', 1, 0, 32);
       }
+    }
+
+    // THE IN-RUSH STREAKS — `timer >= 136 && intensity < 3.75`, ONE EVERY
+    // FRAME (`(timer % 1) == 0` is always true; the modulo is vestigial).
+    // Each starts 480-560px out on a random bearing as a 16x0.5 white pixel
+    // aimed at the vortex, then four lerps fire at once:
+    //
+    //     image_xscale  320 -> 2    over 16    a long streak collapsing
+    //     image_yscale    2 -> 0.1  over 16
+    //     image_alpha     1 -> 0.5  over 16
+    //     x, y  ->  the vortex      over 8, curve 1 "out"
+    //
+    // so it is stretched to 320 wide on its first frame and then whips into
+    // the centre in eight. `timer = 18` is its own kill switch — the position
+    // lerp finishes at 8 and it sits for ten more frames shrinking.
+    if (e.timer >= 136 && e.intensity < 3.75) {
+      const randangle = gmlIrandom(state.gmlRng, 360);
+      const randdistance = 480 + gmlIrandom(state.gmlRng, 80);
+      const px = state.view.x + e.fake_x + lengthdirX(randdistance, randangle);
+      const py = state.view.y + e.fake_y + 55 + lengthdirY(randdistance, randangle);
+      const cx = state.view.x + e.fake_x;
+      const cy = state.view.y + e.fake_y + 55;
+      const p = spawn(state, particleGeneric, { x: px, y: py });
+      p.not_outbound = false;
+      p.sprite_index = 'spr_pixel_white_front';
+      p.direction = pointDirection(px, py, cx, cy);
+      p.image_angle = p.direction;
+      p.image_xscale = 16;
+      p.image_yscale = 0.5;
+      p.timer = 18;
+      scrLerpvar(state, spawn, p, 'image_xscale', 320, 2, 16);
+      scrLerpvar(state, spawn, p, 'image_yscale', 2, 0.1, 16);
+      scrLerpvar(state, spawn, p, 'image_alpha', 1, 0.5, 16);
+      scrLerpvar(state, spawn, p, 'x', px, cx, 8, 1);
+      scrLerpvar(state, spawn, p, 'y', py, cy, 8, 1);
     }
 
     if (e.roaring_timer < 1 && e.intensity < 4) {
@@ -502,16 +570,85 @@ export const roaring2 = {
       if (e.roaring_timer < 169) {
         if (e.roaring_timer === 9) {
           // THE ROAR ITSELF. Eight stars straight out on the compass points.
+          //
+          // AND `fake_alpha = 1` — THE KNIGHT COMES BACK. This one line was
+          // missing, and it is the whole of the reported bug: at intensity
+          // 3.74 he fades out over 32 frames behind the white bloom, and the
+          // roar is what snaps him back, in a new pose, on the frame he
+          // screams. Without it the fade never reversed and he simply never
+          // returned — "the knight disappears halfway through". It is a bare
+          // assignment, not a lerp: he is THERE, instantly, at full alpha.
+          e.fake_alpha = 1;
+          // ...continuing the flourish he faded out on, 4 -> 6 over 4 frames.
+          scrLerpvar(state, spawn, e, 'knight_sprite_image', 4, 6, 4);
           e.player_suck = Math.min(e.player_suck, -6);
           e.ball_speed = -32;
           e.ball_darkness = 1;
           scrLerpvar(state, spawn, e, 'bobble_freq', 1, 3, 8);
           cue(state, 'snd_knight_roar', 1);
 
+          // THE WHITE FLASH. A plain obj_knight_circle at the vortex with
+          // r/g/b already 255 and no goals set, so it opens on its Create
+          // defaults (size_goal 960, growth 40) and blows white across the
+          // screen — the counterpart of the BLACK one at intensity 3.66,
+          // which starts at 0 and lerps its goals up. `visible = false` and
+          // `draw_in_box = false`: composited by the roar, unclipped.
+          const flash = spawn(state, knightCircle, {
+            x: state.view.x + e.fake_x,
+            y: state.view.y + e.fake_y + 55,
+          });
+          flash.r = 255; flash.g = 255; flash.b = 255;
+          flash.draw_in_box = false;
+          flash.visible = false;
+
+          // `scr_script_repeat(instance_create, 8, 2, x, y, 46)` — object 46
+          // is `obj_afterimage_screen`, resolved off the object list
+          // (tools/patches/object_ids.csx), NOT from the dump's
+          // `__global_object_depths` table, which is partial and does not
+          // list the roar's own objects at all. Reading 46 out of that table
+          // gives `obj_interactable`, which is how a numeric asset id turns
+          // into a wrong answer that looks sourced.
+          //
+          // max_time 8 at rate 2 = FOUR copies, two frames apart, on the
+          // object's own defaults (xrate/yrate +0.01, faderate 0.00625, and
+          // `draw_end` false so each draws itself). Positive rates: the
+          // screen blows OUTWARD here, against the inward pull that ran for
+          // the whole wind-up.
+          e.roarGhosts = { left: 8, rate: 2, next: 0 };
+
+          // ...and the eight stars, straight out on the compass points.
           const burst = state.roarBurstSpeeds ?? [];
           for (let a = 0; a < 8; a++) {
             fireRoarStar(state, e, a * 45, burst[a] ?? 8.5, 1.2);
           }
+        }
+        // The repeat's own clock. obj_script_delayed fires on its rate until
+        // `max_time` runs out, so this is four spawns and then nothing.
+        if (e.roarGhosts && e.roarGhosts.left > 0) {
+          if (e.roarGhosts.next <= 0) {
+            spawn(state, afterimageScreen, {
+              x: state.view.x + e.fake_x,
+              y: state.view.y + e.fake_y + 55,
+            });
+            e.roarGhosts.next = e.roarGhosts.rate;
+          }
+          e.roarGhosts.next -= 1;
+          e.roarGhosts.left -= 1;
+        }
+
+        // AND THE ROAR'S OWN SCREEN ECHOES, every third frame for the whole
+        // 169-frame scream — `xrate/yrate 0.015, faderate 0.025`. Faster and
+        // shorter-lived than the wind-up's, and OUTWARD. This runs alongside
+        // the star fans below; it is not gated on them.
+        if (e.roaring_timer % 3 === 0) {
+          const g = spawn(state, afterimageScreen, {
+            x: state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30),
+            y: state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30),
+          });
+          g.xrate = 0.015;
+          g.yrate = 0.015;
+          g.faderate = 0.025;
+          g.draw_end = true;
         }
 
         if (e.roaring_timer === 15) {

@@ -88,6 +88,28 @@ function bakeMask(mask, color) {
   return c;
 }
 
+/**
+ * A scratch canvas the size of the view, reused across frames. The screen
+ * echoes each need a copy of the live surface, and allocating one per ghost
+ * per frame is a canvas allocation forty times a second.
+ *
+ * `imageSmoothingEnabled = false` for the same reason it is off everywhere
+ * else: a fresh 2d context defaults it ON, and a bilinear-filtered copy of a
+ * pixel-art frame reads as blur rather than as an echo — which is exactly the
+ * seam the intro's scratch surfaces were reported for.
+ */
+let ghostScratch = null;
+function getScratch(ref, w, h) {
+  if (!ref || ref.width !== w || ref.height !== h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    c.getContext('2d').imageSmoothingEnabled = false;
+    return c;
+  }
+  return ref;
+}
+
 export async function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
@@ -701,6 +723,66 @@ export async function createRenderer(canvas) {
             state.soul.y - state.view.y - entry.meta.oy);
           ctx.restore();
         }
+      }
+    }
+
+    // THE SCREEN ECHOES — obj_afterimage_screen, and they belong HERE, at the
+    // very end, because the object has TWO draw events and the flag picks
+    // which one runs:
+    //
+    //     Draw    (0)   if (draw_end) exit;   ...copy and blit...
+    //     Draw End (73) if (!draw_end) exit;  ...copy and blit...
+    //                   with (obj_heart) { draw_self(); }
+    //
+    // The Draw End copy takes the WHOLE application surface — the roar's
+    // composite, the arena, the party panels, all of it — scales it about the
+    // point it was born at, and then REDRAWS THE SOUL over the top so the
+    // thing you are dodging with never disappears behind an echo of itself.
+    // That last line is not decoration; without it the soul strobes in and
+    // out under every ghost.
+    //
+    // Each one re-copies the LIVE surface every frame rather than holding a
+    // snapshot, so drawing them in order compounds within the frame exactly as
+    // the original's surface chain does. (The intro learnt this the hard way —
+    // a frozen copy smears stale frames and reads as blur.)
+    //
+    // LABELLED DEVIATION: the copies created WITHOUT `draw_end` — the four the
+    // roar fires at roaring_timer 9 — draw in the ordinary Draw pass at the
+    // object's own depth in the game, and that depth lives on the object
+    // definition where no grep can reach it (CLAUDE.md's `depth` hole). They
+    // are drawn in this same late pass here.
+    const ghosts = state.entities.filter(
+      (x) => x.alive && x.type.name === 'obj_afterimage_screen',
+    );
+    if (ghosts.length) {
+      for (const gst of ghosts) {
+        if (gst.alpha <= 0) continue;
+        ghostScratch = getScratch(ghostScratch, VIEW_W, VIEW_H);
+        const gg = ghostScratch.getContext('2d');
+        gg.setTransform(1, 0, 0, 1, 0, 0);
+        gg.clearRect(0, 0, VIEW_W, VIEW_H);
+        gg.drawImage(ctx.canvas, 0, 0);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = Math.max(0, Math.min(1, gst.alpha));
+        // `draw_surface_ext(copy, x - anchor_x * xscale, y - anchor_y * yscale,
+        //                   xscale, yscale, ...)` — the anchor keeps the point
+        // it was created at fixed while the rest of the screen scales around
+        // it, which is what aims the echo at the vortex.
+        const sx = (gst.x - state.view.x) - gst.anchor_x * gst.xscale;
+        const sy = (gst.y - state.view.y) - gst.anchor_y * gst.yscale;
+        ctx.drawImage(ghostScratch, sx, sy, VIEW_W * gst.xscale, VIEW_H * gst.yscale);
+        ctx.restore();
+      }
+      // `with (obj_heart) draw_self()` — the soul, back on top.
+      const heartEntry = sprites.get('spr_dodgeheart');
+      if (heartEntry && state.soul?.alive) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(heartEntry.frames[0],
+          state.soul.x - state.view.x - heartEntry.meta.ox,
+          state.soul.y - state.view.y - heartEntry.meta.oy);
+        ctx.restore();
       }
     }
 

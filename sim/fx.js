@@ -408,3 +408,85 @@ export const screenPiece = {
     }
   },
 };
+
+/**
+ * obj_particle_generic — the plainest bullet-less mote in the game. Its Create
+ * is three lines and its Step is the whole object:
+ *
+ *     image_alpha  = scr_approach(image_alpha, 0, fade_rate);
+ *     image_xscale = scr_approach(image_xscale, 0, shrink_rate);
+ *     image_yscale = scr_approach(image_yscale, 0, shrink_rate);
+ *     ...destroy on any of them reaching 0, or on `timer` counting down to 0
+ *
+ * All three rates default to ZERO, so a particle created and left alone never
+ * fades and never shrinks — `timer` is the only thing that can kill it, and
+ * `timer = -1` means it lives forever. ROARING's in-rush streaks set `timer =
+ * 18` and drive everything else with lerpvars instead of the rates, which is
+ * why this object can be this empty and still do what it does there.
+ */
+export const particleGeneric = {
+  name: 'obj_particle_generic',
+
+  create(e) {
+    e.fade_rate = e.fade_rate ?? 0;
+    e.shrink_rate = e.shrink_rate ?? 0;
+    e.timer = e.timer ?? -1;
+    e.image_alpha = e.image_alpha ?? 1;
+  },
+
+  step(e) {
+    e.image_alpha = scrApproach(e.image_alpha, 0, e.fade_rate);
+    e.image_xscale = scrApproach(e.image_xscale, 0, e.shrink_rate);
+    e.image_yscale = scrApproach(e.image_yscale, 0, e.shrink_rate);
+    if (e.image_xscale === 0 || e.image_yscale === 0) { destroy(e); return; }
+    if (e.image_alpha === 0) { destroy(e); return; }
+    e.timer -= 1;
+    if (e.timer === 0) destroy(e);
+  },
+};
+
+/**
+ * obj_afterimage_screen — A COPY OF THE WHOLE SCREEN, redrawn scaled about the
+ * point it was created at:
+ *
+ *     // Create
+ *     anchor_x = x - viewX;  anchor_y = y - viewY;
+ *     xscale = 1; yscale = 1; alpha = 0.5;
+ *     xrate = 0.01; yrate = 0.01; faderate = 0.00625;
+ *     // Step
+ *     xscale += xrate; yscale += yrate;
+ *     alpha = scr_approach(alpha, 0, faderate);   // destroy at 0
+ *     // Draw
+ *     draw_surface_ext(copy, x - anchor_x * xscale, y - anchor_y * yscale,
+ *                      xscale, yscale, 0, c_white, alpha);
+ *
+ * NEGATIVE RATES ARE THE POINT in ROARING's first use: `xrate = -0.01` makes
+ * the copy shrink INWARD toward the vortex rather than blooming outward, which
+ * is the difference between the screen being pulled in and the screen being
+ * blown apart. The roar itself uses positive rates for exactly that contrast.
+ *
+ * `draw_end` makes the object's own Draw exit — those copies are composited by
+ * whoever owns the effect instead, in its own layer order.
+ */
+export const afterimageScreen = {
+  name: 'obj_afterimage_screen',
+
+  create(e, state) {
+    e.anchor_x = e.x - (state.view?.x ?? 0);
+    e.anchor_y = e.y - (state.view?.y ?? 0);
+    e.xscale = 1;
+    e.yscale = 1;
+    e.alpha = 0.5;
+    e.xrate = e.xrate ?? 0.01;
+    e.yrate = e.yrate ?? 0.01;
+    e.faderate = e.faderate ?? 0.00625;
+    e.draw_end = e.draw_end ?? false;
+  },
+
+  step(e) {
+    e.xscale += e.xrate;
+    e.yscale += e.yrate;
+    e.alpha = scrApproach(e.alpha, 0, e.faderate);
+    if (e.alpha === 0) destroy(e);
+  },
+};
