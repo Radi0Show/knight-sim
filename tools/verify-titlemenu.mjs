@@ -26,7 +26,7 @@
 // that was broken.
 
 import {
-  createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS,
+  createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
 } from '../sim/modes.js';
 
 const ROSTER = [
@@ -129,6 +129,43 @@ function atRoster() {
   tap(t, 'cancel');
   check(t.settings === null,
     'X out of CREDITS should return to the title, not open the settings hub');
+}
+
+// ---- the link comes back as data, not as a window.open ---------------------
+// `sim/` has no DOM and every verifier here runs under Node, so a row that
+// goes somewhere has to SAY so and let the driver do it. Two ways to get this
+// wrong that look identical from the menu: opening nothing, and opening on
+// every row.
+{
+  const wander = CREDITS.findIndex((c) => c.who === 'WandeR');
+  check(wander >= 0, 'the WandeR row went missing');
+  check(creditLink(CREDITS[wander]) === 'https://wander22lstr.carrd.co/',
+    `WandeR's link should be the carrd, got ${creditLink(CREDITS[wander])}`);
+  // The DISPLAY string carries no scheme — the page shows a readable host and
+  // creditLink builds the href — so a row whose `link` already had "https://"
+  // would silently produce "https://https://...".
+  check(!CREDITS.some((c) => String(c.link ?? '').includes('://')),
+    'credit links are stored bare; creditLink adds the scheme');
+
+  const t = createTitle();
+  for (let i = 0; i < MODES.length + 1; i++) tap(t, 'down');
+  tap(t, 'confirm');
+  for (let i = 0; i < wander; i++) tap(t, 'down');
+  const hit = tap(t, 'confirm');
+  check(hit.link === 'https://wander22lstr.carrd.co/',
+    `confirm on WandeR should return the href, got ${hit.link}`);
+  check(t.settings?.page === 'credits', 'and it should stay on the page');
+
+  // A row with no link is a NO-OP: no href, and no error buzz either, because
+  // nothing is broken.
+  const noLink = CREDITS.findIndex((c) => !c.link);
+  const t2 = createTitle();
+  for (let i = 0; i < MODES.length + 1; i++) tap(t2, 'down');
+  tap(t2, 'confirm');
+  for (let i = 0; i < noLink; i++) tap(t2, 'down');
+  const miss = tap(t2, 'confirm');
+  check(!miss.link, `a row with no link should return none, got ${miss.link}`);
+  check(!miss.error, 'and it should not buzz — there is just nothing there');
 }
 {
   const t = atRoster();

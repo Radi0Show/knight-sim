@@ -24,6 +24,7 @@
 import { PARTY, scrRevive } from './damage.js';
 import { MAX_TENSION } from './tension.js';
 import { cue, cueStop } from './audio.js';
+import { spawnHealWriter } from './dmgnumbers.js';
 
 // NAMES AND DESCRIPTIONS ARE THE DUMP'S, verbatim from `scr_iteminfo`'s
 // `itemnameb` / `itemdescb`. Two things they settle that guessing got wrong:
@@ -115,13 +116,20 @@ export function applyHeal(state, target, amount, healRibbons = 0) {
  * — items heal their printed amount, ribbons or not.
  */
 export function scrHealitem(state, target, amount) {
-  return applyHeal(state, target, amount, 0);
+  const did = applyHeal(state, target, amount, 0);
+  // `healtext.healamt = arg1` — the REQUESTED amount, not what landed. A
+  // Spincake on a full party reads +150 in the game too.
+  spawnHealWriter(state, target, amount);
+  return did;
 }
 
 /** `scr_healitem_all(amount)` — EVERY member, the fallen included. */
 export function scrHealitemAll(state, amount) {
   let total = 0;
   for (let i = 0; i < 3; i++) total += applyHeal(state, i, amount, 0);
+  // A separate loop, as in the dump: scr_healall runs first, THEN one writer
+  // per character. Interleaving is invisible here but is not what it does.
+  for (let i = 0; i < 3; i++) spawnHealWriter(state, i, amount);
   return total;
 }
 

@@ -37,7 +37,12 @@ import { scrShakescreen } from './shake.js';
 // Where each party member stands, for the damage number to pop off. Measured
 // from traces/flurry2.csv, the same figures sim/actors.js uses — imported from
 // there would be a cycle (actors imports damage for PARTY stats).
-const PARTY_POS = [
+/**
+ * `(charinstance.x, charinstance.y + myheight - 24)` — where a writer over a
+ * PARTY MEMBER goes, from scr_damage_fixed and scr_damage_maxhp. Exported
+ * because the heal writers land at the same anchor (sim/dmgnumbers.js).
+ */
+export const PARTY_POS = [
   { x: 126, y: 104 },
   { x: 80, y: 142 },
   { x: 58, y: 190 },

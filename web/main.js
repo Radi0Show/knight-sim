@@ -517,6 +517,12 @@ function frame(now) {
       if (r.selected) audio.play([{ name: 'snd_select', pitch: 1, gain: 1 }]);
       // The equip menu's refusal, and UNUSED's whole personality.
       if (r.error) audio.play([{ name: 'snd_error', pitch: 1, gain: 1 }]);
+      // A CREDITS row with a link. `sim/` returns the href and the DRIVER
+      // opens it — the architecture rule is that sim/ has no DOM, and a
+      // `window.open` inside it would also break every headless verifier.
+      // `noopener` because the tool has no reason to hand a third-party page
+      // a handle back to this one.
+      if (r.link) window.open(r.link, '_blank', 'noopener,noreferrer');
       if (title.dirty) {
         title.dirty = false;
         persistSettings();

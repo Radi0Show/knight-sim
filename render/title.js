@@ -194,21 +194,46 @@ function drawSettings(ctx, title, sprites, font) {
   }
 
   if (s.page === 'credits') {
+    // A SMALLER FONT, NOT A SMALLER SCALE. The role lines were `fnt_mainbig`
+    // at xscale/yscale 0.8, and a fractional scale on a bitmap font is the
+    // same defect the GRAPHICS 'pixel' option exists to avoid: some source
+    // columns land on one device pixel and their neighbours on two, so a
+    // one-pixel stem is fat on one letter and thin on the next. Reported as
+    // the roles looking fuzzy, and they were.
+    //
+    // `fnt_main` is a genuinely smaller FACE — the game's own answer to
+    // wanting smaller text, and what the Game Over screen (typer 667) uses.
+    // Drawn at 1:1 it is sharp, and the size difference against mainbig still
+    // separates the role from the name.
+    const small = loadFont('../assets/fonts', 'fnt_main');
     centred(ctx, font, 'CREDITS', 60, c_white, 1.4);
+    // Three lines fit in a row — role, name, link — so the row pitch has to
+    // clear all three or the link runs into the next role, which is what a
+    // 56px pitch did as soon as one row had a link.
+    const PITCH = 78;
     for (let i = 0; i < CREDITS.length; i++) {
-      const y = 170 + i * 56;
+      const y = 150 + i * PITCH;
       const on = i === s.cursor;
-      if (on && heart) drawSpriteExt(ctx, heart, 0, 90 + bob, y + 4, 1, 1, 0, null, 1);
       const row = CREDITS[i];
+      // The NAME is the line the heart points at — it is the biggest thing in
+      // the row and the thing the row is about.
+      const nameY = row.who ? y + 22 : y + 11;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 90 + bob, nameY + 4, 1, 1, 0, null, 1);
       // The SUPPORT row is a single word, not a role-and-name pair, so it is
       // drawn as one line rather than padded into a column that has no second
       // half.
-      if (row.who) {
-        drawText(ctx, font, row.role, 120, y,
-          { color: rgb(on ? HILITE : DIM), xscale: 0.8, yscale: 0.8 });
-        drawText(ctx, font, row.who, 120, y + 22, { color: rgb(on ? HILITE : c_white) });
-      } else {
-        drawText(ctx, font, row.role, 120, y + 11, { color: rgb(on ? HILITE : c_white) });
+      if (row.who && small?.ready) {
+        drawText(ctx, small, row.role, 120, y, { color: rgb(on ? HILITE : DIM) });
+      }
+      drawText(ctx, font, row.who || row.role, 120, nameY,
+        { color: rgb(on ? HILITE : c_white) });
+      // The link, under the name, so a row that goes somewhere says so — and
+      // one that does not stays silent rather than showing a dead cue. The
+      // host is always visible; selecting the row swaps it for the keypress,
+      // because a URL you cannot click needs to say what to press.
+      if (row.link && small?.ready) {
+        drawText(ctx, small, on ? `Z    ${row.link}` : row.link, 120, nameY + 30,
+          { color: rgb(on ? HILITE : DIM) });
       }
     }
     centred(ctx, font, 'arrows  move      X  back', 448, DIM, 0.75);

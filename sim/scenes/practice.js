@@ -30,7 +30,9 @@ import {
   advanceBalloon, advanceReply, clearDialogue, dialogueDone, dialogueSkipTimer,
   textSoundChar,
 } from '../dialogue.js';
-import { spawnDmgNumber, stepDmgNumbers, resetDmgStack } from '../dmgnumbers.js';
+import {
+  spawnDmgNumber, stepDmgNumbers, stepHealWriters, resetDmgStack,
+} from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
 import { castSpell } from '../spells.js';
@@ -225,6 +227,8 @@ const director = {
     // (`vspeed = -5 - random(2)`), so it draws from the sim's generator and a
     // replayed seed replays the same arcs.
     stepDmgNumbers(state, () => rngNext(state.rng));
+    // obj_healwriter has no delay and no RNG — it rises and fades on its own.
+    stepHealWriters(state);
     stepAttackVfx(state);
     // obj_rudebuster_anim + obj_rudebuster_bolt. The press is an EDGE, and it
     // is the same button that confirms in the menu — but the menu is closed

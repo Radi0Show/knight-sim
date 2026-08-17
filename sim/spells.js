@@ -26,6 +26,30 @@ import { PARTY, statFor } from './damage.js';
 import { spellDamage, damageKnight } from './knight.js';
 import { castRudeBuster } from './rudebuster.js';
 import { applyHeal } from './items.js';
+import { spawnSelfHealNumber } from './dmgnumbers.js';
+import { PARTY as PARTY_STATS } from './damage.js';
+
+/**
+ * `scr_heal_amount_modify_by_equipment` — BlueRibbon's Heal+, and the SPELL
+ * path is its only caller (scr_healitemspell / scr_healallitemspell, both
+ * reached from scr_spell alone). Items heal their printed amount.
+ */
+const healAmountModifyByEquipment = (amount, ribbons) =>
+  amount + Math.ceil(amount / 8) * ribbons;
+
+/**
+ * The spell path's writer: `scr_dmgwriter_selfchar()` at type 3, damage = the
+ * MODIFIED heal amount, and `specialmessage = 3` — the MAX graphic — when the
+ * heal left them at full.
+ *
+ * THE TEST IS TAKEN AFTER THE HEAL, and it is `>=`, not `==`: an ally already
+ * at max who is healed again still reads MAX, which is what the game does and
+ * is the only way "+0" never appears on screen.
+ */
+function healNumber(state, target, amount) {
+  const maxed = state.partyHp[target] >= PARTY_STATS[target].maxhp;
+  spawnSelfHealNumber(state, target, amount, maxed);
+}
 import { cue } from './audio.js';
 
 // Where the caster and the Knight stand. Duplicated from sim/actors.js rather
@@ -173,14 +197,18 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     // `magic * 5`, off the EQUIPPED magic — Dealmaker's +5 is most of
     // Ralsei's healing. BlueRibbon's Heal+ multiplies what the WEARER heals.
     const st = statFor(state, slot);
+    const amount = healAmountModifyByEquipment(st.magic * 5, st.healRibbons);
     const did = applyHeal(state, target, st.magic * 5, st.healRibbons);
+    healNumber(state, target, amount);
     return `Heal Prayer: +${did}`;
   }
   if (spellId === 11) {
     // UltraHeal's cost is `225 - round(global.flag[1045] * 2.5)`; flag 1045 is
     // 0 in this fight's state, so it is the flat 225.
     const st2 = statFor(state, slot);
+    const amount = healAmountModifyByEquipment(st2.magic * 5 + 100, st2.healRibbons);
     const did = applyHeal(state, target, st2.magic * 5 + 100, st2.healRibbons);
+    healNumber(state, target, amount);
     return `UltraHeal: +${did}`;
   }
   if (spellId === 3) {

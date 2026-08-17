@@ -27,7 +27,8 @@
 
 import { drawSpriteExt, rgb } from './draw/gm.js';
 import { drawSpriteText, measureText, FONTS } from './text.js';
-import { dmgColor, TYPE_DEAD } from '../sim/dmgnumbers.js';
+import { dmgColor, TYPE_DEAD, MSG_MAX } from '../sim/dmgnumbers.js';
+import { loadFont, drawText } from './font.js';
 
 /**
  * obj_basicattack — the impact sprite, drawn at the enemy's depth so it lands
@@ -67,11 +68,21 @@ export function drawDmgNumbers(ctx, state, sprites) {
     if (xs <= 0 || ys <= 0 || alpha <= 0) continue;
     const color = dmgColor(n.type);
 
-    // `message` swaps the digits for a graphic. `damage == 0` is frame 0
-    // (MISS) in the writer's colour; a death — `type == 4` — is frame 1 in
-    // c_red, which the branch above already selected.
-    const frame = n.type === TYPE_DEAD ? 1 : 0;
-    if (n.damage === 0 || n.type === TYPE_DEAD) {
+    // `message` swaps the digits for a graphic:
+    //
+    //     damage == 0        message 1   frame 0   MISS
+    //     type == 4          message 2   frame 1   DOWN, c_red
+    //     specialmessage 3   message 3   frame 2   MAX,  c_lime
+    //
+    // and the Draw applies them in that order — `message = specialmessage`
+    // first, then the `damage == 0` and `type == 4` overrides — so a heal
+    // that lands 0 shows MISS rather than MAX. Ordering these the other way
+    // would put MAX on a heal that did nothing.
+    let frame = -1;
+    if (n.special === MSG_MAX) frame = 2;
+    if (n.damage === 0) frame = 0;
+    if (n.type === TYPE_DEAD) frame = 1;
+    if (frame >= 0) {
       if (msg) drawSpriteExt(ctx, msg, frame, n.x + 30, n.y, xs, ys, 0, color, alpha);
       continue;
     }
@@ -96,6 +107,38 @@ export function drawDmgNumbers(ctx, state, sprites) {
     if (measureText(sprites, FONTS.damage, text) === 0) {
       state.counters.missingDamageFont = (state.counters.missingDamageFont ?? 0) + 1;
     }
+  }
+  ctx.restore();
+
+  drawHealWriters(ctx, state);
+}
+
+/**
+ * obj_healwriter's Draw — the ITEM heal number, over the charbox.
+ *
+ *     scr_84_set_draw_font("mainbig");
+ *     draw_set_color(c_lime);
+ *     draw_set_alpha(image_alpha);
+ *     draw_text(x, y, "+" + string(healamt));
+ *
+ * `fnt_mainbig` and a plain `draw_text`, so glyphs advance by their own widths
+ * — not the writer's fixed hspace, which is obj_writer's idiom and not this
+ * object's. And `image_alpha` starts at 1.5 against a draw_set_alpha that
+ * CLAMPS at 1, so it holds solid for five frames before the ten-frame fade.
+ */
+function drawHealWriters(ctx, state) {
+  const heals = state.dmg?.heals;
+  if (!heals || !heals.length) return;
+  const font = loadFont();
+  if (!font?.ready) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const h of heals) {
+    const alpha = Math.min(1, h.alpha);
+    if (alpha <= 0) continue;
+    drawText(ctx, font, `+${h.healamt}`, h.x, h.y, {
+      color: 'rgb(0,255,0)', alpha,
+    });
   }
   ctx.restore();
 }

@@ -90,9 +90,16 @@ export const TITLE_EXTRAS = [
  */
 export const CREDITS = [
   { role: 'Developer', who: 'Radi0', link: null },
-  { role: 'Bug fixing and Playtesting', who: 'WandeR', link: null },
+  { role: 'Bug fixing and Playtesting', who: 'WandeR', link: 'wander22lstr.carrd.co' },
   { role: 'SUPPORT', who: '', link: null },
 ];
+
+/**
+ * The href for a row, or null. Kept apart from the DISPLAY string above so the
+ * page can show a readable `wander22lstr.carrd.co` while the driver opens the
+ * real URL — and so `sim/` never holds a value only a browser can use.
+ */
+export const creditLink = (row) => (row.link ? `https://${row.link}/` : null);
 
 /** BlackShard (26) stays out of the pocket; id 0 is the empty slot. */
 export function pocketOf(kind) {
@@ -210,13 +217,18 @@ function stepSettings(title, pressed) {
     return out;
   }
 
-  // ---- credits: a cursor over three rows, none of which goes anywhere yet ----
+  // ---- credits: a cursor over three rows, one of which now goes somewhere ---
   //
-  // The rows carry a `link: null` so the day one of them gets a URL, the shape
-  // is already right and only the value changes. Confirm on a row with no link
-  // is a NO-OP rather than an error sound: nothing is broken, there is just
-  // nothing there.
+  // Confirm on a row WITH a link returns it as `out.link` and the driver opens
+  // it — `sim/` has no DOM and must not grow one for this. Confirm on a row
+  // without is a NO-OP rather than an error sound: nothing is broken, there is
+  // just nothing there.
   if (s.page === 'credits') {
+    if (pressed('confirm')) {
+      const href = creditLink(CREDITS[s.cursor]);
+      if (href) { out.link = href; out.selected = true; }
+      return out;
+    }
     if (pressed('up')) { s.cursor = (s.cursor + CREDITS.length - 1) % CREDITS.length; out.moved = true; }
     if (pressed('down')) { s.cursor = (s.cursor + 1) % CREDITS.length; out.moved = true; }
     // X goes back to wherever the page was opened FROM — the title now, not
@@ -333,7 +345,10 @@ export function stepTitle(title, input, attacks) {
   // The settings pages own the input while open.
   if (title.settings) {
     const r = stepSettings(title, pressed);
-    return { moved: r.moved, chosen: false, selected: r.selected, error: r.error };
+    return {
+      moved: r.moved, chosen: false, selected: r.selected, error: r.error,
+      link: r.link ?? null,
+    };
   }
 
   // The cursor walks the modes plus the TITLE_EXTRAS rows below them.

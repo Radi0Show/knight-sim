@@ -18,9 +18,12 @@
 
 import { createState } from '../sim/index.js';
 import {
-  createDmgNumbers, spawnDmgNumber, stepDmgNumbers, resetDmgStack, DMG_COLORS,
-  dmgColor, TYPE_PARTY, TYPE_DEAD,
+  createDmgNumbers, spawnDmgNumber, stepDmgNumbers, stepHealWriters,
+  resetDmgStack, spawnSelfHealNumber, spawnHealWriter, DMG_COLORS,
+  dmgColor, TYPE_PARTY, TYPE_DEAD, TYPE_HEAL, MSG_MAX,
 } from '../sim/dmgnumbers.js';
+import { PARTY } from '../sim/damage.js';
+import { scrHealitem, scrHealitemAll, applyHeal } from '../sim/items.js';
 import { knightTarget } from '../sim/damage.js';
 import { createKnight } from '../sim/knight.js';
 import { createAttackVfx, spawnImpact, stepAttackVfx, IMPACT, KRIS_IMPACT } from '../sim/attackvfx.js';
@@ -227,7 +230,98 @@ if (!IMPACT[1].shake) failures.push('Susie does not shake the screen');
   if (s.attackVfx[0].x === s.attackVfx[1].x) failures.push('two impacts landed on the same x');
 }
 
+// --------------------------------------------------------- THE HEAL WRITERS
+// TWO OBJECTS, not one with a flag, and the split is the whole finding:
+//
+//   scr_healitem / scr_healitem_all  ->  obj_healwriter    (ITEMS)
+//   scr_dmgwriter_selfchar + type 3  ->  obj_dmgwriter     (SPELLS, raises)
+//
+// The second gets `specialmessage = 3` — the MAX graphic — when the heal
+// leaves the target full. The first has no message sprite at all, so an item
+// that fills the bar still prints its number.
+{
+  const s = st();
+  s.partyHp = [10, 190, 140];
+  // A heal that does NOT fill the bar shows the amount.
+  spawnSelfHealNumber(s, 0, 55, false);
+  const n = s.dmg.list[0];
+  if (n.type !== TYPE_HEAL) failures.push(`a heal writer is type 3, got ${n.type}`);
+  if (n.special !== 0) failures.push('a partial heal must not claim MAX');
+  const lime = dmgColor(TYPE_HEAL);
+  if (lime.join() !== '0,255,0') failures.push(`type 3 draws c_lime, got ${lime.join()}`);
+
+  // ...and one that fills it shows MAX.
+  spawnSelfHealNumber(s, 1, 999, true);
+  if (s.dmg.list[1].special !== MSG_MAX) failures.push('a full heal should set MAX');
+}
+// THE TWO STACKS ARE SEPARATE COUNTERS. Three hits on the Knight step by
+// `hittarget`; three heal writers over three DIFFERENT characters each step by
+// that character's own `tu`. Sharing one counter climbs 60px up one character
+// and is invisible until a party-wide heal.
+{
+  const s = st();
+  s.partyHp = [10, 10, 10];
+  for (let i = 0; i < 3; i++) spawnSelfHealNumber(s, i, 50, false);
+  const ys = s.dmg.list.map((w) => w.ystart);
+  if (new Set(s.dmg.tu).size !== 1 || s.dmg.tu[0] !== 1) {
+    failures.push(`each character's tu should be 1, got ${s.dmg.tu.join()}`);
+  }
+  if (s.dmg.hittarget !== 0) {
+    failures.push(`self-char writers must not touch hittarget, it is ${s.dmg.hittarget}`);
+  }
+  // Three different characters, so three different anchors and no shared step.
+  if (new Set(ys).size !== 3) failures.push(`three heals stacked onto ${new Set(ys).size} rows`);
+
+  // Two heals on the SAME character do step 20 apart.
+  const s2 = st();
+  spawnSelfHealNumber(s2, 0, 10, false);
+  spawnSelfHealNumber(s2, 0, 10, false);
+  if (s2.dmg.list[0].ystart - s2.dmg.list[1].ystart !== 20) {
+    failures.push('two heals on one character should sit 20px apart');
+  }
+}
+// obj_healwriter: rises with FRICTION and fades on image_alpha, and it shows
+// the REQUESTED amount rather than what landed — `healamt = arg1`, while
+// scr_heal clamps at maxhp. A Spincake on a full party reads +150 in the game.
+{
+  const s = st();
+  s.partyHp = [PARTY[0].maxhp, PARTY[1].maxhp, PARTY[2].maxhp];
+  const did = scrHealitem(s, 0, 150);
+  if (did !== 0) failures.push(`a full character heals 0, got ${did}`);
+  if (s.dmg.heals.length !== 1) failures.push('scr_healitem should make one heal writer');
+  if (s.dmg.heals[0].healamt !== 150) {
+    failures.push(`the writer shows the requested 150, got ${s.dmg.heals[0].healamt}`);
+  }
+  if (s.dmg.list.length !== 0) failures.push('items use obj_healwriter, NOT obj_dmgwriter');
+
+  // vspeed -6 with friction 0.2: it rises, decelerating, and never reverses.
+  const first = s.dmg.heals[0].y;
+  stepHealWriters(s);
+  const second = s.dmg.heals[0].y;
+  stepHealWriters(s);
+  const third = s.dmg.heals[0].y;
+  if (!(second < first)) failures.push('the heal writer should rise');
+  if (!((third - second) > (second - first))) {
+    failures.push('friction should decelerate it, not hold a constant speed');
+  }
+  // alpha 1.5 at 0.1 a frame — 15 draws, the first five of them solid.
+  let frames = 2;
+  while (s.dmg.heals.length && frames < 200) { stepHealWriters(s); frames += 1; }
+  if (frames !== 15) failures.push(`the heal writer lives 15 frames, got ${frames}`);
+}
+// A party-wide item makes THREE of them, one per charbox, at three x's.
+{
+  const s = st();
+  s.partyHp = [10, 10, 10];
+  scrHealitemAll(s, 100);
+  if (s.dmg.heals.length !== 3) failures.push('scr_healitem_all writes one per character');
+  const xs = s.dmg.heals.map((h) => h.x);
+  if (new Set(xs).size !== 3) failures.push(`three charboxes, ${new Set(xs).size} positions`);
+  if (xs[0] !== 70) failures.push(`charbox 0 is x 0 + 70, got ${xs[0]}`);
+}
+
 console.log('stack 20px apart going up · squash 1.8x0.2 -> 1.0x1.0 · two bounces · fade at killtimer 35');
+console.log('heals: items -> obj_healwriter (+N at the charbox); spells -> type 3 lime, MAX at full');
 console.log(`impacts: Kris ${IMPACT[0].sprite}, Susie ${IMPACT[1].sprite} (+shake), Ralsei ${IMPACT[2].sprite}`);
 console.log('a critical starts at 2.5 and keeps growing 0.1 a frame');
 console.log('damage TAKEN is white (doomtype -1), red on death; damage DEALT is tinted per character');
