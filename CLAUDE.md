@@ -26,6 +26,10 @@ node tools/verify-damage.mjs               # no bullet holds the placeholder
 - `~/knight-research/` — PRIVATE repo: the oracle, the GML dump, the traces.
   Never publish it. `knight-sim` is the public side.
 
+**Commits carry NO `Co-Authored-By` trailer.** The history was rewritten once
+to strip it from all seven repos; do not reintroduce it, in this repo or any
+of the sibling `*-sim` scaffolds.
+
 **The five rules that cost the most to learn:**
 
 1. **Read the dump before launching the game.** A grep is seconds; a game run
