@@ -149,7 +149,8 @@ const noPress = resolveRude(-1);
 if (noPress.dealt <= 0) failures.push('the bolt landed for no damage');
 if (rudeBusterBusy(noPress.state)) failures.push('Rude Buster never finished');
 // `damage = round(damage / 2)` against the Knight, applied to spellDamage 177.
-if (noPress.dealt !== 89) failures.push(`unpressed Rude Buster dealt ${noPress.dealt}, expected 89`);
+// round(177 / 2) = round(88.5) ties to EVEN: 88, not the hand-computed 89.
+if (noPress.dealt !== 88) failures.push(`unpressed Rude Buster dealt ${noPress.dealt}, expected 88`);
 
 // Find the frame it lands on, then press exactly there for the full +30.
 const landOn = (() => {
@@ -171,7 +172,7 @@ if (landOn < 4) failures.push(`the bolt lands on frame ${landOn} — before the 
 // AFTER it is added. round((177 + 30) / 2) = 104, not 89 + 30.
 const perfect = resolveRude(landOn);
 if (perfect.dealt !== 104) failures.push(`a perfect press dealt ${perfect.dealt}, expected 104`);
-if (perfect.dealt >= 89 + 30) failures.push('the timing bonus was not halved with the base');
+if (perfect.dealt >= 88 + 30) failures.push('the timing bonus was not halved with the base');
 
 // Earlier presses are worth less, monotonically — that gradient IS the game.
 let prev = perfect.dealt;
@@ -200,7 +201,7 @@ for (let gap = 1; gap <= 4 && landOn - gap >= 4; gap++) {
     if (dmgColor(n.type).join() !== '255,153,255') {
       failures.push(`the popup is rgb(${dmgColor(n.type).join()}), expected Susie's purple`);
     }
-    if (n.damage !== 89) failures.push(`the popup reads ${n.damage}, expected 89`);
+    if (n.damage !== 88) failures.push(`the popup reads ${n.damage}, expected 88`);
   }
 }
 

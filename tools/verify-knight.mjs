@@ -83,8 +83,12 @@ const mk = (hp = [160, 190, 140]) => {
 
 // ── The FIGHT formula, computed by hand from the GML ─────────────────────
 // Kris at 14, a critical (150), dr 0.2, healthy party:
-//   round(14 * 150 / 20) = 105 -> ceil(105 * 0.2) = 21 -> round(21 * 0.5) = 11
-eq(fightDamage(mk(), 0, 150), 11, 'Kris critical, healthy party');
+//   round(14 * 150 / 20) = 105 -> ceil(105 * 0.2) = 21 -> round(21 * 0.5) = 10
+//
+// GML round() is HALF TO EVEN (measured: the whole-fight recording's f736
+// strike, and round(92.5) = 92 from the Susie stat work) — so round(10.5)
+// is 10, not the 11 this file used to hand-compute with JS semantics.
+eq(fightDamage(mk(), 0, 150), 10, 'Kris critical, healthy party');
 // Susie at 18: round(135) = 135 -> ceil(27) = 27, and NO Kris scaling.
 eq(fightDamage(mk(), 1, 150), 27, 'Susie critical');
 // Ralsei at 12: round(90) = 90 -> ceil(18) = 18.
@@ -99,8 +103,8 @@ eq(fightDamage(oneDown, 1, 150), fightDamage(healthy, 1, 150), 'Susie unaffected
 eq(fightDamage(bothDown, 1, 150), fightDamage(healthy, 1, 150), 'Susie unaffected by two SWOONs');
 eq(fightDamage(bothDown, 2, 150), fightDamage(healthy, 2, 150), 'Ralsei unaffected by SWOONs');
 
-// Kris IS affected: 21 halved to 11 healthy, 21 flat with one down, 42 with both.
-eq(fightDamage(healthy, 0, 150), 11, 'Kris healthy');
+// Kris IS affected: 21 halved to 10 healthy (ties to even), 21 flat with one down, 42 with both.
+eq(fightDamage(healthy, 0, 150), 10, 'Kris healthy');
 eq(fightDamage(oneDown, 0, 150), 21, 'Kris with one ally down');
 eq(fightDamage(bothDown, 0, 150), 42, 'Kris with both allies down');
 
@@ -157,7 +161,8 @@ eq(dying.knight.hp, 0, 'knight hp floors at 0');
 // A full critical turn: the number the wiring test measured end to end.
 const turn = mk();
 const total = [0, 1, 2].reduce((a, c) => a + fightDamage(turn, c, 150), 0);
-eq(total, 56, 'a perfect three-bolt turn');
+// Kris's half ties to even (10, not 11), so the turn totals 55.
+eq(total, 55, 'a perfect three-bolt turn');
 
 // ── THE FIGHT'S END CONDITION ────────────────────────────────────────────
 // THREE terms, not two. The condition sits inside `if (state == 3 &&
