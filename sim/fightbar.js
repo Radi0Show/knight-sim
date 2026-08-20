@@ -164,6 +164,11 @@ export function createFightBar(rng, order = [0, 1, 2], oneButton = true, recorde
 
 /** Score `p = abs(close)`, shared by both button schemes. */
 function award(bar, bc, topclose) {
+  // KNIGHT_BAR_DEBUG: one line per scored bolt, for aligning a recording's
+  // bar against the sim's. Diagnostic only; no gameplay effect.
+  if (globalThis.process?.env?.KNIGHT_BAR_DEBUG) {
+    console.error(`[bar] f=${globalThis.__simFrame ?? '?'} boltx=${bar.boltx} char=${bc} close=${topclose}`);
+  }
   const p = Math.abs(topclose);
   let gained;
   if (p === 0) gained = 150;

@@ -94,7 +94,16 @@ function readCsv(path) {
   const text = readFileSync(path, 'utf8').replace(/\r/g, '').trim();
   const lines = text.split('\n');
   const header = lines[0].split(',');
-  return { header, rows: lines.slice(1).map((l) => l.split(',')), path };
+  // DROP PRE-EPOCH ROWS. The oracle's writer starts one frame before its
+  // input epoch and labels that row frame -1; the sim's first row is frame 0.
+  // Pairing by row index with that row present compares oracle frame k-1
+  // against sim frame k for the whole run — every transition then reads as
+  // "the sim is one frame early", which is exactly the ghost this differ
+  // chased for a session. Filtering on the frame column makes row order and
+  // frame value the same pairing on both sides.
+  const rows = lines.slice(1).map((l) => l.split(','))
+    .filter((r) => Number(r[0]) >= 0);
+  return { header, rows, path };
 }
 
 /**

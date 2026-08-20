@@ -64,6 +64,18 @@ for (let f = 0; f < frames; f++) {
     // `talktimer > 15` before it will accept one, and a press that arrives
     // with a confirm is harder to reason about when a trace diverges.
     button3: f % 4 === 1,
+    // CANCEL, occasionally, or the fight can WEDGE FOREVER. Measured, not
+    // hypothetical: at frame 13392 of a 16k run, Susie opened MAGIC with TP
+    // 111 against Rude Buster's 125 — the list's one spell is grey, confirm
+    // refuses (`tension >= cost` in the game, same in the sim), and a token
+    // with no X can never leave. The game would sit there under this input
+    // exactly as the sim does; both recordings flatline and the differ
+    // rightly calls them degenerate. 37 is prime, so the pulse interleaves
+    // oddly with the 2-frame confirm and the 40-frame walk instead of
+    // resonating with either, and it is rare enough that the menu still
+    // completes fast — an X once every ~1.2s backs out of a wedge without
+    // undoing whole turns of choices.
+    cancel: f % 37 === 36,
   });
 }
 

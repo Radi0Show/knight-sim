@@ -130,6 +130,7 @@ const rows = [traceHeader(state)];
 // every hit frame showing the drop the oracle never records.
 state.keepAlive = keepAlive;
 for (let f = 0; f < replay.frames; f++) {
+  globalThis.__simFrame = f;
   stepFrame(state, replay.inputAt(f));
 }
 rows.push(...state.trace);
