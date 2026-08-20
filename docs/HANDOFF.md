@@ -20,7 +20,7 @@ point of the project rather than a side issue — see §3.
 | turn structure, phases 1-4, the ending | translated, matches the selector and the wiki's independent table |
 | menu, items, spells, ACT, attack bar, TP | working; several details settled this session |
 | damage, targeting, mantle, SWOON | translated from the dump, incl. the Kris-only scaling |
-| whole-fight diff vs the oracle | **byte-exact through frame 24, diverges at 25** |
+| whole-fight diff vs the oracle | **row-exact through frame 437, diverges at 438** — all of turn 1 (Stars), its turn end, the inter-turn gap and the second menu are exact; the front is turn 2's soul-relaunch timing (oracle's `scr_moveheart` inv=0 at f438, sim later; then its first bullet at f450 and soul at f461, all likely one enemy-talk/balloon frame upstream) |
 | visuals | the long tail. This is where "1:1" is now won or lost |
 
 **Nothing invented ships.** If a placeholder is unavoidable it is labelled in
