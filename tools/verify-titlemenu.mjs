@@ -143,8 +143,19 @@ function atRoster() {
 {
   const wander = CREDITS.findIndex((c) => c.who === 'WandeR');
   check(wander >= 0, 'the WandeR row went missing');
-  check(creditLink(CREDITS[wander]) === 'https://wander22lstr.carrd.co/',
+  check(creditLink(CREDITS[wander]) === 'https://wander22lstr.carrd.co',
     `WandeR's link should be the carrd, got ${creditLink(CREDITS[wander])}`);
+
+  // SUPPORT is the Ko-fi page, and it is the row that proves the builder has
+  // to stop appending a trailing slash: `ko-fi.com/shadowcrystaldev/` is a
+  // DIFFERENT URL that happens to redirect. An href should be the address.
+  const support = CREDITS.findIndex((c) => c.role === 'SUPPORT');
+  check(support >= 0, 'the SUPPORT row went missing');
+  check(creditLink(CREDITS[support]) === 'https://ko-fi.com/shadowcrystaldev',
+    `SUPPORT should be the Ko-fi page, got ${creditLink(CREDITS[support])}`);
+  // It has no `who`, so the page draws role + link and no name line. A link on
+  // a row with no name has to survive that layout branch.
+  check(CREDITS[support].who === '', 'SUPPORT is a role with no name');
   // The DISPLAY string carries no scheme — the page shows a readable host and
   // creditLink builds the href — so a row whose `link` already had "https://"
   // would silently produce "https://https://...".
@@ -156,12 +167,31 @@ function atRoster() {
   tap(t, 'confirm');
   for (let i = 0; i < wander; i++) tap(t, 'down');
   const hit = tap(t, 'confirm');
-  check(hit.link === 'https://wander22lstr.carrd.co/',
+  check(hit.link === 'https://wander22lstr.carrd.co',
     `confirm on WandeR should return the href, got ${hit.link}`);
   check(t.settings?.page === 'credits', 'and it should stay on the page');
 
+  // ONE HREF PER PRESS. `pressed()` is edge-detected, and it has to be: the
+  // driver turns every `out.link` into a `window.open`, so a confirm that
+  // reported the link on each held frame would fan a run of popups out of one
+  // keypress — and the frame batch after a throttled tab resumes can be dozens
+  // of steps long.
+  const t4 = createTitle();
+  for (let i = 0; i < MODES.length + 1; i++) tap(t4, 'down');
+  tap(t4, 'confirm');
+  for (let i = 0; i < wander; i++) tap(t4, 'down');
+  let opens = 0;
+  for (let f = 0; f < 20; f++) {
+    if (stepTitle(t4, { ...NONE, confirm: true }, ROSTER).link) opens += 1;
+  }
+  check(opens === 1, `a confirm HELD for 20 frames should open one link, got ${opens}`);
+  stepTitle(t4, { ...NONE }, ROSTER);
+  check(stepTitle(t4, { ...NONE, confirm: true }, ROSTER).link,
+    'and a fresh press after releasing should open it again');
+
   // A row with no link is a NO-OP: no href, and no error buzz either, because
   // nothing is broken.
+  // Developer is the row with no link now that SUPPORT has one.
   const noLink = CREDITS.findIndex((c) => !c.link);
   const t2 = createTitle();
   for (let i = 0; i < MODES.length + 1; i++) tap(t2, 'down');

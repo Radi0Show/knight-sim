@@ -95,22 +95,28 @@ export const TITLE_EXTRAS = [
 ];
 
 /**
- * THE CREDITS. Three rows, and none of them links anywhere yet — the `link`
- * field is here so that when one gets a URL the page does not have to change
- * shape, only the value.
+ * THE CREDITS. `link` holds the DISPLAY string — no scheme — because the page
+ * prints it under the name and a `https://` prefix on screen is noise.
+ * `creditLink` turns it into the href.
  */
 export const CREDITS = [
   { role: 'Developer', who: 'Radi0', link: null },
   { role: 'Bug fixing and Playtesting', who: 'WandeR', link: 'wander22lstr.carrd.co' },
-  { role: 'SUPPORT', who: '', link: null },
+  { role: 'SUPPORT', who: '', link: 'ko-fi.com/shadowcrystaldev' },
 ];
 
 /**
  * The href for a row, or null. Kept apart from the DISPLAY string above so the
- * page can show a readable `wander22lstr.carrd.co` while the driver opens the
- * real URL — and so `sim/` never holds a value only a browser can use.
+ * page can show a readable `ko-fi.com/shadowcrystaldev` while the driver opens
+ * the real URL — and so `sim/` never holds a value only a browser can use.
+ *
+ * NO TRAILING SLASH. It used to append one, which is harmless on a bare host
+ * but wrong the moment a link has a PATH: the Ko-fi page is
+ * `ko-fi.com/shadowcrystaldev`, and `.../shadowcrystaldev/` is a different URL
+ * that only works because Ko-fi happens to redirect it. The href should be
+ * the address, not an address plus a character.
  */
-export const creditLink = (row) => (row.link ? `https://${row.link}/` : null);
+export const creditLink = (row) => (row.link ? `https://${row.link}` : null);
 
 /** BlackShard (26) stays out of the pocket; id 0 is the empty slot. */
 export function pocketOf(kind) {
