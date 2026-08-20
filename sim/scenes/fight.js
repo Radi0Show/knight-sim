@@ -416,6 +416,27 @@ export function launchAttack(state, entry) {
     }
 
     case 2: {
+      // THREE DRAWS, ORACLE-FITTED AND NOT YET ATTRIBUTED — Flurry's
+      // launch-pad, the same shape as Stars' four. With the anchored stream
+      // and exactly three draws consumed before the boxsplitter's create,
+      // the first slash's angleoffset (6.7539390475) and xoffset
+      // (1.3845433444) both reproduce to ten decimals from the recording's
+      // slash log (fullfight-slashes2). Something between the reseed and
+      // the manager's create consumes them; replace with the real consumer
+      // when it is found.
+      // TWO DRAWS, ORACLE-FITTED AND NOT YET ATTRIBUTED — Flurry's
+      // launch-pad, the same shape as Stars' four. With exactly two draws
+      // consumed before the boxsplitter's create, the anchored stream
+      // reproduces the recording's whole first-slash chain: force_oneside
+      // = 1 (the first cut is vertical), then the init and spawn verticals,
+      // the flip choose, angleoffset 6.7539390475 and xoffset 1.3845433444
+      // to ten decimals (fullfight-slashes2's log). The earlier three-pad
+      // fit was degenerate — it stole the flip draw's slot and landed
+      // force_oneside on a 0.
+      if (state.gmlRng) {
+        gmlRandom(state.gmlRng, 1);
+        gmlRandom(state.gmlRng, 1);
+      }
       // type 99 creates this AT THE KNIGHT and then hides him — from here on
       // the manager is the visible knight.
       const mg = spawn(state, boxsplitterAttack, { x: kx, y: ky });
@@ -596,6 +617,7 @@ const SURVIVES_TURN = new Set([
   // recording pays one at f804, mid-Flurry, laid by a tracking sword two
   // turns... one turn earlier. Sweeping them here silently ate those pays.
   'obj_tracking_sword_slash_extra_graze',
+  'draw_rng_tail',
   'obj_heart',
   'obj_growtangle',
   'obj_knight_enemy',
