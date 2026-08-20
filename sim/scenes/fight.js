@@ -22,7 +22,7 @@
 // gate at the end of any turn rather than on a turn count.
 
 import { spawn } from '../entity.js';
-import { BATTLEBG_MASK } from '../masks.js';
+import { BATTLEBG_FIGHT_MASK } from '../masks.js';
 import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
 import { SOUL_START } from '../actors.js';
@@ -221,7 +221,7 @@ export function openArena(state, entry) {
   // exactly once at build, with the default 2 x 2 still in place, and every
   // custom arena keeps the unsnapped scale and the wrong wall.
   gt.init = false;
-  gt.mask = BATTLEBG_MASK;
+  gt.mask = BATTLEBG_FIGHT_MASK;
   gt.growcon = 1;
   gt.timer = 0;
   gt.image_xscale = 0;
@@ -311,7 +311,7 @@ export function launchAttack(state, entry) {
     gt.maxyscale = arena.yscale;
     // Re-arm the per-turn init — see the note at the other assignment.
     gt.init = false;
-    gt.mask = BATTLEBG_MASK;
+    gt.mask = BATTLEBG_FIGHT_MASK;
     gt.growcon = 1;
     gt.timer = 0;
     gt.image_xscale = 0;
@@ -553,7 +553,12 @@ export function launchAttack(state, entry) {
 
     case 15: {
       // ac 15 is TWO controllers: the vortex, then tracking swords over it.
-      const mg = spawn(state, swordVortexManager, { x: arena.x, y: arena.y });
+      // `instance_create(obj_growtangle.x, cameray(), ...)` — the vortex
+      // manager sits at the CAMERA TOP like the tracking and tunnel managers,
+      // and as a regularbullet descendant it occupies a traced bullet slot
+      // there. Its own y is otherwise inert (swords orbit
+      // swordcirclecentery).
+      const mg = spawn(state, swordVortexManager, { x: arena.x, y: state.view.y });
       mg.damage = CONTROLLER_DAMAGE;
       // The SECOND scr_bulletspawner call of the ac-15 branch (type 151).
       reanchorRng(state);

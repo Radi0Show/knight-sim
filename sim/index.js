@@ -218,10 +218,27 @@ function runCollisions(state) {
   // ledger itself: `global.oracle_frame` is stamped in obj_time's DRAW, so
   // every step/collision-phase log line carries the PREVIOUS frame's label;
   // the f216-labelled trickle IS the f217 payment.
-  stepGraze(state, grazes);
+  // ...WITH A CATCH-UP CAVEAT for bullets born THIS frame. Two receipts
+  // from the same recording, contradictory under any single order:
+  //
+  //   f217: star 110101 (alive since f134) pays its trickle at inv -133,
+  //         then its own hit sets inv 30 — graze BEFORE damage;
+  //   f494: the tracking slash (created during f494's step phase) hits
+  //         first (inv 12) and its graze event logs BLOCKED at 12 —
+  //         damage BEFORE graze, same frame, same bullet.
+  //
+  // The order that satisfies both: instances alive at frame start run in
+  // the graze-then-damage order; instances created mid-frame get their
+  // collision events in a catch-up pass afterwards, hit first. So the
+  // phases here are [graze(old)] [damage(old)] [damage(new)] [graze(new)].
+  const bornNow = (b) => b.bornFrame === state.frame;
+  stepGraze(state, grazes, (b) => !bornNow(b));
 
-  for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
-    if (!b.alive || !b.isBullet || !b.type.other15) continue;
+  for (const pass of ['old', 'new']) {
+    const want = pass === 'old' ? (b) => !bornNow(b) : bornNow;
+    for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
+      if (!want(b)) continue;
+      if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
     // A type may override the test (rotated-rect probes, swept lines, the
     // splitslash's scr_precise_hit). Otherwise fall back to GameMaker's
@@ -251,7 +268,10 @@ function runCollisions(state) {
       state.counters.collisionHits += 1;
       b.type.other15(b, state);
     }
+    }
   }
+
+  stepGraze(state, grazes, bornNow);
 
 }
 
@@ -312,6 +332,10 @@ export function stepFrame(state, input) {
   // to seed its edge map (sim/menu.js openMenu).
   state.prevInput = state.input;
   state.input = input;
+  // inv as of frame START — knight-side objects (the tracking slash's graze
+  // band, measured at f508) test `global.inv < 0` before obj_heart's own
+  // step decrements it, so a same-frame crossing must not fire them.
+  state.invAtFrameStart = state.invTimer;
 
   // GameMaker latches xprevious/yprevious at the TOP of every frame, before any
   // event runs, so during a Step they hold where the instance was last frame.

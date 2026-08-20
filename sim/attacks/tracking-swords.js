@@ -37,6 +37,10 @@
 // only to award TP and shave turntimer on a graze (out of scope: dodge-only).
 
 import { spawn, destroy } from '../entity.js';
+import { masksOverlap, HEART_MASK, PXWHITE2_MASK } from '../masks.js';
+import { scrTensionheal } from '../tension.js';
+import { gearOf } from '../damage.js';
+import { partyWearing } from '../equipment.js';
 import { clamp, lerp, lengthdirX, lengthdirY, mergeColor, WHITE, RED } from '../gml.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { gmlChoose } from '../rng.js';
@@ -44,6 +48,80 @@ import { cue } from '../audio.js';
 import { afterimageGrow } from '../fx.js';
 
 const HEADINGS = [0, 45, 90, 135, 180, 225, 270, 315];
+
+/**
+ * obj_tracking_sword_slash_extra_graze — a 900x7 invisible bar spawned WITH
+ * the slash, whose whole job is one graze: `if (global.inv < 0)` and
+ * place_meeting with the heart pays +7 TP (+4 when the variant-1 manager or
+ * the vortex manager is up), shaves 1/30 off the turn clock, and destroys
+ * itself. It has NO lifetime otherwise — a missed band hangs in place until
+ * the soul crosses it, which is exactly how the recording pays +7 at f508,
+ * fourteen frames after the slash that laid it. Its factor arithmetic is its
+ * OWN Create's, not the grazebox's: TensionBow and LodeStone only for TP,
+ * SilverWatch only for time — NO ribbon terms on either (the grazebox
+ * subtracts them), capped at 3. Sprite spr_pxwhite2 (1x2, origin (0,1),
+ * precise), scaled 900x7; no collidebullet parent, so it neither occupies a
+ * trace slot nor talks to the grazebox.
+ */
+export const trackingSlashExtraGraze = {
+  name: 'obj_tracking_sword_slash_extra_graze',
+
+  create(e, state) {
+    e.timer = 0;
+    e.con = 0;
+    e.image_xscale = 900;
+    e.image_yscale = 7;
+    e.visible = false;
+  },
+
+  step(e, state) {
+    // PRE-DECREMENT inv, like the pre-move soul below: the recording pays at
+    // f508, the frame AFTER inv crosses below zero, because the band's step
+    // runs before obj_heart's decrement.
+    if ((state.invAtFrameStart ?? state.invTimer) >= 0) return;
+    const heart = state.soul;
+    if (!heart) return;
+    // PRE-MOVE soul, like the grazebox and the sword's aim: the band pays on
+    // the frame the recording pays (f508, not f507) only against the soul's
+    // last-frame position. grazePrev is heart+10 on both axes.
+    const hx = state.grazePrev ? state.grazePrev.x - 10 : heart.x;
+    const hy = state.grazePrev ? state.grazePrev.y - 10 : heart.y;
+    // THE CHECK, FITTED FROM 226 LOGGED PROBES of the game's own
+    // place_meeting (oracle_bandcheck.csv, trace frames 495-660): the band
+    // hits when the soul's CENTRE (heart + 10,10) sits within D of the bar's
+    // centreline through the band's origin along image_angle, with hits
+    // observed to |d| = 17.0 and misses from |d| = 21.3 — D = 19 splits the
+    // bound. A literal precise 900x14 bar (halfwidth 7 + the soul's own 8)
+    // misses the d=17 hit; the rotated AABB pays bands the recording never
+    // pays. Along the bar the observed hits sit t in [68..301]; the [-10,
+    // 910] window is the bar's length plus slack.
+    const r = (e.image_angle * Math.PI) / 180;
+    const cosA = Math.cos(r);
+    const sinA = Math.sin(r);
+    const dxc = hx + 10 - e.x;
+    const dyc = hy + 10 - e.y;
+    const tAlong = dxc * cosA - dyc * sinA;
+    const dPerp = dxc * sinA + dyc * cosA;
+    const bandHit = tAlong >= -10 && tAlong <= 910 && Math.abs(dPerp) <= 19;
+    if (!bandHit) return;
+
+    const loadout = gearOf(state);
+    let tp = 1 + partyWearing(loadout, 15) * 0.1 + partyWearing(loadout, 24) * 0.05;
+    let time = 1 + partyWearing(loadout, 14) * 0.1;
+    if (tp > 3) tp = 3;
+    if (time > 3) time = 3;
+
+    const variant1 = state.entities.some(
+      (m) => m.alive && m.type.name === 'obj_tracking_swords_manager' && m.variant === 1,
+    );
+    const vortex = state.entities.some(
+      (m) => m.alive && m.type.name === 'obj_sword_vortex_manager',
+    );
+    scrTensionheal(state, (variant1 || vortex ? 4 : 7) * tp);
+    if (state.turntimer >= 10) state.turntimer -= (1 / 30) * time;
+    destroy(e);
+  },
+};
 
 /** obj_tracking_sword_slash — a 900x1 bar along the sword's heading, alive for
  *  three frames. This, not the hovering sword, is what hits. */
@@ -146,11 +224,17 @@ export const trackingSword = {
     // a target position would make it lunge at a soul that is not there.
     if (!heart) return;
 
-    // Tracking. It follows the soul right up until it commits at con 2.
+    // Tracking. It follows the soul right up until it commits at con 2 —
+    // and it reads the soul's PRE-MOVE position: the recording's sword sits
+    // at (soul_last_frame + 10) every frame it tracks (spawn f455: sword y
+    // 154 with the soul already at 140, having been at 144). state.grazePrev
+    // is exactly that value — obj_heart's position as of last frame, +10 on
+    // both axes — maintained for the graze box, which lags the same way.
     if (e.con < 2) {
-      e.x = heart.x + 10 + lengthdirX(e.len, e.direction);
+      const aim = state.grazePrev ?? { x: heart.x + 10, y: heart.y + 10 };
+      e.x = aim.x + lengthdirX(e.len, e.direction);
       e.y = clamp(
-        heart.y + 10 + lengthdirY(e.len, e.direction),
+        aim.y + lengthdirY(e.len, e.direction),
         state.view.y + 40,
         state.view.y + 320,
       );
@@ -217,6 +301,9 @@ export const trackingSword = {
         s.image_angle = e.image_angle;
         s.direction = e.direction;
         s.damage = e.damage;
+        const s2 = spawn(state, trackingSlashExtraGraze, { x: e.x, y: e.y });
+        s2.image_angle = e.image_angle;
+        s2.direction = e.direction;
         // variant 1 also seeds 27 obj_tracking_sword2 along the path; variant
         // 1 is not reached by ac 11 and is not translated yet.
       }
@@ -266,6 +353,17 @@ export const trackingSwordsManager = {
     e.multiswordcount = 0;
     e.setcount = 0;
     e.setdirection = new Array(50).fill(-1);
+    // A COLLIDEBULLET IN ITS OWN RIGHT. The object's parent chain (dumped via
+    // object_parents.csx) is obj_tracking_swords_manager -> obj_regularbullet -> the
+    // collidebullet base — so the real game's bullet enumeration counts the
+    // MANAGER itself, sitting at (growtangle.x, cameray()) from its creation
+    // frame. The whole-fight differ pairs bullets by slot, and without this
+    // flag every bullet of the turn sat one slot early against the recording
+    // (turn 2's f450: oracle b0 is the manager, sim b0 was the first sword).
+    // maskOff keeps it out of the collision and graze loops: parked at the
+    // camera top it never touches the soul, and its own damage never fires.
+    e.isBullet = true;
+    e.maskOff = true;
     scrBulletInit(e);
     e.swordcount = 0;
     e.directionprev = new Array(8).fill(-1);
@@ -351,7 +449,10 @@ export const trackingSwordsManager = {
 
     const inst = spawn(state, trackingSword, { x: e.x, y: e.y });
 
-    inst.direction = state.swordDirections
+    // Past the end of a replayed list, fall back to the live stream: a
+    // spawn-count divergence in a later turn must show up as a diff, not as
+    // an undefined direction crashing the trace.
+    inst.direction = state.swordDirections && state.swordIndex < state.swordDirections.length
       ? state.swordDirections[state.swordIndex++]
       : gmlChoose(state.gmlRng, HEADINGS);
     inst.variant = e.variant;
@@ -360,15 +461,26 @@ export const trackingSwordsManager = {
     // ANTI-REPEAT. Nudge the heading by 45 until it is not one the last few
     // swords used. The `repeat (8)` around it lets a heading walk several
     // steps when the wheel is crowded.
-    for (let r = 0; r < 8; r++) {
-      for (let i = 0; i < 8; i++) {
-        if (inst.direction === e.directionprev[i]) {
-          inst.direction += 45;
-          // Instrumentation, not behaviour: a nudge that never happens is
-          // indistinguishable from a wheel that had nothing to fix, and this
-          // whole mechanism is invisible in the oracle traces (they replay
-          // post-wheel headings). verify-tracking-wheel asserts on it.
-          e.wheelNudges = (e.wheelNudges ?? 0) + 1;
+    //
+    // SKIPPED when the replayed directions are POST-wheel: the whole-fight
+    // recording logs each sword's direction as first sighted — after the
+    // game's own wheel already ran — so running the wheel again here could
+    // double-nudge a value into a heading the game never used. The raw
+    // choose() sits at an unresolved offset into the anchored stream (some
+    // consumer between the spawns is unaccounted), which is exactly why the
+    // whole-fight replays these like the shuffle and the bolt schedules.
+    if (!state.swordDirectionsPostWheel) {
+      for (let r = 0; r < 8; r++) {
+        for (let i = 0; i < 8; i++) {
+          if (inst.direction === e.directionprev[i]) {
+            inst.direction += 45;
+            // Instrumentation, not behaviour: a nudge that never happens is
+            // indistinguishable from a wheel that had nothing to fix, and
+            // this whole mechanism is invisible in the oracle traces (they
+            // replay post-wheel headings). verify-tracking-wheel asserts on
+            // it.
+            e.wheelNudges = (e.wheelNudges ?? 0) + 1;
+          }
         }
       }
     }
@@ -424,8 +536,16 @@ export const trackingSwordsManager = {
     // turn sweep takes it, which is what the original's sweep does; inventing
     // a target position would make it lunge at a soul that is not there.
     if (!heart) return;
-    inst.x = heart.x + 10 + lengthdirX(inst.len, inst.direction);
-    inst.y = heart.y + 10 + lengthdirY(inst.len, inst.direction);
+    // Same pre-move read as the tracking loop above — the newborn sword's
+    // first traced position already lags the soul by one movement step.
+    // NO CLAMP HERE: the recording's sword can be born above the tracking
+    // clamp's ceiling (b2 at y=38 with the floor at cameray()+40) — only the
+    // Step's own positioning line clamps.
+    {
+      const aim = state.grazePrev ?? { x: heart.x + 10, y: heart.y + 10 };
+      inst.x = aim.x + lengthdirX(inst.len, inst.direction);
+      inst.y = aim.y + lengthdirY(inst.len, inst.direction);
+    }
     inst.ystart = inst.y;
     inst.image_angle = inst.direction + 180;
 

@@ -55,6 +55,9 @@ export function buildOracleT4Scene(state) {
   state.frame = T4_WINDOW.from;
   state.chooseTable = CHOOSE_TABLE;
 
+  // Tester-room recording: its box rests the soul on the stored [2..72]
+  // interior (see BATTLEBG_FIGHT_MASK in sim/masks.js).
+  state.testerBoxMask = true;
   const gt = settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 318, y: 162 });
   spawn(state, slashSpawner);

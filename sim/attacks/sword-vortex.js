@@ -100,6 +100,17 @@ export const swordVortexManager = {
   name: 'obj_sword_vortex_manager',
 
   create(e, state) {
+    // A COLLIDEBULLET IN ITS OWN RIGHT. The object's parent chain (dumped via
+    // object_parents.csx) is obj_sword_vortex_manager -> obj_regularbullet -> the
+    // collidebullet base — so the real game's bullet enumeration counts the
+    // MANAGER itself, sitting at (growtangle.x, cameray()) from its creation
+    // frame. The whole-fight differ pairs bullets by slot, and without this
+    // flag every bullet of the turn sat one slot early against the recording
+    // (turn 2's f450: oracle b0 is the manager, sim b0 was the first sword).
+    // maskOff keeps it out of the collision and graze loops: parked at the
+    // camera top it never touches the soul, and its own damage never fires.
+    e.isBullet = true;
+    e.maskOff = true;
     const gt = box(state);
     e.timer = 0;
     e.siner = 0;

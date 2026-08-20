@@ -637,6 +637,10 @@ const director = {
       const zPress = !!state.input?.confirm && !e.talkConfirmHeld;
       e.talkConfirmHeld = !!state.input?.confirm;
 
+      if (globalThis.process?.env?.KNIGHT_TALK_DEBUG) {
+        console.error(`[talk] f=${globalThis.__simFrame} spk=${state.dialogue.speaker}`
+          + ` timer=${state.dialogue.timer} done=${done} c=${cPress ? 1 : 0} z=${zPress ? 1 : 0}`);
+      }
       if ((cPress && state.dialogue.timer > 15)
         || (zPress && done)
         || (done && state.dialogue.timer > 90)) {
@@ -1053,7 +1057,13 @@ const director = {
         // oracle's — the whole-fight diff's soul_x column moved at frame 88
         // in the sim and 96 in the recording, and 96 - 88 is this flytime.
         if (upcoming.ac !== -1 && !state.soul) {
-          state.inv = 0;
+          // scr_moveheart's `global.inv = 0`. This wrote `state.inv`, WHICH
+          // NOTHING READS — the traced clock is `state.invTimer` — so the
+          // second turn's soul arrived still carrying turn 1's -79 while the
+          // recording restarts from 0 (whole-fight f438). Turn 1 masked it:
+          // inv is 0 at fight start anyway. The write-only-variable trap,
+          // again (CLAUDE.md lists `state.inv` by name).
+          state.invTimer = 0;
           const kris = PARTY[0];
           const mh = spawn(state, moveheart, { x: kris.x + 10, y: kris.y + 40 });
           // No obj_heartmarker exists in this fight (only the watercooler

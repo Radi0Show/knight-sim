@@ -14,7 +14,7 @@ import { afterimage } from './fx.js';
 // masks have rasterization semantics the oracle showed we do not reproduce
 // (t3 trace frames 0-3). Grow-in support needs its own oracle study first.
 
-import { BATTLEBG_MASK, BATTLEBG_STRETCH_HITBOX_MASK } from './masks.js';
+import { BATTLEBG_MASK, BATTLEBG_FIGHT_MASK, BATTLEBG_STRETCH_HITBOX_MASK } from './masks.js';
 
 /**
  * Put a box straight into its settled state.
@@ -38,7 +38,7 @@ export function settleBox(gt) {
 export const battlebox = {
   name: 'obj_growtangle',
 
-  create(e) {
+  create(e, state) {
     // Defaults from obj_growtangle Create, post-grow values.
     // ONE SCALE, `image_xscale`/`image_yscale`, exactly as the original has it.
     //
@@ -51,7 +51,12 @@ export const battlebox = {
     if (e.maxxscale === undefined) e.maxxscale = 2;
     if (e.maxyscale === undefined) e.maxyscale = 2;
     e.isSolid = true; // parent: obj_battlesolid
-    e.mask = BATTLEBG_MASK;
+    // The FIGHT's default box collides one source pixel thicker than the
+    // stored mask on every side ([3..71], measured four ways — see
+    // BATTLEBG_FIGHT_MASK). The tester room's box, per the t3 recording,
+    // uses the stored [2..72]; scenes that reproduce the tester set
+    // `state.testerBoxMask` and keep the old behaviour.
+    e.mask = state?.testerBoxMask ? BATTLEBG_MASK : BATTLEBG_FIGHT_MASK;
 
     // THE ARENA IS GREEN, for the whole fight. `obj_growtangle`'s Create sets
     // `image_blend = merge_color(c_green, c_lime, 0.5)`, and its Draw uses it on

@@ -95,6 +95,50 @@ export const BATTLEBG_MASK = build(raw.battlebg);
  * [2..72] interior is T3-verified — this entry does not touch them.
  */
 export const BATTLEBG_STRETCH_HITBOX_MASK = build(raw.battlebgStretchHitbox);
+/**
+ * THE FIGHT'S DEFAULT BOX WALL — spr_battlebg_0 as the FIGHT behaves, which
+ * is one source pixel thicker than the stored mask on every side.
+ *
+ * Measured with mid-wall pushes against the real knight's ac-11 box
+ * ((320,190), scale 2, angle 0, image_index 0, mask spr_battlebg_0 — all
+ * confirmed in the same recording, traces/wallpush4 + wallpush-we):
+ *
+ *     north rest 120   (row-2 ink at 122; 119 blocked)
+ *     south rest 242   (row-17 ink at 259 = source row 71; 243 blocked)
+ *     west  rest 250   (col-2 ink at 252; 249 blocked)
+ *     east  rest 372   (col-17 ink at 389 = source col 71; 373 blocked)
+ *
+ * All four select free interior [3..71] — the stored mask's [2..72] misses
+ * every one by exactly one source pixel, and [3..71] is ALSO the stretch
+ * box's measured interior, so in the fight both wall sprites collide as the
+ * same effective ring. Corner pushes (the soul sliding along a wall into a
+ * corner) stop ~2px earlier still, consistent with the rounded corner arcs
+ * advancing under the same one-pixel dilation.
+ *
+ * THE TESTER ROOM IS DIFFERENT, and both measurements stand: the t3
+ * recording's box (same sprite, same scale, tester-created) rests the soul
+ * at x=374 — the stored [2..72] exactly. Why the two rooms differ is not
+ * established; each scene uses the mask its own oracle pinned. Built by
+ * one-pixel dilation of the stored ink so the corner arcs thicken with the
+ * walls.
+ */
+export const BATTLEBG_FIGHT_MASK = (() => {
+  const src = build(raw.battlebg);
+  const h = src.px.length;
+  const w = src.px[0].length;
+  const px = src.px.map((row, y) => row.map((v, x) => {
+    if (v) return true;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const yy = y + dy;
+        const xx = x + dx;
+        if (yy >= 0 && yy < h && xx >= 0 && xx < w && src.px[yy][xx]) return true;
+      }
+    }
+    return false;
+  }));
+  return { ...src, name: 'battlebg_fight_effective', px };
+})();
 export const FOUNTAIN_MASK = build(raw.fountain);
 export const TOOTH_MASK = build(raw.tooth);
 export const STAR_MASK = build(raw.star);

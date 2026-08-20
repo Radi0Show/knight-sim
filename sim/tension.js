@@ -65,7 +65,7 @@ export function tensionPercent(state) {
  * rotated-mask check the hit test uses — see the note there for why a bounding
  * box will not do for this fight's long diagonal bullets.
  */
-export function stepGraze(state, grazes) {
+export function stepGraze(state, grazes, only = null) {
   if (!state.soul) return;
   let grazeNoise = false;
   // The END-STEP lag — see runCollisions. The box tests at last frame's
@@ -81,6 +81,7 @@ export function stepGraze(state, grazes) {
 
   for (const e of state.entities) {
     if (!e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;
+    if (only && !only(e)) continue;
 
     // `if (!other.active && other.object_index != obj_sword_tunnel_sword) exit;`
     const active = e.active === 1 || e.active === true;

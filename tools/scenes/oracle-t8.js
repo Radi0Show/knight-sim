@@ -58,6 +58,9 @@ export function buildOracleT8Scene(state) {
   // oracle pins turntimer at 999 throughout the recorded window.
   state.turntimer = 999;
 
+  // Tester-room recording: its box rests the soul on the stored [2..72]
+  // interior (see BATTLEBG_FIGHT_MASK in sim/masks.js).
+  state.testerBoxMask = true;
   settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 314, y: 162 });
   state.soul.canmove = 0;

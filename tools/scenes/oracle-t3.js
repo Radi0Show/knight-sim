@@ -46,6 +46,10 @@ export function buildOracleT3Scene(state) {
   state.frame = T3_WINDOW.from;
 
   // Creation order matches the tester: box before heart.
+  // The tester room's box rests the soul at 374 (its recording's own east
+  // wall) — the stored [2..72] mask, unlike the fight's boxes. See
+  // BATTLEBG_FIGHT_MASK in sim/masks.js for both measurements.
+  state.testerBoxMask = true;
   settleBox(spawn(state, battlebox, { x: 320, y: 170 }));
   state.soul = spawn(state, soul, { x: 318, y: 162 });
   return state;

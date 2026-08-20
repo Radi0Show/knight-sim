@@ -72,6 +72,20 @@ if (shIdx >= 0) {
 // frames, and since the scoring window forgives 15 frames of earliness the
 // sim scores bolts the oracle has not reached — which reads as a damage
 // divergence and is nothing of the kind.
+// TRACKING SWORD DIRECTIONS, replayed from the oracle like the shuffle and
+// the bolts — one direction per line (`frame,direction`), post-wheel. See
+// sim/attacks/tracking-swords.js for why the wheel is bypassed.
+const swIdx = argv.indexOf('--swords');
+if (swIdx >= 0) {
+  const text = readFileSync(argv[swIdx + 1], 'utf8').trim();
+  state.swordDirections = text
+    ? text.split('\n').map((line) => Number(line.split(',')[1]))
+    : [];
+  state.swordIndex = 0;
+  state.swordDirectionsPostWheel = true;
+  console.log(`swords: replaying ${state.swordDirections.length} recorded direction(s)`);
+}
+
 const boltIdx = argv.indexOf('--bolts');
 if (boltIdx >= 0) {
   const text = readFileSync(argv[boltIdx + 1], 'utf8').trim();

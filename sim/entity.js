@@ -113,6 +113,10 @@ const INSTANCE_DEFAULTS = {
 export function spawn(state, type, vars = {}) {
   const e = {
     seq: state.nextSpawnSeq++,
+    // The frame this instance was born — collision catch-up ordering needs
+    // it: a bullet created mid-frame gets its heart hit BEFORE its graze,
+    // while bullets alive at frame start graze first (sim/index.js).
+    bornFrame: state.frame,
     type,
     alive: true,
     alarm: new Array(ALARM_COUNT).fill(-1),
