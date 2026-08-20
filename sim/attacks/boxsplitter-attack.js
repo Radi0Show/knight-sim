@@ -176,7 +176,9 @@ export const boxsplitterAttack = {
       e.vertical = state.splitterVerticals
         ? state.splitterVerticals[state.splitterVIndex++]
         : gmlIrandom(state.gmlRng, 1);
-      if (e.difficulty === 0) e.vertical = e.force_oneside;
+      // A REPLAYED vertical is the recording's FINAL value — force_oneside
+      // (the sim's own roll) must not overwrite it at difficulty 0.
+      if (e.difficulty === 0 && !state.splitterVerticals) e.vertical = e.force_oneside;
 
       const at = e.splitterRef && e.splitterRef.alive ? e.splitterRef : box(state);
       const s = spawn(state, splitslash, { x: at ? at.x : e.x, y: at ? at.y : e.y });

@@ -86,6 +86,24 @@ if (swIdx >= 0) {
   console.log(`swords: replaying ${state.swordDirections.length} recorded direction(s)`);
 }
 
+// FLURRY'S SLASH ORIENTATIONS AND OFFSETS, replayed from the oracle: the
+// first slash's roll sits at an unattributed offset into the anchored
+// stream (whole-fight f809), so like the shuffle, bolts and sword
+// directions, the recording's values are fed back. Columns per line:
+// frame, vertical, diagonal, direction, angleoffset, xoffset, yoffset.
+const slIdx = argv.indexOf('--slashes');
+if (slIdx >= 0) {
+  const text = readFileSync(argv[slIdx + 1], 'utf8').trim();
+  const recs = text ? text.split(/\r?\n/).map((line) => line.trim().split(',')) : [];
+  state.splitterVerticals = recs.map((r) => Number(r[1]));
+  state.splitterVIndex = 0;
+  state.slashParams = recs.map((r) => ({
+    angleoffset: Number(r[4]), xoffset: Number(r[5]), yoffset: Number(r[6]),
+  }));
+  state.slashIndex = 0;
+  console.log(`slashes: replaying ${recs.length} recorded slash(es)`);
+}
+
 const boltIdx = argv.indexOf('--bolts');
 if (boltIdx >= 0) {
   const text = readFileSync(argv[boltIdx + 1], 'utf8').trim();
