@@ -51,6 +51,7 @@
 // opening reduction that is x0.85 rather than x0.425 — spells are worth twice
 // what this module credited them with, and are the reason TP is worth banking.
 
+import { gmlRound } from './gml.js';
 import { PARTY, statFor, scrDamage } from './damage.js';
 import { cue, cueStop } from './audio.js';
 import { scrShakescreen } from './shake.js';
@@ -139,11 +140,11 @@ export function krisMult(state, slot) {
 export function fightDamage(state, slot, accuracy) {
   if (accuracy <= 0) return 0;
   const at = statFor(state, slot).at;
-  let damage = Math.round((at * accuracy) / 20 - KNIGHT_DF * 3);
+  let damage = gmlRound((at * accuracy) / 20 - KNIGHT_DF * 3);
   damage = Math.ceil(damage * state.knight.damagereduction);
   if (slot === 0) {
     const m = krisMult(state, 0);
-    damage = m === 0.5 ? Math.round(damage * 0.5) : damage * m;
+    damage = m === 0.5 ? gmlRound(damage * 0.5) : damage * m;
   }
   return Math.max(0, damage);
 }

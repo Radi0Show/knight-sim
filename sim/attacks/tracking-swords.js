@@ -86,23 +86,38 @@ export const trackingSlashExtraGraze = {
     // last-frame position. grazePrev is heart+10 on both axes.
     const hx = state.grazePrev ? state.grazePrev.x - 10 : heart.x;
     const hy = state.grazePrev ? state.grazePrev.y - 10 : heart.y;
-    // THE CHECK, FITTED FROM 226 LOGGED PROBES of the game's own
-    // place_meeting (oracle_bandcheck.csv, trace frames 495-660): the band
-    // hits when the soul's CENTRE (heart + 10,10) sits within D of the bar's
-    // centreline through the band's origin along image_angle, with hits
-    // observed to |d| = 17.0 and misses from |d| = 21.3 — D = 19 splits the
-    // bound. A literal precise 900x14 bar (halfwidth 7 + the soul's own 8)
-    // misses the d=17 hit; the rotated AABB pays bands the recording never
-    // pays. Along the bar the observed hits sit t in [68..301]; the [-10,
-    // 910] window is the bar's length plus slack.
+    // THE CHECK, FITTED FROM 2586 LOGGED PROBES of the game's own
+    // place_meeting across every tracking turn of the recording
+    // (oracle_bandcheck.csv): the band behaves as a ROTATED RECTANGLE from
+    // its origin, 900 long, spanning [-6..+9] across the bar (asymmetric —
+    // the sprite's origin sits on row 1 of 2), against the soul's [+2..+18]
+    // square, by separating-axis test. 2581/2586 probes agree; the five
+    // stragglers are sub-pixel edge sampling, all within ~1px of a boundary.
+    // A literal precise 900x14 bar misses recorded hits by up to 12px and
+    // the rotated AABB overpays whole bands.
     const r = (e.image_angle * Math.PI) / 180;
     const cosA = Math.cos(r);
     const sinA = Math.sin(r);
-    const dxc = hx + 10 - e.x;
-    const dyc = hy + 10 - e.y;
-    const tAlong = dxc * cosA - dyc * sinA;
-    const dPerp = dxc * sinA + dyc * cosA;
-    const bandHit = tAlong >= -10 && tAlong <= 910 && Math.abs(dPerp) <= 19;
+    const x0 = hx + 2, x1 = hx + 18, y0 = hy + 2, y1 = hy + 18;
+    const corners = [[0, -6], [900, -6], [0, 9], [900, 9]].map(([t, d]) => [
+      e.x + t * cosA + d * sinA, e.y - t * sinA + d * cosA,
+    ]);
+    const cxs = corners.map((q) => q[0]);
+    const cys = corners.map((q) => q[1]);
+    let bandHit = !(Math.max(...cxs) < x0 || Math.min(...cxs) > x1
+      || Math.max(...cys) < y0 || Math.min(...cys) > y1);
+    if (bandHit) {
+      for (const [ax, ay, lo, hi] of [[cosA, -sinA, 0, 900], [sinA, cosA, -6, 9]]) {
+        let mn = Infinity;
+        let mx = -Infinity;
+        for (const [qx, qy] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+          const v = (qx - e.x) * ax + (qy - e.y) * ay;
+          mn = Math.min(mn, v);
+          mx = Math.max(mx, v);
+        }
+        if (mx < lo || mn > hi) { bandHit = false; break; }
+      }
+    }
     if (!bandHit) return;
 
     const loadout = gearOf(state);

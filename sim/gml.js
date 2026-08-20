@@ -269,6 +269,21 @@ export function lengthdirY(len, dir) {
   return -Math.fround(Math.fround(len) * Math.fround(Math.sin((dir * Math.PI) / 180)));
 }
 
+/**
+ * GML `round()` — ROUND HALF TO EVEN, not JS's half-up. Measured the hard
+ * way twice: round(92.5) = 92 in the runner (the Susie strike that came out
+ * one point high), and again at whole-fight f736 where a FIGHT strike's
+ * pre-reduction base hit a .5 tie and Math.round sent the knight's HP one
+ * lower than the recording. Negative ties go to even too: round(-2.5) = -2.
+ */
+export function gmlRound(x) {
+  const f = Math.floor(x);
+  const diff = x - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return f % 2 === 0 ? f : f + 1;
+}
+
 export function pointDirection(x1, y1, x2, y2) {
   const d = (Math.atan2(-(y2 - y1), x2 - x1) * 180) / Math.PI;
   return d < 0 ? d + 360 : d;

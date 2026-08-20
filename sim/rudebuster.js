@@ -57,6 +57,7 @@
 // applied AFTER the bonus is added. So a perfect +30 is worth 15 against him.
 // Halving before would make the bonus worth double what it is.
 
+import { gmlRound } from './gml.js';
 import { cue } from './audio.js';
 import { damageKnight, KNIGHT_MAXHP } from './knight.js';
 import { scrOflash } from './fx.js';
@@ -183,7 +184,7 @@ export function stepRudeBuster(state, press = false) {
         }
       }
       // The Knight halves it — AFTER the bonus, so the bonus halves too.
-      dmg = Math.round(dmg / 2);
+      dmg = gmlRound(dmg / 2);
       b.dealt = dmg;
       damageKnight(state, dmg);
       // `scr_damage_enemy(star, damage)` — and THAT is what makes the number

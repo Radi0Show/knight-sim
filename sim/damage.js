@@ -28,6 +28,7 @@
 // mantled, because that is the loadout the fight's own damage path is written
 // around; `state.loadout.shadowMantle = false` gives the unmantled numbers.
 
+import { gmlRound } from './gml.js';
 import { heroHurt } from './heroes.js';
 import { statsOf } from './equipment.js';
 import { spawnDmgNumber, TYPE_PARTY, TYPE_DEAD } from './dmgnumbers.js';
@@ -355,7 +356,7 @@ export function scrDamage(state, damage, target, opts = {}) {
 
   let mantled = false;
   if (mantle) {
-    t = Math.round(t * 0.33);
+    t = gmlRound(t * 0.33);
     mantled = true;
   }
   if (state.charaction?.[target] === ACTION_DEFEND) t = Math.ceil((2 * t) / 3);
@@ -364,7 +365,7 @@ export function scrDamage(state, damage, target, opts = {}) {
 
   // Flurry (myattackchoice 2) at difficulty 1 or 3 takes a further third off,
   // inside the HP write itself rather than up with the other multipliers.
-  if (opts.flurrySoftened) t = Math.round(t * 0.66);
+  if (opts.flurrySoftened) t = gmlRound(t * 0.66);
 
   // `if (!instance_exists(obj_shake)) instance_create(0, 0, obj_shake)` —
   // every hit the party TAKES shakes the screen, and the shake is GAMEPLAY:

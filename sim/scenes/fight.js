@@ -589,6 +589,13 @@ export function launchAttack(state, entry) {
  * anyone remembering to register it.
  */
 const SURVIVES_TURN = new Set([
+  // The slash graze bands have NO parent object (dumped: obj_tracking_
+  // sword_slash_extra_graze's parent is empty), so the turn teardown's
+  // `with (obj_bulletparent) instance_destroy()` never touches them — an
+  // unpaid band HANGS ACROSS TURNS until the soul finally crosses it. The
+  // recording pays one at f804, mid-Flurry, laid by a tracking sword two
+  // turns... one turn earlier. Sweeping them here silently ate those pays.
+  'obj_tracking_sword_slash_extra_graze',
   'obj_heart',
   'obj_growtangle',
   'obj_knight_enemy',

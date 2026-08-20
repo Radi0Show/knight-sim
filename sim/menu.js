@@ -393,7 +393,17 @@ export function stepMenu(state, input) {
 
   for (let c = 0; c < 3; c++) slide(menu, c, menu.open && menu.charturn === c);
 
-  if (!menu.open) return false;
+  if (!menu.open) {
+    // `onebuffer -= 1; twobuffer -= 1;` are the LAST two lines of
+    // obj_battlecontroller's Step and run UNCONDITIONALLY — menu open or
+    // not. Freezing them while closed carried a confirm lockout from one
+    // menu's last press into the next menu's first frames: the third menu
+    // refused its opening confirm for exactly two frames (f702-703) while
+    // the recording acted on it immediately.
+    menu.onebuffer = (menu.onebuffer ?? 0) - 1;
+    menu.twobuffer = (menu.twobuffer ?? 0) - 1;
+    return false;
+  }
 
   // Edge-triggered: the menu must not skip five buttons because a key was held
   // for five frames. The soul's own movement is level-triggered and unaffected.
@@ -418,22 +428,44 @@ export function stepMenu(state, input) {
   // way — so a key held across the cooldown does not fire the moment it
   // lifts. That matches `button1_p()` being evaluated before the buffer test
   // in the original: the press is seen, then discarded.
+  // CONFIRM AND CANCEL ARE EVALUATED ONCE, IN THAT ORDER, before any menu
+  // section runs — exactly the controller's own two lines. The order is
+  // load-bearing when both edges land on the SAME frame (the masher's
+  // cancel pulse coincides with a confirm every 74 frames): the game's
+  // confirm fires first and its `onebuffer = 1` cross-gates the cancel
+  // away. The sim's button-row handler used to test cancel first, so at
+  // f702 a FIGHT confirm became a prevHero instead — the third menu
+  // replayed two frames behind from there.
+  const confirmFired = (() => {
+    if (!rawPressed('confirm')) return false;
+    if (menu.twobuffer >= 0) return false;
+    // `onebuffer = 1` — latched HERE rather than in each accepting branch.
+    // The original sets it in all six of them; one gate cannot miss one.
+    menu.onebuffer = 1;
+    return true;
+  })();
+  const cancelFired = (() => {
+    if (!rawPressed('cancel')) return false;
+    if (menu.onebuffer >= 0) return false;
+    menu.twobuffer = 1;
+    return true;
+  })();
+  // Sections may consult each at most once per frame; consuming reads keep
+  // an if/else-if chain from double-acting on one edge.
+  let confirmLeft = confirmFired;
+  let cancelLeft = cancelFired;
   const pressed = (k) => {
-    const edge = rawPressed(k);
-    if (!edge) return false;
     if (k === 'confirm') {
-      if (menu.twobuffer >= 0) return false;
-      // `onebuffer = 1` — latched HERE rather than in each accepting branch.
-      // The original sets it in all six of them; one gate cannot miss one.
-      menu.onebuffer = 1;
-      return true;
+      const v = confirmLeft;
+      confirmLeft = false;
+      return v;
     }
     if (k === 'cancel') {
-      if (menu.onebuffer >= 0) return false;
-      menu.twobuffer = 1;
-      return true;
+      const v = cancelLeft;
+      cancelLeft = false;
+      return v;
     }
-    return true;
+    return rawPressed(k);
   };
 
   // `movenoise` / `selnoise` — the same flag-then-play pattern as the graze:
