@@ -18,7 +18,7 @@ import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate, gmlChoose, gmlIrandom, gmlRandom } from '../rng.js';
-import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry } from './fight.js';
+import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry, turnLength } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
@@ -143,8 +143,46 @@ const turnClock = {
   name: 'turn_clock',
   stepOrder: -100,
   create(e) {},
+  // END STEP, and the whole frame's ordering hangs on it. Three measured
+  // constraints pin the decrement's slot:
+  //
+  //   * the knight's `scr_turntimer(240)` on the rtimer-12 frame ends that
+  //     frame at 239 — the decrement runs AFTER the knight's Step;
+  //   * the cone's star release reads the PRE-decrement clock: with the
+  //     clocks aligned to the diag, the recording releases on the frame the
+  //     previous frame's value crosses 120, not its own — the decrement runs
+  //     AFTER the cone's Step too;
+  //   * the heart's destruction fires on the POST-decrement value of the
+  //     same frame (f327: 0.7 - 1 <= 0), inside the same controller block.
+  //
+  // A Step-phase decrement at order -100 satisfied only the third. All
+  // steps, then the decrement: End Step.
   step(e, state) {
-    if (e.director?.started && state.turntimer > 0) state.turntimer -= 1;
+    // THE HEART DIES BEFORE ITS OWN STEP on the frame the clock expires.
+    // The controller's block runs [decrement; if <= 0 destroy obj_heart] and
+    // the controller steps BEFORE the per-turn heart — so on the expiry
+    // frame the heart never runs, and the recording's inv column FREEZES on
+    // the previous frame's value (-79 at f327, where the sim's soul stepped
+    // once more and left -80). Read pre-decrement, `<= 1` here IS the
+    // controller's post-decrement `<= 0`. The rest of the teardown stays in
+    // the director's endStep, which sees the same expiry after the End-Step
+    // decrement below.
+    const d = e.director;
+    if (d?.started && state.soul && state.turntimer <= 1 && state.turntimer > -900000) {
+      state.soul.alive = false;
+      state.soul = null;
+    }
+  },
+
+  endStep(e, state) {
+    // `clockOn` covers the WHOLE bullet phase, spawn delay included — the
+    // controller decrements on every `mnfight == 2` frame, and the oracle's
+    // diag shows the clock falling from the first rtimer frame (f77: 120 ->
+    // 119) eleven frames before the attack exists. `started` alone began the
+    // countdown at launch, which left the charge-up turn (whose 90 is set at
+    // mnfight 1.5 and NEVER overridden at launch) twelve frames long.
+    const d = e.director;
+    if ((d?.started || d?.clockOn) && state.turntimer > 0) state.turntimer -= 1;
   },
 };
 
@@ -160,6 +198,7 @@ const director = {
     e.owner = null;
     e.gap = TURN_GAP;
     e.started = false;
+    e.clockOn = false;
     e.menuShown = false;
     e.soulHold = null;
     e.bar = null;
@@ -370,10 +409,14 @@ const director = {
       // soul on f345 exactly). The sim's old grace period held the soul for
       // eleven extra frames every turn, which shifted every later turn's
       // menus, bars and attacks — the f345/f357 group in the triage map.
+      // The controller's own form: `turntimer <= 0` tested right after its
+      // decrement. This endStep runs AFTER turnClock's (stepOrder -100
+      // orders End Steps too), so the value here IS the post-decrement one.
       const finished = state.turntimer <= 0;
       if (!finished) return;
 
       e.started = false;
+      e.clockOn = false;
       e.balloonDone = false;
       e.arenaOpen = false;
       // THE SOUL DOES NOT SURVIVE THE TURN. obj_heart is created per bullet
@@ -762,6 +805,10 @@ const director = {
       // 7300 — and then landed the identical +7 TP and -12 HP at frame 36,
       // eleven frames later. The player's report was the same fact from the
       // outside: "after you attack it feels like it is incorrect".
+      // `attacked[]` arrives ONE CHARACTER PER FRAME — obj_attackpress's
+      // shared-`i` quirk, implemented and documented at the latch in
+      // sim/fightbar.js — so this loop starts at most one swing a frame
+      // without any pacing of its own.
       for (let c = 0; c < 3; c++) {
         if (!e.bar.attacked[c] || e.resolved[c]) continue;
         e.resolved[c] = true;
@@ -973,6 +1020,13 @@ const director = {
         // where the increment had accumulated through phase 4).
         state.phaseturn = e.phase === 4 ? (state.phaseturn ?? 0) : e.turn + 1;
         const upcoming = FIGHT_TABLE[e.phase][e.turn];
+        // The mnfight 1.5 -> 2 transition's own `scr_turntimer(90)` — a
+        // FLOOR, not an assignment — and the clock starting. Attacks with a
+        // launch override floor it away twelve frames later; the charge-up
+        // and knightlines keep this 90, already worn down by the spawn
+        // window, exactly as the recording's diag shows.
+        if (state.turntimer < 90) state.turntimer = 90;
+        e.clockOn = true;
         openArena(state, upcoming);
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
@@ -1028,6 +1082,23 @@ const director = {
           mh.direction = (Math.atan2(-(mh.disty - mh.y), mh.distx - mh.x) * 180) / Math.PI;
           mh.alarm[0] = 8;
         }
+      }
+      // THE CLOCK ARMS ON THE KNIGHT'S OWN FRAME. rtimer hits 12 during the
+      // knight's Step and `scr_turntimer(<attack>)` floors the clock right
+      // there — one frame before this director's launch (whose cone-creation
+      // timing already absorbs the offset). The battlecontroller's decrement
+      // follows the knight within the same frame, so the floored value ends
+      // the frame one lower: the oracle diag reads 239 for a 240 attack. The
+      // controller's +30 then lands on ITS first step (fight.js /
+      // stars-controller.js). Arming at launch instead ran the whole turn's
+      // clock one frame late — one unit high — which pushed the
+      // battlecontroller's `turntimer <= 0` heart-destruction one frame past
+      // the recording's at f327.
+      if (e.spawnDelay === 1) {
+        const up = FIGHT_TABLE[e.phase][e.turn];
+        const tl = turnLength(up.ac, up.difficulty);
+        if (tl > 0 && state.turntimer < tl) state.turntimer = tl - 1;
+        state.turntimerArmed = true;
       }
       e.spawnDelay -= 1;
       return;

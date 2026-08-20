@@ -104,7 +104,7 @@ export const FIGHT_TABLE = {
  * 240, which is what Stars, Rotating Slash and Roaring all get — their own
  * controllers then extend it (Stars adds 30, and another 60 at difficulty 2).
  */
-function turnLength(ac, difficulty) {
+export function turnLength(ac, difficulty) {
   // TYPES 104 AND 107 SET `global.turntimer = 999999` in the controller,
   // overriding whatever `scr_turntimer` just asked for. Both attacks run far
   // longer than a normal turn and end it themselves — rotating slash by
@@ -120,7 +120,7 @@ function turnLength(ac, difficulty) {
   // the `attacked == 0` block with its own `scr_turntimer(...)`; `ac -1` sets
   // `chargeupcon = 1` and nothing else, so the turn keeps the 90 assigned at
   // the mnfight 1.5 -> 2 transition. It is the shortest turn in the fight.
-  if (ac === -1) return 90;
+  if (ac === -1) return 0;
   // AC 20 TAKES NO OVERRIDE EITHER, and unlike the other unused attacks its
   // controller (type 101) does not pin `global.turntimer` to 999999 — so
   // knightlines keeps the same default 90 the charge-up does. Its own timeline
@@ -130,7 +130,7 @@ function turnLength(ac, difficulty) {
   // the practice director's 90-frame drain is what still lets you watch the
   // spears land, and that is the drill being generous, not the number being
   // wrong.
-  if (ac === 20) return 90;
+  if (ac === 20) return 0;
   // `myattackchoice == 0 && difficulty == 0` -> 300, and difficulty 1 the
   // same: two separate branches in the knight's Step with the same number.
   // ac 7's controller pins `global.turntimer = 999999`; the LAST segment's
@@ -336,7 +336,26 @@ export function launchAttack(state, entry) {
   state.flurrySoftened = ac === 2 && (difficulty === 1 || difficulty === 3);
 
   state.invc = invcFor(ac);
-  state.turntimer = turnLength(ac, difficulty);
+  // `scr_turntimer` is a FLOOR (`if (global.turntimer < v) v`), and the
+  // battlecontroller — which steps AFTER the knight — takes the launch
+  // frame's decrement off the freshly floored value: the oracle's diag ends
+  // the launch frame at 239 for a 240 attack, and the +30 the Stars
+  // controller adds only lands on the NEXT frame (its first Step), sampled
+  // 268 = 239 - 1 + 30. When the floor does not engage (charge-up,
+  // knightlines return 0 here), the turnClock's own decrement this frame is
+  // already the real one.
+  // The practice director arms the clock itself on the knight's real
+  // rtimer-12 frame — one frame before this launch — and flags it. Scenes
+  // that launch directly (the per-attack suites) get the whole arming here:
+  // the mnfight-1.5 `scr_turntimer(90)` first — the charge-up and
+  // knightlines have NO launch override and live off that 90 — then the
+  // per-attack floor less the launch frame's controller decrement.
+  if (!state.turntimerArmed) {
+    if (state.turntimer < 90) state.turntimer = 90;
+    const tl = turnLength(ac, difficulty);
+    if (tl > 0 && state.turntimer < tl) state.turntimer = tl - 1;
+  }
+  state.turntimerArmed = false;
 
   const knight = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_enemy');
   const kx = knight ? knight.x : KNIGHT.x;
@@ -393,7 +412,6 @@ export function launchAttack(state, entry) {
       if (ac === 1 && state.gmlRng) {
         for (let pad = 0; pad < 4; pad++) gmlRandom(state.gmlRng, 1);
       }
-      if (difficulty >= 2) state.turntimer += 60;
       return dc;
     }
 

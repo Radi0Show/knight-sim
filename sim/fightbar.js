@@ -319,9 +319,31 @@ export function stepFightBar(bar, press = false, perChar = [false, false, false]
     if (b.alive && b.frame - bar.boltx < -5) b.alive = false;
   }
 
+  // ONE CHARACTER PER FRAME — an ORIGINAL BUG, and load-bearing timing.
+  //
+  // The Draw walks `for (i = 0; i < 3; i += 1)` and, for the first character
+  // whose bolts are gone, sets `attacked[i] = 1` and fires `event_user(1)`.
+  // The event's body (Other_11) runs `for (i = 0; i < 3; i += 1)` too — and
+  // `i` is the SAME INSTANCE VARIABLE, not var-scoped. The event returns with
+  // i == 3, the outer loop's `i += 1` makes it 4, and the loop exits. So at
+  // most ONE character latches per frame, lowest index first — a dual-scored
+  // pair's strikes land one frame apart, and the LAST character's latch (which
+  // is what completes `attacked[]` and starts `posttimer`) slips one frame per
+  // simultaneously-finishing character, delaying the whole turn handoff.
+  //
+  // Measured, not read: fullfight-verify21b's scorer receipt shows one press
+  // at boltx 16 dual-scoring chars 1 and 2 on the same frame, and the same
+  // recording's hero log shows Susie entering state 1 at f25 and Ralsei at
+  // f26 — with strikes at f36 and f37, eleven frames later each. Firing all
+  // three in one frame also ended the bar (posttimer → fade → mnfight = 1)
+  // one frame early, which showed up as the whole next turn — the knight's
+  // dr ramp, the soul spawn, the first bullet — running one frame ahead.
   for (let i = 0; i < 3; i++) {
     if (!bar.havechar[i] || bar.attacked[i]) continue;
-    if (!bar.bolts.some((b) => b.alive && b.char === i)) bar.attacked[i] = true;
+    if (!bar.bolts.some((b) => b.alive && b.char === i)) {
+      bar.attacked[i] = true;
+      break; // the shared-`i` exit: one character a frame
+    }
   }
 
   if (bar.oneButton) {

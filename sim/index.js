@@ -98,15 +98,51 @@ function runMotion(state) {
     if (!e.speed && !e.gravity) continue;
     state.counters.motionSteps += 1;
 
-    // Decompose to components, add gravity, recompose.
-    const r = (e.direction * Math.PI) / 180;
-    let hs = e.speed * Math.cos(r);
-    let vs = -e.speed * Math.sin(r);
+    // Decompose to components, add gravity, recompose — THE RUNNER'S WAY,
+    // measured, not assumed. A direct probe of the runner (assign
+    // speed/direction to an instance, read hspeed/vspeed back at 17 digits;
+    // oracle_vspeed_probe.csx, plus a 720-point direction sweep) pinned the
+    // exact derivation:
+    //
+    //   r  = f32( f32( f32(direction) * f32(pi) ) / 180 )   // SINGLE-PRECISION pi
+    //   c  = cos(r); s = sin(r)                              // f64-grade trig
+    //   if (|c| > 1 - 1e-4) c = sign(c)                      // the SNAP: within
+    //   if (|s| > 1 - 1e-4) s = sign(s)                      //   1e-4 of ±1 -> ±1
+    //   hspeed = f32( f32(speed) *  f32(c) )
+    //   vspeed = f32( f32(speed) * -f32(s) )
+    //
+    // Every piece is load-bearing and data-selected: the f32 pi radian is one
+    // f32 ulp away from f32(d*PI/180) for ~30% of directions (sweep score
+    // 719/720 vs 501/720); the chained-f32 product is what reproduces the
+    // probe's own hspeed AND vspeed for the recorded stars (f(s*t) fails two
+    // of them); the snap is why a 30-degree direction at speed 2 reads back
+    // vspeed exactly -1. The remaining 1-in-720 sweep miss is an f64
+    // rounding-boundary straddle between V8's cos and the runner's — odds
+    // ~1e-8 per bullet, accepted.
+    //
+    // Getting this wrong is not cosmetic: the b1 star's vspeed differed by
+    // 8e-6, which flipped a y-grid phase, then a graze at f217, then the
+    // cone's turntimer release frame, then the star count of the turn — and
+    // from there the RNG stream of every later Stars turn.
+    const PI32 = Math.fround(Math.PI);
+    const r = Math.fround(Math.fround(Math.fround(e.direction) * PI32) / 180);
+    let rc = Math.cos(r);
+    let rs = Math.sin(r);
+    if (Math.abs(rs) > 1 - 1e-4) rs = Math.sign(rs);
+    if (Math.abs(rc) > 1 - 1e-4) rc = Math.sign(rc);
+    let hs = Math.fround(Math.fround(e.speed) * Math.fround(rc));
+    let vs = Math.fround(Math.fround(e.speed) * -Math.fround(rs));
 
     if (e.gravity) {
-      const gr = (e.gravity_direction * Math.PI) / 180;
-      hs += e.gravity * Math.cos(gr);
-      vs += -e.gravity * Math.sin(gr);
+      // The runner adds the gravity vector onto the STORED f32 components —
+      // the vector derived by the same path as above, both sums narrowed.
+      const gr = Math.fround(Math.fround(Math.fround(e.gravity_direction) * PI32) / 180);
+      let gc = Math.cos(gr);
+      let gsn = Math.sin(gr);
+      if (Math.abs(gsn) > 1 - 1e-4) gsn = Math.sign(gsn);
+      if (Math.abs(gc) > 1 - 1e-4) gc = Math.sign(gc);
+      hs = Math.fround(hs + Math.fround(Math.fround(e.gravity) * Math.fround(gc)));
+      vs = Math.fround(vs + Math.fround(Math.fround(e.gravity) * -Math.fround(gsn)));
       e.speed = Math.sqrt(hs * hs + vs * vs);
       let dir = (Math.atan2(-vs, hs) * 180) / Math.PI;
       if (dir < 0) dir += 360;
@@ -162,6 +198,28 @@ function runCollisions(state) {
   // seeded from the heart's spawn position the frame it is born.
   if (!state.grazePrev) state.grazePrev = { x: heart.x + 10, y: heart.y + 10 };
 
+  // GRAZE BEFORE DAMAGE — measured, and a RETRACTION of the opposite order.
+  //
+  // Within one frame the game runs obj_grazebox's collision events before
+  // obj_heart's. The proof is one bullet doing both: fullfight-verify21b's
+  // star ref 110101 approaches the soul, and on the frame it CONNECTS the
+  // oracle's tension ledger (scr_tensionheal instrumented) records its +1/15
+  // trickle with global.inv still at -133 — the hit's inv = 30 lands after.
+  // With damage first, the sim set inv = 30 and the graze gate
+  // (`global.inv < 0`) ate that trickle, leaving tension 1/15 short from
+  // f217 on — and the turn timer one graze-reduction short, which pushed the
+  // cone's star release a frame late and desynced the turn's star count.
+  //
+  // The comment that used to justify damage-first cited a measurement "at
+  // whole-fight f201": the oracle setting inv with no tension change on the
+  // same frame. That reading predates the turn-machinery alignment fixes —
+  // the two traces were a frame apart at the time, and the "no tension
+  // change" frame was not the hit frame at all. One further trap fixed the
+  // ledger itself: `global.oracle_frame` is stamped in obj_time's DRAW, so
+  // every step/collision-phase log line carries the PREVIOUS frame's label;
+  // the f216-labelled trickle IS the f217 payment.
+  stepGraze(state, grazes);
+
   for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
     if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
@@ -195,17 +253,6 @@ function runCollisions(state) {
     }
   }
 
-  // DAMAGE BEFORE GRAZE. The damage collision event belongs to obj_heart
-  // (`with (other) event_user(5)`), and the heart is created at the top of
-  // each turn, before any of that turn's bullets and after obj_grazebox has
-  // already been ordered behind it — so on the frame a bullet connects, the
-  // hit resolves FIRST and `global.inv` is already 30 when the grazebox's own
-  // collision event runs. The graze gate `if (global.inv < 0)` then eats both
-  // the trickle and the first-contact award, and a bullet destroyed by its
-  // hit is gone before the grazebox can see it at all. Measured at
-  // whole-fight f201: the oracle sets inv with NO tension change on the same
-  // frame; with graze first the sim paid +2 the recording never does.
-  stepGraze(state, grazes);
 }
 
 /**
@@ -260,6 +307,10 @@ function runAnimation(state) {
  * @param {object} input  this frame's input state; sim never polls for it
  */
 export function stepFrame(state, input) {
+  // Last frame's mask survives the frame — the game's `_p()` accessors are
+  // `mask[f] && !mask[f-1]`, and a menu reopening mid-fight needs f-1's mask
+  // to seed its edge map (sim/menu.js openMenu).
+  state.prevInput = state.input;
   state.input = input;
 
   // GameMaker latches xprevious/yprevious at the TOP of every frame, before any

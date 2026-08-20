@@ -835,6 +835,25 @@ function skipFallen(state) {
 /** Reopen for the next turn, back at the first conscious character. */
 export function openMenu(state) {
   state.menu.open = true;
+  // `scr_battlecursor_memory_reset()` — called by scr_mnendturn before every
+  // menu (flag 14, cursor memory, is 0 by default): ALL of bmenucoord zeroes,
+  // which includes the button-row cursor per character. Without it the row
+  // reopened wherever last turn's mashing left it — DEFEND for the recorded
+  // token — while the recording confirms FIGHT from a clean cursor.
+  state.menu.selected = [0, 0, 0];
+  // SEED THE EDGE MAP FROM THE PREVIOUS FRAME. The game's `button1_p()` is a
+  // global frame-over-frame edge — it does not care whether a menu was
+  // looking. This map used to freeze on close and reopen carrying the LAST
+  // open frame's held states: the reopen at f342 saw confirm "already down"
+  // from the fight bar three hundred frames earlier, discarded the real edge
+  // the recording acted on, and the held-LEFT auto-repeat walked the cursor
+  // onto DEFEND before the next edge landed — 40 TP the oracle never pays.
+  // Seeding from last frame's mask (not this frame's — the same-frame
+  // stepMenu at open must still see today's edge) reproduces
+  // `mask[f] && !mask[f-1]` exactly.
+  for (const k of ['left', 'right', 'up', 'down', 'confirm', 'cancel', 'focus', 'button3']) {
+    state.menu.held[k] = !!(state.prevInput?.[k]);
+  }
   state.menu.charturn = 0;
   state.menu.submenu = null;
   state.menu.pending = null;

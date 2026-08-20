@@ -129,9 +129,19 @@ const rows = [traceHeader(state)];
 // row, so a refill done out here, after the row was already pushed, left
 // every hit frame showing the drop the oracle never records.
 state.keepAlive = keepAlive;
+// KNIGHT_TT_DEBUG="a-b,c-d" prints turntimer and the cone's state for those
+// frame ranges — the whole-fight differ has no turntimer column (the oracle
+// trace does not record it), so release-timing questions land here.
+const ttRanges = (process.env.KNIGHT_TT_DEBUG ?? '').split(',').filter(Boolean)
+  .map((r) => r.split('-').map(Number));
 for (let f = 0; f < replay.frames; f++) {
   globalThis.__simFrame = f;
   stepFrame(state, replay.inputAt(f));
+  if (ttRanges.some(([a, b]) => f >= a && f <= (b ?? a))) {
+    const cone = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_pointing_cone');
+    console.error(`[tt] f=${f} tt=${state.turntimer}`
+      + (cone ? ` cone con=${cone.con} end=${cone.endtimer}` : ''));
+  }
 }
 rows.push(...state.trace);
 writeFileSync(out, `${rows.join('\n')}\n`);
