@@ -9,7 +9,10 @@
 // offset from where the physics is — the classic sprite/hitbox mismatch this
 // project exists to avoid.
 
-const BASE = '../assets/sprites/';
+// Module-relative, not document-relative: the sim must load identically no
+// matter where the hosting page sits (thedevice vendors this tree one URL
+// level deeper than web/index.html does).
+const BASE = new URL('../assets/sprites/', import.meta.url).href;
 
 /** Object type name -> sprite name. Entities may override with `sprite`. */
 export const SPRITE_FOR = {

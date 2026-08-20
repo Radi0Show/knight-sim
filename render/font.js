@@ -33,7 +33,7 @@ const fontCaches = new Map();
  * nothing rather than substituting a system typeface — a wrong font is worse
  * than no font, because it looks deliberate.
  */
-export function loadFont(base = '../assets/fonts', name = 'fnt_mainbig') {
+export function loadFont(base = new URL('../assets/fonts', import.meta.url).href, name = 'fnt_mainbig') {
   if (fontCaches.has(name)) return fontCaches.get(name);
   const f = { ready: false, glyphs: new Map(), img: null, meta: null };
   fontCaches.set(name, f);

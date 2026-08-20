@@ -25,7 +25,8 @@
 // extractor writes `index.json` listing what it pulled; without that file the
 // player has supplied nothing and we ask for nothing.
 
-const BASE = '../assets/audio/';
+// Module-relative, not document-relative — same rule as render/sprites.js.
+const BASE = new URL('../assets/audio/', import.meta.url).href;
 
 export function createAudio() {
   /** name -> AudioBuffer, once decoded. */
