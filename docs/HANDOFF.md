@@ -20,7 +20,7 @@ point of the project rather than a side issue — see §3.
 | turn structure, phases 1-4, the ending | translated, matches the selector and the wiki's independent table |
 | menu, items, spells, ACT, attack bar, TP | working; several details settled this session |
 | damage, targeting, mantle, SWOON | translated from the dump, incl. the Kris-only scaling |
-| whole-fight diff vs the oracle | **row-exact through frame 437, diverges at 438** — all of turn 1 (Stars), its turn end, the inter-turn gap and the second menu are exact; the front is turn 2's soul-relaunch timing (oracle's `scr_moveheart` inv=0 at f438, sim later; then its first bullet at f450 and soul at f461, all likely one enemy-talk/balloon frame upstream) |
+| whole-fight diff vs the oracle | **row-exact through frame 664, diverges at 665** — turns 1 AND 2 (Stars, Tracking Swords) are exact including walls, grazes, the slash bands and the inter-turn machinery. The front is the NEXT extra-graze band paying at f665: its contact shape is an empirical fit (soul centre within d=19 of the bar centreline, from 226 probes covering f495-660) and f665 sits past the probe window — extend oracle_fullfight.csx's bandcheck window (it is trivially widenable), re-record a partial, and refine D / the t-window. Then the turn-3 (Flurry) machinery is next. |
 | visuals | the long tail. This is where "1:1" is now won or lost |
 
 **Nothing invented ships.** If a placeholder is unavoidable it is labelled in
