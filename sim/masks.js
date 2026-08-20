@@ -98,6 +98,21 @@ export const BATTLEBG_STRETCH_HITBOX_MASK = build(raw.battlebgStretchHitbox);
 export const FOUNTAIN_MASK = build(raw.fountain);
 export const TOOTH_MASK = build(raw.tooth);
 export const STAR_MASK = build(raw.star);
+/**
+ * `spr_knight_bullet_star`'s OWN precise mask — the full four-pointed star,
+ * 2040 inked pixels with spikes reaching the sheet's edges. TWO star hitboxes
+ * exist and the difference is a mask_index override, invisible to any grep of
+ * the sprite name:
+ *
+ *   obj_knight_pointing_star   Create: mask_index = spr_knight_bullet_star_mask
+ *                              — the small diamond (STAR_MASK, 853 px)
+ *   obj_knight_roaring_star    NO override — collides with the sprite itself
+ *
+ * Both attacks draw the same art. Giving ROARING's rings the small diamond cut
+ * their hitbox to 42% of the game's — reported by a player as the circling
+ * stars feeling far too generous, and they were.
+ */
+export const STAR_FULL_MASK = build(raw.starfull);
 /** spr_knight_diamondbullet_l — the sword tunnel sword's own sprite, which is
  *  also its collision mask: the recorder shows `mask_index` empty, meaning -1,
  *  so GameMaker falls back to sprite_index. */
@@ -203,7 +218,10 @@ export const SPRITE_MASKS = {
   spr_rk_quickslash_marker: QUICKSLASH_MARKER_MASK,
   spr_roaringknight_sword_ol: SWORDOL_MASK,
   spr_knight_diamondbullet_l: DIAMOND_MASK,
-  spr_knight_bullet_star: STAR_MASK,
+  // The SPRITE's own mask — what an instance with no mask_index override
+  // collides and GRAZES with. Stars' pointing stars override to the small
+  // diamond via `e.mask` at create (sim/attacks/pointing-star.js).
+  spr_knight_bullet_star: STAR_FULL_MASK,
   spr_roaringknight_tooth: TOOTH_MASK,
   spr_rk_fountain_bullet: FOUNTAIN_MASK,
   spr_smallbullet: SMALLBULLET_MASK,
@@ -379,8 +397,13 @@ export function scrPreciseHit(heart, e, mask, n = 3) {
  */
 export function enginePairHit(heart, e, mask) {
   if (!mask) return false;
+  // THE SOUL'S LIVE MASK, not a constant. The sword tunnel swaps obj_heart's
+  // mask_index to spr_dodgeheart_smallmask mid-attack and the engine collides
+  // with whatever is current — hardcoding HEART_MASK made every pair test
+  // ignore the swap. `?? HEART_MASK` because a freshly respawned soul carries
+  // no override, exactly as moveheart hands the new heart its default mask.
   return masksOverlap(
-    HEART_MASK, heart.x, heart.y,
+    heart.mask ?? HEART_MASK, heart.x, heart.y,
     mask, e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
   );
 }
@@ -390,7 +413,7 @@ export function spriteMaskHit(e, heart) {
   const m = SPRITE_MASKS[e.sprite_index];
   if (!m) return null; // no mask registered — caller decides what that means
   return masksOverlap(
-    HEART_MASK, heart.x, heart.y,
+    heart.mask ?? HEART_MASK, heart.x, heart.y,
     m, e.x, e.y, e.image_xscale, e.image_yscale, e.image_angle,
   );
 }

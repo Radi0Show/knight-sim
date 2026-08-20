@@ -85,6 +85,12 @@ export const pointingStar = {
     // released them — 0 hits at con 0 against 15 after, with the soul parked
     // directly on them.
     e.maskOff = false;
+    // `mask_index = spr_knight_bullet_star_mask` — the SMALL diamond, not the
+    // sprite's own spiked mask. Pinned on the entity so the graze test (which
+    // reads `e.mask ?? SPRITE_MASKS[sprite]`) uses the override exactly as the
+    // game's grazebox collides with the instance's current mask. The contact
+    // probe below names STAR_MASK explicitly for the same reason.
+    e.mask = STAR_MASK;
     e.burst = 0; // starchildren that WOULD have spawned
   },
 

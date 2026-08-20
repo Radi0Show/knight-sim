@@ -42,7 +42,7 @@
 import { spawn, destroy } from '../entity.js';
 import { cue } from '../audio.js';
 import { clamp01, scrEaseOut } from '../gml.js';
-import { STAR_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
+import { STAR_FULL_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import { knightCatch } from '../knight.js';
 import { scrChildbulletCopy } from '../childbullet.js';
@@ -99,13 +99,20 @@ export const roaringStar = {
    * `scr_precise_hit(2)` — a 2px probe at the soul's centre against the star's
    * mask. The 0 variant is for the shrunken soul sprite, which this project
    * does not use.
+   *
+   * THE MASK IS THE SPRITE'S OWN — the full 2040px spiked star. Unlike the
+   * Stars attack's pointing star, this object sets NO mask_index, so both the
+   * engine pair test and the probe run against `spr_knight_bullet_star`
+   * itself. It ran against the small diamond (42% of the ink) for a while,
+   * which made the rings pass visibly through the soul without registering —
+   * reported from play, and the report was right.
    */
   collides(e, heart, state) {
     if (state && state.replayContacts) return false;
     if (e.active !== 1 && e.active !== true) return false;
     // Engine pair test first, then the Other_15 probe — see enginePairHit.
-    if (!enginePairHit(heart, e, STAR_MASK)) return false;
-    return scrPreciseHit(heart, e, STAR_MASK, 2);
+    if (!enginePairHit(heart, e, STAR_FULL_MASK)) return false;
+    return scrPreciseHit(heart, e, STAR_FULL_MASK, 2);
   },
 
   /**

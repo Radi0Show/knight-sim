@@ -28,6 +28,7 @@
 
 import { createState, stepFrame } from '../sim/index.js';
 import { buildSingleAttackScene } from '../sim/scenes/single.js';
+import { STAR_MASK, STAR_FULL_MASK, scrPreciseHit } from '../sim/masks.js';
 
 const IDLE = {
   left: 0, right: 0, up: 0, down: 0, focus: 0, confirm: 0, cancel: 0, button3: 0,
@@ -139,6 +140,60 @@ check(darkCircleSeen, 'the intensity-3.66 circle (r/g/b 0, goals lerping to 255)
 check(flashSeen, "the roar's white flash (r/g/b 255 on its Create defaults) is missing");
 check((total.obj_knight_circle ?? 0) >= 2,
   `both circles should appear, got ${total.obj_knight_circle ?? 0}`);
+
+// ---------------------------------------------------- THE RINGS' REAL MASK
+// The circling stars collide with `spr_knight_bullet_star`'s OWN precise mask
+// — the full four-pointed star, 2040 inked pixels, spikes reaching the sheet
+// edge. Only the STARS attack's pointing star overrides mask_index to the
+// small 853px diamond (`spr_knight_bullet_star_mask`). The rings ran on the
+// diamond for a while — 42% of the real hitbox — and no oracle suite could
+// see it: traces/roaring2.csv has no ring-contact frames, so positions and
+// counts diffed clean while the rings passed through the soul. Reported from
+// play as the circling stars being far too generous, and pinned here so the
+// two masks can never be swapped again.
+{
+  const inkOf = (m) => m.px.reduce((n, row) => n + row.reduce((a, c) => a + (c ? 1 : 0), 0), 0);
+  check(inkOf(STAR_FULL_MASK) === 2040,
+    `the ring mask is the full star, 2040 px; got ${inkOf(STAR_FULL_MASK)}`);
+  check(inkOf(STAR_MASK) === 853,
+    `the pointing-star override is the small diamond, 853 px; got ${inkOf(STAR_MASK)}`);
+  // The spikes are the part the diamond lacks — the widest row spans the
+  // sheet, and it is the spike that clips you as a ring sweeps past. (Cells
+  // are truthy, not literal 1s — findIndex(Boolean), not indexOf.)
+  const span = (row) => {
+    const a = row.findIndex(Boolean);
+    if (a < 0) return 0;
+    let b = row.length - 1;
+    while (b > a && !row[b]) b -= 1;
+    return b - a + 1;
+  };
+  const widest = Math.max(...STAR_FULL_MASK.px.map(span));
+  check(widest >= 63, `the full mask's spikes should span the sheet, widest row ${widest}`);
+
+  // And a spike contact DISCRIMINATES the two. Found from the data, not
+  // hand-picked: the farthest cell (from the origin) that is inked in the
+  // FULL mask and clear in the small one — a spike tip by construction. A
+  // probe there registers on the full mask and cannot on the diamond.
+  let tip = null;
+  let best = -1;
+  for (let cy = 0; cy < 64; cy++) {
+    for (let cx = 0; cx < 64; cx++) {
+      if (!STAR_FULL_MASK.px[cy][cx] || STAR_MASK.px[cy][cx]) continue;
+      const d = Math.hypot(cx - 32, cy - 32);
+      if (d > best) { best = d; tip = [cx, cy]; }
+    }
+  }
+  check(tip !== null, 'the full mask should have ink the diamond lacks');
+  check(best > 20, `the extra ink should reach spike distance, farthest ${best.toFixed(1)}px`);
+  const star = { x: 320, y: 160, image_xscale: 1, image_yscale: 1, image_angle: 0 };
+  // scrPreciseHit probes at (heart.x + 10, heart.y + 10); the star's origin is
+  // (32, 32), so cell (cx, cy) sits at world (320 + cx - 32, 160 + cy - 32).
+  const heart = { x: 320 + tip[0] - 32 - 10, y: 160 + tip[1] - 32 - 10 };
+  check(scrPreciseHit(heart, star, STAR_FULL_MASK, 2) === true,
+    'a spike-tip touch must register on the full mask');
+  check(scrPreciseHit(heart, star, STAR_MASK, 2) === false,
+    '...and must NOT register on the small diamond — the masks are distinct');
+}
 
 console.log('ROARING effects (ac 9) — no oracle; the trace has no column for these\n');
 console.log(`→ screen copies: ${inward} inward (wind-up) + ${outward} outward (roar),`
