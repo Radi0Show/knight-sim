@@ -18,9 +18,6 @@ oracle/
 # not the digit-only sprite fonts. Same posture as the sprites: extracted from
 # the player own copy, free and non-commercial.
 !assets/fonts/*.png
-*.wav
-*.ogg
-*.mp3
 
 # Generated traces — regenerate with tools/run-trace.mjs, never commit
 /traces/
@@ -33,16 +30,11 @@ node_modules/
 # macOS
 .DS_Store
 
-# AUDIO NOW SHIPS. The earlier stance here was that the soundtrack is sold
-# separately so nothing audio could go in the repo; CLAUDE.md now records that
-# the sound effects are specifically permitted by Toby Fox and Sebastian Wolf,
-# so the SFX travel with the build like the sprites do.
-#
-# MUSIC SHIPS TOO now — the sound effects AND the soundtrack are recorded in
-# CLAUDE.md as permitted. The fight's track is `knight.ogg`, which the game
-# loads as a LOOSE FILE (`snd_init("knight.ogg")` out of Resources/mus/)
-# rather than packed into an audiogroup like the SFX, so it needed no
-# extraction pass at all — only a copy.
-!assets/audio/*.wav
-!assets/audio/index.json
-!assets/audio/*.ogg
+# AUDIO SHIPS, EVERYWHERE IN THE REPO. Standing project policy
+# (2026-08-20): audio is fully permitted in these projects for as long as
+# they are not paywalled and are donation-supported only. The old global
+# *.wav/*.ogg blocks and their assets/audio carve-outs are gone — they
+# were how a new audio directory could get silently starved out of every
+# clone, the same failure that once shipped DEVICE_KNIGHT as an empty
+# shell. Raw GAME DATA (game.ios, *.audiogroup, dumps) stays ignored
+# above — that is a different rule and it does not move.
