@@ -27,6 +27,7 @@
 // knight's idle bob but on sin and a 16-divisor rather than cos and 8, so it
 // reads as a slower, deeper sway.
 
+import { gmlRandom, gmlRandomRange } from '../rng.js';
 import { spawn } from '../entity.js';
 import { scrLerpvar } from '../lerpvar.js';
 
@@ -63,6 +64,20 @@ export const swordTunnelAnim = {
 
   step(e, state) {
     if (e.con === 0) {
+      // TWO PITCH ROLLS EVERY THIRD FRAME, checked BEFORE the increment:
+      //
+      //     if (timer < 60) if ((timer % 3) == 0) {
+      //         snd_play_x(226, 0.8 * fadeaudio, 1 + random(0.2));  // twice
+      //     }
+      //
+      // The rolls are call-site pitch arguments — step-phase, LIVE on the
+      // anchored stream (the snd wrappers themselves never roll). Sound
+      // asset 226's name is not yet identified, so the draws are consumed
+      // without a cue; the audible half can land when it is.
+      if (e.timer < 60 && e.timer % 3 === 0 && state.gmlRng) {
+        gmlRandom(state.gmlRng, 0.2);
+        gmlRandom(state.gmlRng, 0.2);
+      }
       e.timer += 1;
 
       if (e.timer === 1) {
@@ -80,6 +95,17 @@ export const swordTunnelAnim = {
       }
     } else if (e.con === 1) {
       e.timer += 1;
+      // Con 1's pair, POST-increment and UNGATED BY TIME — the leaf-pitch
+      // pair fires every third frame until the turn-end teardown destroys
+      // the anim (`global.turntimer < 10`, endtimer 8):
+      //
+      //     if ((timer % 3) == 0) {
+      //         snd_play_x(226, ..., leafpitch + random_range(0, 0.2));  // twice
+      //     }
+      if (e.timer % 3 === 0 && state.gmlRng) {
+        gmlRandomRange(state.gmlRng, 0, 0.2);
+        gmlRandomRange(state.gmlRng, 0, 0.2);
+      }
     }
 
     e.siner += 1;
