@@ -344,8 +344,14 @@ export const rotatingSlash = {
         // turn sweep takes it; inventing a position would make it lunge at a soul
         // that is not there.
         if (!heart) return;
-        e.aim_x = heart.x + 10;
-        e.aim_y = heart.y + 10;
+        // PRE-STEP soul position (state.soulPrev): the rotating slash is
+        // created mid-turn, newer than the soul, so the runner steps it
+        // first — its aim reads the soul before this frame's movement.
+        // verify21j's first slash lands 4px (one soul-step) from the live
+        // read. Same compensation as the tunnel's swept probe.
+        const hp = state.soulPrev ?? heart;
+        e.aim_x = hp.x + 10;
+        e.aim_y = hp.y + 10;
       }
 
       // `if (timer == 1) instance_create(aim_x, aim_y, obj_knight_circle)` —
@@ -382,7 +388,15 @@ export const rotatingSlash = {
         cue(state, 'snd_knight_cut');
         cue(state, 'snd_explosion_firework');
         if (state.fixedSlashOrder === true && state.angleLists) {
-          // Replay the oracle's shuffled order (see SHUFFLE CAVEAT).
+          // Replay the oracle's shuffled order (see SHUFFLE CAVEAT) — but
+          // the real ds_list_shuffle still RAN in the game and burned its
+          // measured 16 u32 draws per element. Skipping the burn left every
+          // roll after the fan (the slash's own box jitter included) 16n
+          // positions early — verify21j's first jitter pair read +2/-2
+          // where the recording has +1/0.
+          if (state.gmlRng) {
+            for (let i = 0; i < e.slash_list.length * 16; i++) gmlU32(state.gmlRng);
+          }
           const rec = state.angleLists[state.angleIndex++];
           if (rec) e.slash_list = [...rec];
         } else {

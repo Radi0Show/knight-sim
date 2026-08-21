@@ -371,6 +371,12 @@ export function launchAttack(state, entry) {
   if (knight) knight.difficulty = difficulty;
 
   reanchorRng(state);
+  // EVERY launch runs through scr_bulletspawner -> obj_dbulletcontroller,
+  // whose Create rolls `basedir = irandom(360)` — dead mechanically, two
+  // draws off the fresh anchor. This was fitted blind twice (Flurry's
+  // "two unattributed pads", half of Stars' four) before turn 5's slash
+  // jitter finally attributed it.
+  if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
 
   switch (ac) {
     case 1: {
@@ -412,8 +418,10 @@ export function launchAttack(state, entry) {
       // aligns while star 1 does not, since later stars ride relative
       // offsets. ORACLE-FITTED — replace with the real consumer when it is
       // found.
+      // TWO of the original four fitted pads were the dc's basedir (now
+      // consumed centrally above); these two remain unattributed.
       if (ac === 1 && state.gmlRng) {
-        for (let pad = 0; pad < 4; pad++) gmlRandom(state.gmlRng, 1);
+        for (let pad = 0; pad < 2; pad++) gmlRandom(state.gmlRng, 1);
       }
       return dc;
     }
@@ -436,10 +444,8 @@ export function launchAttack(state, entry) {
       // to ten decimals (fullfight-slashes2's log). The earlier three-pad
       // fit was degenerate — it stole the flip draw's slot and landed
       // force_oneside on a 0.
-      if (state.gmlRng) {
-        gmlRandom(state.gmlRng, 1);
-        gmlRandom(state.gmlRng, 1);
-      }
+      // (The two draws once padded here were the dc's basedir — consumed
+      // centrally above, finally attributed.)
       // type 99 creates this AT THE KNIGHT and then hides him — from here on
       // the manager is the visible knight.
       const mg = spawn(state, boxsplitterAttack, { x: kx, y: ky });
@@ -547,6 +553,9 @@ export function launchAttack(state, entry) {
       // only place the tracking damage is overridden off its inherited 200.
       const mg = spawnRotatingSlash(state, kx, ky, { difficulty: 0 });
       reanchorRng(state);
+      // The second spawner call brings a second dbulletcontroller — and its
+      // own basedir roll.
+      if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
       const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       tr.variant = 0;
       tr.damage = 206;
@@ -575,9 +584,8 @@ export function launchAttack(state, entry) {
       //        roll at position 2 gives 8, and -40+8 puts the first sword
       //        pair at launch+36 = f1297, exactly the recording's.
       //
-      // The manager's timer roll lives in ITS create now — the old call-site
-      // roll here double-rolled it after the chooses.
-      if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
+      // The manager's timer roll lives in ITS create; the dc's basedir is
+      // consumed centrally above.
       const mg = spawn(state, swordTunnelManager, { x: arena.x, y: state.view.y });
       mg.difficulty = difficulty;
       mg.knightDifficulty = difficulty;
