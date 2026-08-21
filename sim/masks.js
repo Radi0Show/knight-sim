@@ -716,6 +716,37 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
  * origin (125,27). This is Flurry's cut.
  */
 export const QUICKSLASH_SHAPE = { bbox: [2, 26, 241, 28], ox: 125, oy: 27, w: 250, h: 48 };
+/**
+ * The same RotatedRect as a pixel mask, for the GRAZE path. The splitslash
+ * grazes the box for its full 10 grazepoints in the recording (whole-fight
+ * f886: fresh +10, then 1/3 trickles) — the grazebox pairs with it like any
+ * collidebullet, and grazes() needs a registered mask once the strike sets
+ * sprite_index. A RotatedRect mask is its bbox, solid, rotated with the
+ * instance — which the calibrated sampler already handles.
+ */
+export const QUICKSLASH_MASK = (() => {
+  const [bx0, by0, bx1, by1] = QUICKSLASH_SHAPE.bbox;
+  const px = [];
+  for (let y = 0; y < QUICKSLASH_SHAPE.h; y++) {
+    const row = [];
+    for (let x = 0; x < QUICKSLASH_SHAPE.w; x++) {
+      row.push(x >= bx0 && x <= bx1 && y >= by0 && y <= by1);
+    }
+    px.push(row);
+  }
+  return {
+    name: 'rk_quickslash_rect',
+    w: QUICKSLASH_SHAPE.w,
+    h: QUICKSLASH_SHAPE.h,
+    originX: QUICKSLASH_SHAPE.ox,
+    originY: QUICKSLASH_SHAPE.oy,
+    bbox: QUICKSLASH_SHAPE.bbox,
+    px,
+  };
+})();
+// Registered here rather than in the literal: QUICKSLASH_SHAPE lives below
+// SPRITE_MASKS in this file, so the literal would read it uninitialised.
+SPRITE_MASKS.spr_rk_quickslash = QUICKSLASH_MASK;
 
 /** A sprite's bbox as a local rectangle about its origin, before rotation. */
 function localBBox(meta, sx, sy) {

@@ -271,6 +271,9 @@ const CONTROLLER_DAMAGE = KNIGHT_AT * 5;
  * invisible: the stream is random per playthrough either way.
  */
 function reanchorRng(state) {
+  if (globalThis.process?.env?.KNIGHT_ANCHOR_DEBUG) {
+    console.error(`[anchor] f=${globalThis.__simFrame} n=${state.spawnn}`);
+  }
   state.spawnn = state.spawnn ?? 0;
   state.gmlRng = gmlCreate((state.seed + state.spawnn * 1000) >>> 0);
   state.spawnn += 1;

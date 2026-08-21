@@ -284,7 +284,9 @@ export function knightTarget(state, target, opts = {}) {
   // reachable from the equip menu, so both behaviours ship.
   const gear = gearOf(state);
   const wearer = gear.findIndex((g) => (g.armor ?? []).includes(23));
-  const mantle = wearer >= 0;
+  // state.noMantle: verification-only override (tools/fullfight-trace.mjs,
+  // KNIGHT_NO_MANTLE) matching a recording whose party fights bare.
+  const mantle = wearer >= 0 && !state.noMantle;
   if (mantle && opts.ac !== 13) {
     const k = state.knight;
     k.damagecounter = (k.damagecounter ?? 0) + 1;

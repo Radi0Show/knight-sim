@@ -261,12 +261,34 @@ export function scrEaseInout(t, curve) {
  * built-ins"): the runner does a lot of its arithmetic in single precision,
  * and only the results that land in plain GML variables stay f64.
  */
+const PI32 = Math.fround(Math.PI);
+
+/**
+ * The RUNNER's degree->radian path, measured by direct probe (see
+ * sim/index.js runMotion): the radian is f32(f32(f32(d) * f32(pi)) / 180)
+ * with f64-grade trig. The old f64-radian variant here differed by one f32
+ * ulp of trig for ~30% of angles — the seed of a compounding tooth-spawn
+ * divergence at whole-fight f890 (lengthdir_x of the cut range at
+ * angleoffset+90).
+ */
+// NO SNAP HERE: the 1e-4 snap to +/-1 belongs to the speed/direction
+// component derivation ONLY (probe-verified there). The vortex suite
+// discriminates: its sword hangs within the snap window of vertical, and
+// the recording's lengthdir_y value is the UNSNAPPED sine (frame 36,
+// y 277.4966... vs the snapped 277.5050...).
+function runnerCos(dir) {
+  return Math.cos(Math.fround(Math.fround(Math.fround(dir) * PI32) / 180));
+}
+function runnerSin(dir) {
+  return Math.sin(Math.fround(Math.fround(Math.fround(dir) * PI32) / 180));
+}
+
 export function lengthdirX(len, dir) {
-  return Math.fround(Math.fround(len) * Math.fround(Math.cos((dir * Math.PI) / 180)));
+  return Math.fround(Math.fround(len) * Math.fround(runnerCos(dir)));
 }
 
 export function lengthdirY(len, dir) {
-  return -Math.fround(Math.fround(len) * Math.fround(Math.sin((dir * Math.PI) / 180)));
+  return -Math.fround(Math.fround(len) * Math.fround(runnerSin(dir)));
 }
 
 /**

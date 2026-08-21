@@ -94,7 +94,12 @@ export function gmlCreate(seed) {
 export function gmlU32(r) {
   r.draws = (r.draws ?? 0) + 1;
   globalThis.__draws = (globalThis.__draws ?? 0) + 1;  // TEMP
-  if (globalThis.__trap) { const e = new Error(); console.log('DRAW @', e.stack.split('\n')[3]?.trim()); }
+  if (globalThis.__trap) {
+    const e = new Error();
+    const site = e.stack.split('\n').slice(2, 5).map((l) => l.trim().replace(/^at /, '')
+      .replace(/\(.*\/(sim|tools)\//, '(')).join(' <- ');
+    console.error(`DRAW f=${globalThis.__simFrame} n=${r.draws} ${site}`);
+  }
   const st = r.state;
   let a = st[r.idx];
   let c = st[(r.idx + 13) & 15];

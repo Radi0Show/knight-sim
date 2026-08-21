@@ -32,6 +32,20 @@ const replay = decodeReplay(token);
 const state = createState({ seed: replay.meta.seed, traceBulletSlots: slots });
 state.traceWide = true;
 
+// KNIGHT_NO_MANTLE=1 disables ONLY scr_damage's ShadowMantle brunt gate
+// (sim/damage.js knightTarget reads it) while leaving every stat at
+// DEFAULT_GEAR. Diagnostic for recordings whose harness did not pin
+// `global.chararmor*`: scr_gamestart zeroes the equip arrays, so that
+// oracle party fights bare and the brunt block (gated on armor 23 being
+// worn at all) never opens — one fewer choose() per hit than DEFAULT_GEAR
+// consumes. This is how the f891 ±1-draw offset against verify21d was
+// attributed. Recordings made after the harness pinned the equip arrays
+// must NOT use this.
+if (process.env.KNIGHT_NO_MANTLE) {
+  state.noMantle = true;
+  console.log('no-mantle: brunt targeting disabled (stats unchanged)');
+}
+
 // THE SHUFFLE IS REPLAYED FROM THE ORACLE, not reproduced.
 //
 // `ds_list_shuffle`'s algorithm is unsolved (CLAUDE.md), so the sim cannot
@@ -166,8 +180,12 @@ state.keepAlive = keepAlive;
 // trace does not record it), so release-timing questions land here.
 const ttRanges = (process.env.KNIGHT_TT_DEBUG ?? '').split(',').filter(Boolean)
   .map((r) => r.split('-').map(Number));
+// KNIGHT_DRAW_TRACE="a-b" prints every gmlU32 draw in those frames with its
+// call site — for attributing a ±1 stream offset against the oracle.
+const dtRange = (process.env.KNIGHT_DRAW_TRACE ?? '').split('-').map(Number);
 for (let f = 0; f < replay.frames; f++) {
   globalThis.__simFrame = f;
+  globalThis.__trap = dtRange.length === 2 && f >= dtRange[0] && f <= dtRange[1];
   stepFrame(state, replay.inputAt(f));
   if (ttRanges.some(([a, b]) => f >= a && f <= (b ?? a))) {
     const cone = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_pointing_cone');
