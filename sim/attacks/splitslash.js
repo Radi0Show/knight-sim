@@ -275,17 +275,10 @@ export const splitslash = {
       // `global.inv = global.invc * 30`. This wrote `state.inv`, which is
       // READ NOWHERE — a write-only variable, the same class of bug CLAUDE.md
       // catalogues in the original's GML, only this one was mine. The field
-      // the damage path actually gates on is `invTimer`.
-      //
-      // MINUS ONE, measured: verify21g fight-1094. The runner's heart
-      // decrements global.inv in ITS Step after this payoff has already
-      // fired, so the same-frame value every later reader sees — the
-      // collision phase (two teeth logged pairing at inv 11), the trace row
-      // (11, where an ordinary collision-phase hit frame shows the full 12)
-      // — is invc*30 - 1. The sim's soul decrements BEFORE attack steps, so
-      // the -1 is applied here to land on the observed value. Order-derived
-      // constant, not arithmetic from the dump.
-      state.invTimer = state.invc * 30 - 1;
+      // the damage path actually gates on is `invTimer`. The same-frame
+      // post-decrement the trace shows (11 at f1094, not 12) comes from the
+      // soul's inv decrement living in the motion phase — see sim/soul.js.
+      state.invTimer = state.invc * 30;
       destroy(e);
     }
   },

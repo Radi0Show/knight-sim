@@ -62,6 +62,13 @@ function runMotion(state) {
   for (const e of state.entities) {
     if (!e.alive) continue;
 
+    // A type-level motion handler, for state that must change after every
+    // step but before any collision: the soul's inv decrement lives here
+    // (sim/soul.js — the runner's newest-first stepping puts the heart's
+    // decrement after attack-step damage, and this slot reproduces that
+    // without reordering the sim's step phase).
+    if (e.type.motion) e.type.motion(e, state);
+
     // COMPONENT MOTION. GameMaker's real state is hspeed/vspeed; speed and
     // direction are derived views of them. Most translated objects set
     // speed/direction, but obj_diagonal_bullet assigns hspeed and vspeed

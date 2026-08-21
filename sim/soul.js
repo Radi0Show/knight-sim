@@ -48,6 +48,13 @@ export const soul = {
     e.remove_slow_z_buffer = 40;
   },
 
+  /** The inv decrement — see the note at the step's commit point. Unclamped
+   *  in the original: it goes negative and stays there between hits. Do not
+   *  "fix" this to a floor of zero. */
+  motion(e, state) {
+    state.invTimer -= 1;
+  },
+
   step(e, state) {
     const input = state.input;
 
@@ -230,9 +237,15 @@ export const soul = {
     e.x += px;
     e.y += py;
 
-    // global.inv -= 1. Unclamped in the original — it goes negative and stays
-    // there between hits. Do not "fix" this to a floor of zero.
-    state.invTimer -= 1;
+    // `global.inv -= 1` lives in the MOTION slot below, not here: the
+    // runner steps newest-first, so the heart's decrement lands AFTER every
+    // attack object's step — a step-phase hit (the splitslash's playerstrike
+    // payoff at f1094, the tunnel sword's swept-probe damage at f1322) sets
+    // invc*30 and the SAME frame's decrement takes one off before anything
+    // else reads it, while collision-phase hits trace the full value. The
+    // sim's soul steps early (oldest-first), so the decrement moves to the
+    // motion phase — after all steps, before collisions — which reproduces
+    // both orderings without per-attack constants.
 
     state.heartx = e.x + 2 - state.view.x;
     state.hearty = e.y + 2 - state.view.y;

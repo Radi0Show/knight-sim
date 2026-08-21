@@ -93,7 +93,13 @@ export const swordTunnelAnim = {
         e.timer = 0;
         e.con = 1;
       }
-    } else if (e.con === 1) {
+    }
+    // A SEPARATE IF, not else-if: the dump's con-0 and con-1 blocks are
+    // sequential, so on the transition frame (timer 60 -> con 1, timer 0)
+    // the con-1 block runs the SAME frame — its timer ticks to 1 and the
+    // lerpvars arm immediately. An else-if delayed all of that a frame and
+    // phase-shifted every %3 pitch pair after it.
+    if (e.con === 1) {
       e.timer += 1;
       // Con 1's pair, POST-increment and UNGATED BY TIME — the leaf-pitch
       // pair fires every third frame until the turn-end teardown destroys

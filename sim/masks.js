@@ -937,7 +937,11 @@ export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
 
 /** obj_heart's bounding box in world space, from spr_dodgeheartmask's bbox. */
 export function heartBBox(heart) {
-  const [l, t, r, b] = HEART_MASK.bbox;
+  // THE SOUL'S LIVE MASK, not a constant — the fight soul is the 20x20
+  // spr_dodgeheart rect ([0..19]), the tester soul the heart shape
+  // ([2..17]), and the sword tunnel's swept probe reads whichever is
+  // current (verify21h f1372: an edge contact the [2..17] box misses).
+  const [l, t, r, b] = (heart.mask ?? HEART_MASK).bbox;
   // Inclusive bbox, so the far edge is one pixel past the stored index.
   return [heart.x + l, heart.y + t, heart.x + r + 1, heart.y + b + 1];
 }

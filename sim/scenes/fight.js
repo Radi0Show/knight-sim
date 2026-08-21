@@ -566,8 +566,19 @@ export function launchAttack(state, entry) {
     }
 
     case 13: {
+      // THE LAUNCH-FRAME STREAM (verify21h, anchor seed 21+3000 — n counts
+      // from the SECOND launch, so turn 4 is n=3):
+      //
+      //   0-1  obj_dbulletcontroller Create: `basedir = irandom(360)` (dead
+      //        mechanically, two draws)
+      //   2+   the manager's own Create, in the dump's order — its timer
+      //        roll at position 2 gives 8, and -40+8 puts the first sword
+      //        pair at launch+36 = f1297, exactly the recording's.
+      //
+      // The manager's timer roll lives in ITS create now — the old call-site
+      // roll here double-rolled it after the chooses.
+      if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
       const mg = spawn(state, swordTunnelManager, { x: arena.x, y: state.view.y });
-      mg.timer = -40 + gmlIrandom(state.gmlRng, 10);
       mg.difficulty = difficulty;
       mg.knightDifficulty = difficulty;
       mg.damage = CONTROLLER_DAMAGE;

@@ -387,18 +387,7 @@ export const swordTunnelManager = {
     // `instance_create(obj_knight_enemy.x, obj_knight_enemy.y,
     // obj_knight_swordtunnelanim)` — the knight's performance for this attack.
     // It takes over his appearance entirely; see sword-tunnel-anim.js.
-    const knight = state.entities.find(
-      (x) => x.alive && x.type.name === 'obj_knight_enemy',
-    );
-    if (knight) spawn(state, swordTunnelAnim, { x: knight.x, y: knight.y });
-
     e.timer = -40 + gmlIrandom(state.gmlRng, 10);
-    // `tobyvolleyamount = 10 + irandom(6)` — ORIGINAL BUG: assigned in the
-    // create and read nowhere in the dump (the write-only-variable club).
-    // Dead mechanically, but the irandom still takes its two draws off the
-    // anchored stream, so the whole turn after it would sit two positions
-    // early without this consume.
-    gmlIrandom(state.gmlRng, 6);
     e.finishtimer = 0;
     // The Create reads the KNIGHT's difficulty, not its own, and difficulty 3
     // lengthens the run before the finale. Missing this stopped the sweep 20
@@ -432,6 +421,20 @@ export const swordTunnelManager = {
     e.movedirection = gmlChoose(state.gmlRng, ['up', 'down']);
     e.tobymode = 0;
     e.tobytimer = 0;
+    // `tobyvolleyamount = 10 + irandom(6)` — ORIGINAL BUG: assigned in the
+    // create and read nowhere in the dump (the write-only-variable club).
+    // Dead mechanically, but the irandom still takes its two draws off the
+    // anchored stream — AFTER the three chooses, exactly where the dump
+    // rolls it (the old placement right after the timer roll shifted the
+    // chooses two positions).
+    gmlIrandom(state.gmlRng, 6);
+    // The knight's performance object is created at the END of the Create,
+    // after every roll — `instance_create(..., obj_knight_swordtunnelanim)`
+    // is the dump's last line.
+    const knight = state.entities.find(
+      (x) => x.alive && x.type.name === 'obj_knight_enemy',
+    );
+    if (knight) spawn(state, swordTunnelAnim, { x: knight.x, y: knight.y });
     e.difficulty = 0;
     e.stopsfxtimer = 0;
     e.tobyvolleymode = 0;
