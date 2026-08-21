@@ -266,6 +266,15 @@ function runCollisions(state) {
     }
     if (hit) {
       state.counters.collisionHits += 1;
+      // KNIGHT_HIT_DEBUG=1 prints every collision hit with the bullet's
+      // exact state at test time — the sim-side mirror of the oracle's
+      // hitlog (tools/patches/oracle_fullfight.csx). Env-gated and guarded
+      // so the browser build never touches `process`.
+      if (typeof process !== 'undefined' && process.env?.KNIGHT_HIT_DEBUG) {
+        console.error(`[hit] f=${state.frame} ${b.type.name} (${b.x}, ${b.y})`
+          + ` a=${b.image_angle} xs=${b.image_xscale} ys=${b.image_yscale}`
+          + ` inv=${state.invTimer} soul=(${heart.x}, ${heart.y})`);
+      }
       b.type.other15(b, state);
     }
     }
