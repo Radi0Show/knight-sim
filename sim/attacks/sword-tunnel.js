@@ -168,9 +168,12 @@ export const swordTunnelSword = {
       }
       if (e.timer < 10 + c / 2) {
         e.anglespeed = lerp(8, 0, e.timer / (10 + c / 2));
-        const heart = state.soul;
-        if (heart) {
-          const want = pointDirection(e.x, e.y, heart.x + 10 + e.randx, heart.y + 10 + e.randy);
+        // PRE-STEP soul position, same as the swept probe: the sword aims
+        // before the soul's own step moves it (verify21i f1491's finale
+        // turn is 0.2 degrees off with the live position).
+        const hp = state.soulPrev ?? state.soul;
+        if (hp) {
+          const want = pointDirection(e.x, e.y, hp.x + 10 + e.randx, hp.y + 10 + e.randy);
           e.image_angle += scrAnglechange(e.image_angle, want, e.anglespeed);
         }
         e.targetangle += e.anglespeed;
@@ -229,18 +232,22 @@ export const swordTunnelSword = {
     // turn sweep takes it; inventing a position would make it lunge at a soul
     // that is not there.
     if (!heart) return;
+    // THE SOUL'S PRE-STEP POSITION (state.soulPrev): the sword steps before
+    // the soul in the runner (newest-first), so its proximity gate and its
+    // swept probe both read the soul where it stood at the top of the
+    // frame — verify21i f1486's connect is 4px of exactly this.
+    const hp = state.soulPrev ?? heart;
     if (
-      heart &&
-      e.x > heart.x - 80 &&
-      e.x < heart.x + 80 &&
-      e.y < heart.y + 80 &&
-      e.y > heart.y - 80
+      e.x > hp.x - 80 &&
+      e.x < hp.x + 80 &&
+      e.y < hp.y + 80 &&
+      e.y > hp.y - 80
     ) {
       e.image_blend = RED;
       const remx = e.x;
       const remy = e.y;
       const steps = Math.max(Math.floor(e._speed / 8), 1);
-      const [bx0, by0, bx1, by1] = heartBBox(heart);
+      const [bx0, by0, bx1, by1] = heartBBox({ x: hp.x, y: hp.y, mask: heart.mask });
       for (let i = 0; i < steps; i++) {
         e.x += xadd * 8;
         e.y += yadd * 8;

@@ -128,6 +128,16 @@ function readCsv(path) {
  */
 const POSITION_COL = /^b\d+_[xy]$/;
 const POSITION_TOL = 0.02;
+// ANGLE columns carry the same proprietary-libm drift once an angle is
+// DERIVED from trig: the sword tunnel's finale aims with point_direction
+// (the runner's own atan2) and accumulates through scr_anglechange, so the
+// sim lands within ~1e-4 degrees but cannot be bit-exact — verify21i f1494
+// reads 109.4386749268 vs 109.4386520386. 0.001 degrees is 6e-4 px at the
+// sword's 37px probe radius, far below anything a collision can see.
+// Assigned angles (cardinals, choose()-driven spins) still match exactly
+// and a real angle bug still fails.
+const ANGLE_COL = /^b\d+_a$/;
+const ANGLE_TOL = 0.001;
 
 function cellsEqual(av, bv, colName) {
   if (av === bv) return true;
@@ -136,6 +146,13 @@ function cellsEqual(av, bv, colName) {
     const bn = parseFloat(bv);
     if (Number.isFinite(an) && Number.isFinite(bn)) {
       return Math.abs(an - bn) <= POSITION_TOL;
+    }
+  }
+  if (ANGLE_COL.test(colName)) {
+    const an = parseFloat(av);
+    const bn = parseFloat(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      return Math.abs(an - bn) <= ANGLE_TOL;
     }
   }
   return false;

@@ -374,6 +374,14 @@ export function stepFrame(state, input) {
   runAnimation(state);
   runPhase(state, 'beginStep');
   runAlarms(state);
+  // THE SOUL'S PRE-STEP POSITION, for attack steps that read obj_heart
+  // mid-frame. The runner steps newest-first, so an attack object created
+  // during the turn reads the soul BEFORE it has moved this frame — the
+  // tunnel sword's swept probe (verify21i f1486) connects against exactly
+  // that stale position. Same compensation family as grazePrev.
+  state.soulPrev = state.soul && state.soul.alive
+    ? { x: state.soul.x, y: state.soul.y }
+    : null;
   runPhase(state, 'step');
   runMotion(state);
   runCollisions(state);

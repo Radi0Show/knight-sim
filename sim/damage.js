@@ -287,7 +287,14 @@ export function knightTarget(state, target, opts = {}) {
   // state.noMantle: verification-only override (tools/fullfight-trace.mjs,
   // KNIGHT_NO_MANTLE) matching a recording whose party fights bare.
   const mantle = wearer >= 0 && !state.noMantle;
-  if (mantle && opts.ac !== 13) {
+  // `obj_knight_enemy.myattackchoice != 13` — THE SWORD TUNNEL IS EXEMPT
+  // from the brunt (CLAUDE.md's own table). No caller was passing the ac,
+  // so the gate compared undefined !== 13 and the brunt choose rolled
+  // during turn 4 anyway: tension- and hp-invisible under keep-alive, but
+  // one extra stream draw per tunnel hit — verify21i's corridor boundary
+  // chooses sat exactly that far off from f1322's hit onward.
+  const ac = opts.ac ?? state.currentAc;
+  if (mantle && ac !== 13) {
     const k = state.knight;
     k.damagecounter = (k.damagecounter ?? 0) + 1;
     if (k.damagecounter < 3) {

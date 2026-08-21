@@ -392,8 +392,13 @@ const director = {
 
     const entry = FIGHT_TABLE[e.phase][e.turn];
     state.phase = `phase ${e.phase} · turn ${e.turn + 1} · ${entry.name}`;
-    // Numeric, for the wide trace — a diff should point at a turn, not at prose.
-    state.phaseNum = e.phase;
+    // Numeric, for the wide trace — a diff should point at a turn, not at
+    // prose. THE GAME'S `phase` VARIABLE FLIPS AT THE SELECTION of a
+    // phase's LAST turn (Other_10: `myattackchoice = 5; phase = 2;
+    // phaseturn = 0;`), so the rotating-slash turn already reads as the
+    // NEXT phase in the recording (verify21i f1662). Phase 3 loops onto
+    // itself, and phase 4's third turn hands back to 3.
+    state.phaseNum = state.knightPhase ?? e.phase;
     state.turnNum = e.turn;
 
     if (e.started) {
@@ -1032,13 +1037,26 @@ const director = {
         // The flight itself is not modelled yet; the soul appears at its
         // landing spot. That is a renderer gap, not a sim one.
         advanceTurn(state);
+        // The table row advances here; the knight's real SELECTOR — where
+        // the phase variable flips — runs at the arena-open below, and
+        // state.knightPhase tracks its value.
+        state.knightPhase = e.phase;
         // `phaseturn++` — the SELECTOR's own first line, which is GUARDED:
         // `if (phase != 4) { turn++; phaseturn++; }`. So the counter FREEZES
         // through phase 4 and resumes after ROARING. For phases 1-3 the live
         // value is the row index + 1 (identical to the old increment in every
         // normal-flow case, and correct on the post-ROARING resume turn,
         // where the increment had accumulated through phase 4).
-        state.phaseturn = e.phase === 4 ? (state.phaseturn ?? 0) : e.turn + 1;
+        // ...AND THE LAST TURN OF A PHASE READS 0: the selector's own
+        // `if (phaseturn == 5) { ... phaseturn = 0; }` resets the counter in
+        // the same breath that assigns the attack (phases 1/2 hand over,
+        // phase 3 loops) — so the rotating-slash turn is phaseturn 0 in the
+        // recording, not 5.
+        {
+          const rowT = FIGHT_TABLE[e.phase];
+          const lastT = e.turn === rowT.length - 1;
+          state.phaseturn = e.phase === 4 ? (state.phaseturn ?? 0) : (lastT ? 0 : e.turn + 1);
+        }
         const upcoming = FIGHT_TABLE[e.phase][e.turn];
         // The mnfight 1.5 -> 2 transition's own `scr_turntimer(90)` — a
         // FLOOR, not an assignment — and the clock starting. Attacks with a
@@ -1048,6 +1066,22 @@ const director = {
         if (state.turntimer < 90) state.turntimer = 90;
         e.clockOn = true;
         openArena(state, upcoming);
+        // THE SELECTOR HAS RUN (this tick is the game's post-dialogue
+        // mnfight-1.5 block — the box re-arm above lands on the recorded
+        // box-birth frames exactly). Other_10's last-turn assignments flip
+        // the knight's phase variable HERE: phases 1/2 hand to the next on
+        // their final turn, phase 4's third turn hands back to 3.
+        {
+          const row2 = FIGHT_TABLE[e.phase];
+          const isLast = e.turn === row2.length - 1;
+          if ((e.phase === 1 || e.phase === 2) && isLast) state.knightPhase = e.phase + 1;
+          else if (e.phase === 4 && isLast) state.knightPhase = 3;
+          else state.knightPhase = e.phase;
+          // The per-frame assignment already ran earlier this frame; write
+          // through so the flip is visible on ITS OWN frame's trace row,
+          // as the recording has it.
+          state.phaseNum = state.knightPhase;
+        }
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
         // THE CHARGE-UP TURN RAISES NO BOARD. `openArena` already refuses it
