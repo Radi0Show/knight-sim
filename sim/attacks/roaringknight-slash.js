@@ -115,7 +115,7 @@ export const roaringknightSlash = {
   // spawners use, it does.
   collides(e, heart, state) {
     return masksOverlap(
-      HEART_MASK, heart.x, heart.y,
+      heart.mask ?? HEART_MASK, heart.x, heart.y,
       SLASH_MASK, e.x, e.y, e.xscale, e.image_yscale, e.image_angle,
     );
   },

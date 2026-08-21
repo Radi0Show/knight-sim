@@ -92,7 +92,7 @@ export const splitBullet = {
 
   collides(e, heart) {
     return masksOverlap(
-      HEART_MASK, heart.x, heart.y,
+      heart.mask ?? HEART_MASK, heart.x, heart.y,
       TOOTH_MASK, e.x, e.y, e.image_xscale, e.image_yscale, e.image_angle,
     );
   },

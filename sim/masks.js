@@ -58,6 +58,46 @@ function build(m) {
 
 export const HEART_MASK = build(raw.heart);
 /**
+ * THE FIGHT SOUL'S REAL HITBOX — the full 20x20 spr_dodgeheart rect, NOT the
+ * heart-shaped precise mask.
+ *
+ * Found via the verify21g hitlog: every heart pairing in the fight logs the
+ * heart's collision mask as spr_dodgeheart (AxisAlignedRect, bbox [0..19],
+ * maskcount 0). The chain is obj_moveheart's Alarm_0:
+ *
+ *     heart = instance_create(x, y, obj_heart);
+ *     heart.sprite_index = sprite_index;
+ *     heart.mask_index = mask_index;        // <- obj_moveheart's OWN mask
+ *
+ * The fight's soul is created by scr_moveheart and inherits obj_moveheart's
+ * definition mask; the TESTER room's soul is created directly and keeps
+ * obj_heart's definition mask (spr_dodgeheartmask, the precise heart shape).
+ * TWO ROOMS, TWO HITBOXES — which retroactively explains the "tester room
+ * is different" wall mystery: the fight's rests (E 372 / W 250 / N 120 /
+ * S 242) and the tester's (E 374) all fall out of the SAME stored wall mask
+ * once each room's true heart bbox ([0..19] vs [2..17]) is used. The
+ * one-pixel wall dilation (BATTLEBG_FIGHT_MASK) was compensating for the
+ * wrong heart, not measuring a thicker wall.
+ *
+ * Deliberately NOT `axisRect` (that flag routes through the graze box's
+ * rectangle routine): as a full-true pixel grid this flows through
+ * masksOverlapPrecise — the same floored-position corner-sampling model as
+ * every other precise pair. With the RIGHT heart mask, that one model
+ * reproduces every collision receipt in the fight (f904/f947/f982/f898
+ * hits, f903/f946/f986 misses); the elaborate two-branch "event rule"
+ * this replaced was an artifact of fitting those receipts against the
+ * heart-shaped mask the fight soul never wears.
+ */
+export const HEART_RECT = {
+  name: 'dodgeheart_rect',
+  w: 20,
+  h: 20,
+  originX: 0,
+  originY: 0,
+  bbox: [0, 0, 19, 19],
+  px: Array.from({ length: 20 }, () => new Array(20).fill(true)),
+};
+/**
  * `spr_dodgeheart_smallmask` — an 8x8 square at the soul's centre, against the
  * heart shape's 16x16. THE SWORD TUNNEL'S FINALE SWAPS TO IT: each dashing
  * sword does `with (obj_heart) mask_index = spr_dodgeheart_smallmask` as it
@@ -616,121 +656,6 @@ function masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
   return false;
 }
 
-/**
- * THE UNSCALED EVENT-PATH RULE — raw positions, per-axis interval-minimum
- * corner sampling. Scale-1 masks only; scaled masks stay on the calibrated
- * second-generation routine below.
- *
- * Provenance: the verify21f hitlog (every heart×bullet pairing logged
- * top-of-event) proved the runner's collision-EVENT path pairs at geometry
- * its own place_meeting rejects — the fracsweep probe measured
- * place_meeting's quantizers (x floored, y rounded half-even) and the
- * fight's f947 hit (tooth angle 0 at y-fraction .0998, one row from the
- * soul) misses under them, yet the hitlog names that exact tooth as the
- * hitting instance. Two paths, two rules.
- *
- * The rule that fits every scale-1 event receipt (f904 hit @180, f947 hit
- * @0, f898 hit @180, the f903/f946 pre-frames' misses, and the t6 teeth
- * recording): map each world cell's interval through the transform per
- * axis and sample the sprite cell at the FLOOR OF THE INTERVAL MINIMUM.
- * At angle 0 that is floor(i - bx); at 180 the mirror makes it
- * floor(bx + origin - i - 1) — the -1 is the pixel square's width, which
- * is exactly the column the second-generation corner sample lost at f904.
- * For non-cardinal angles the minimizing corner is found per axis over
- * the cell's four corners; no unscaled non-cardinal event receipt exists
- * yet, so that branch is the conservative generalization and the
- * whole-fight diff is what will catch it if an attack exercises it.
- */
-function preciseUnscaledB(maskA, ax, ay, maskB, bx, by, cos, sin, unrotated) {
-  const [al, at, ar, ab] = maskA.bbox;
-  const [bl, bt, br, bb] = maskB.bbox;
-  // The rotated branch quantizes B's position by FLOOR; the unrotated one
-  // reads it raw (f947's y-fraction is load-bearing).
-  const ebx = unrotated ? bx : Math.floor(bx);
-  const eby = unrotated ? by : Math.floor(by);
-  // Candidacy: generous integer window from B's rotated raw-position bbox —
-  // sampling does the real rejection, so over-admitting is safe.
-  const lx0 = bl - maskB.originX;
-  const lx1 = br + 1 - maskB.originX;
-  const ly0 = bt - maskB.originY;
-  const ly1 = bb + 1 - maskB.originY;
-  let minx = Infinity;
-  let maxx = -Infinity;
-  let miny = Infinity;
-  let maxy = -Infinity;
-  for (const u of [lx0, lx1]) {
-    for (const v of [ly0, ly1]) {
-      const wx = u * cos + v * sin;
-      const wy = -u * sin + v * cos;
-      if (wx < minx) minx = wx;
-      if (wx > maxx) maxx = wx;
-      if (wy < miny) miny = wy;
-      if (wy > maxy) maxy = wy;
-    }
-  }
-  const left = Math.floor(bx + minx);
-  const right = Math.ceil(bx + maxx) - 1;
-  const top = Math.floor(by + miny);
-  const bottom = Math.ceil(by + maxy) - 1;
-
-  const aox = maskA.originX ?? 0;
-  const aoy = maskA.originY ?? 0;
-  for (let cy = at; cy <= ab; cy++) {
-    const rowA = maskA.px[cy];
-    const wy = ay + cy - aoy;
-    if (wy < top || wy > bottom) continue;
-    const dy0 = wy - eby;
-    const dy1 = wy + 1 - eby;
-    for (let cx = al; cx <= ar; cx++) {
-      if (!rowA[cx]) continue;
-      const wx = ax + cx - aox;
-      if (wx < left || wx > right) continue;
-      const dx0 = wx - ebx;
-      const dx1 = wx + 1 - ebx;
-      if (unrotated) {
-        // NO-ROTATION BRANCH: raw positions, exact AREA overlap — every B
-        // cell the cell's interval touches is tested. Receipt: f947's only
-        // true overlap is a 0.0998-pixel sliver whose sampled column sits
-        // past the heart's top-row notch; only the interval-touch reaches
-        // the inked cell the game found.
-        const sx0 = Math.max(0, Math.floor(dx0 + maskB.originX));
-        const sx1 = Math.min(maskB.w - 1, Math.ceil(dx1 + maskB.originX) - 1);
-        const sy0 = Math.max(0, Math.floor(dy0 + maskB.originY));
-        const sy1 = Math.min(maskB.h - 1, Math.ceil(dy1 + maskB.originY) - 1);
-        for (let sy = sy0; sy <= sy1; sy++) {
-          for (let sx = sx0; sx <= sx1; sx++) {
-            if (maskB.px[sy][sx]) return true;
-          }
-        }
-        continue;
-      }
-      // ROTATED BRANCH: FLOORED B position, per-axis interval-minimum
-      // corner sample. At 180 the mirror turns the minimum into the -1
-      // shift (u = floor(bx) - i + origin - 1) that reaches the column the
-      // plain corner sample lost at f904; at -90 the positively-mapped
-      // axis keeps its natural floor and the t6-f91 trailing sliver
-      // correctly misses. Receipts: f904/f898 hits, f903 miss, and the t6
-      // recording's whole contact ledger.
-      let umin = Infinity;
-      let vmin = Infinity;
-      for (const dx of [dx0, dx1]) {
-        for (const dy of [dy0, dy1]) {
-          const u = dx * cos - dy * sin;
-          const v = dx * sin + dy * cos;
-          if (u < umin) umin = u;
-          if (v < vmin) vmin = v;
-        }
-      }
-      const sx = Math.floor(umin + maskB.originX);
-      if (sx < 0 || sx >= maskB.w) continue;
-      const sy = Math.floor(vmin + maskB.originY);
-      if (sy < 0 || sy >= maskB.h) continue;
-      if (maskB.px[sy][sx]) return true;
-    }
-  }
-  return false;
-}
-
 function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
   const px = Math.floor(bx);
   const py = Math.floor(by);
@@ -744,18 +669,6 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   const r = (bangle * Math.PI) / 180;
   const cos = Math.cos(r);
   const sin = Math.sin(r);
-
-  // SCALE-1 MASKS TAKE THE EVENT-PATH RULE (see preciseUnscaledB). The
-  // scaled families stay here: every verify-contact B is scaled, and the
-  // scaled thresholds (the yscale ramp's exactly-1.0 cutoff, the sub-pixel
-  // sweep) are pinned to THIS routine's floored-position corner sampling.
-  if (bsx === 1 && bsy === 1) {
-    // The rotation test mirrors the runner's hasrot: |angle| within the GML
-    // math epsilon of zero counts as unrotated. 360-multiples do not occur
-    // in the fight's bullet states.
-    const unrotated = Math.abs(bangle) < 1e-5;
-    return preciseUnscaledB(maskA, ax, ay, maskB, bx, by, cos, sin, unrotated);
-  }
 
   // B's world-space integer bounding box: rotate the corners of its scaled
   // bbox rectangle, then floor the min edge and ceil-1 the max edge. This is

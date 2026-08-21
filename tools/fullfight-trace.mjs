@@ -118,6 +118,41 @@ if (slIdx >= 0) {
   console.log(`slashes: replaying ${recs.length} recorded slash(es)`);
 }
 
+// GRAZE PAIRINGS, replayed from the oracle's grazelog — the same class of
+// concession as the shuffle, bolts and swords. The runner's collision-pair
+// enumeration is UNSOLVED at one specific point: a bullet that hits the
+// heart usually gets no grazebox pairing that frame (six receipts across
+// verify21g), but fight-860's tooth got both, and no convention tried —
+// geometric, ordering, quantizer, history — separates the cases. The log
+// rows are `label,ref,object,grazed,x,y,...`; label is stamped one frame
+// early (obj_time Draw), and a pairing is keyed by frame + object + exact
+// position, which the verified region makes byte-stable. The sim's OWN
+// gates (active, grazed, inv) still run after the pairing decision, exactly
+// as the game's event body runs after its pair test. Free play keeps the
+// live geometric test.
+const gzIdx = argv.indexOf('--grazes');
+if (gzIdx >= 0) {
+  const text = readFileSync(argv[gzIdx + 1], 'utf8').trim();
+  // frame -> [{type, x, y, used}] — matched FUZZILY (0.05px) in stepGraze:
+  // trig-moving bullets (starchildren) drift ~1e-4 px from the runner's
+  // proprietary cosf, the same reason the whole-fight differ carries its
+  // 0.02px position tolerance. Exact string keys dropped every one of
+  // their pairings.
+  const byFrame = new Map();
+  let n = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const r = line.split(',');
+    if (r.length < 6) continue;
+    const fight = Number(r[0]) + 1;
+    if (!Number.isFinite(fight)) continue;
+    if (!byFrame.has(fight)) byFrame.set(fight, []);
+    byFrame.get(fight).push({ type: r[2], x: Number(r[4]), y: Number(r[5]), used: false });
+    n++;
+  }
+  state.grazeReplay = byFrame;
+  console.log(`grazes: replaying ${n} recorded pairing(s)`);
+}
+
 const boltIdx = argv.indexOf('--bolts');
 if (boltIdx >= 0) {
   const text = readFileSync(argv[boltIdx + 1], 'utf8').trim();

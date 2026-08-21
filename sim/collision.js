@@ -15,9 +15,14 @@ import { HEART_MASK, masksOverlap } from './masks.js';
 export { HEART_MASK };
 
 export function placeMeetingSolid(state, x, y) {
+  // The soul's CURRENT mask — the fight soul carries the spr_dodgeheart
+  // 20x20 rect (obj_moveheart's Alarm_0 handoff; see HEART_RECT in
+  // masks.js), the tester room's soul the heart-shaped precise mask. The
+  // wall rests differ between rooms by exactly this bbox difference.
+  const heartMask = state.soul?.mask ?? HEART_MASK;
   for (const o of state.entities) {
     if (!o.alive || !o.isSolid || !o.mask) continue;
-    if (masksOverlap(HEART_MASK, x, y, o.mask, o.x, o.y, o.image_xscale, o.image_yscale)) {
+    if (masksOverlap(heartMask, x, y, o.mask, o.x, o.y, o.image_xscale, o.image_yscale)) {
       return true;
     }
   }

@@ -22,7 +22,7 @@
 // gate at the end of any turn rather than on a turn count.
 
 import { spawn } from '../entity.js';
-import { BATTLEBG_FIGHT_MASK } from '../masks.js';
+import { BATTLEBG_MASK } from '../masks.js';
 import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
 import { SOUL_START } from '../actors.js';
@@ -221,7 +221,7 @@ export function openArena(state, entry) {
   // exactly once at build, with the default 2 x 2 still in place, and every
   // custom arena keeps the unsnapped scale and the wrong wall.
   gt.init = false;
-  gt.mask = BATTLEBG_FIGHT_MASK;
+  gt.mask = BATTLEBG_MASK; // stored ring — the dilation is retired (heart-rect finding)
   gt.growcon = 1;
   gt.timer = 0;
   gt.image_xscale = 0;
@@ -314,7 +314,7 @@ export function launchAttack(state, entry) {
     gt.maxyscale = arena.yscale;
     // Re-arm the per-turn init — see the note at the other assignment.
     gt.init = false;
-    gt.mask = BATTLEBG_FIGHT_MASK;
+    gt.mask = BATTLEBG_MASK; // stored ring — the dilation is retired (heart-rect finding)
     gt.growcon = 1;
     gt.timer = 0;
     gt.image_xscale = 0;

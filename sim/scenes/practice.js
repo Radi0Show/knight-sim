@@ -16,6 +16,7 @@
 
 import { spawn } from '../entity.js';
 import { soul } from '../soul.js';
+import { HEART_RECT } from '../masks.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate, gmlChoose, gmlIrandom, gmlRandom } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry, turnLength } from './fight.js';
@@ -119,6 +120,15 @@ const moveheart = {
       e.y = e.disty;
       if (!state.soul) {
         state.soul = spawn(state, soul, { x: e.distx, y: e.disty });
+        // The original's alarm hands the new heart obj_moveheart's OWN
+        // sprite and mask: `heart.mask_index = mask_index`. obj_moveheart's
+        // definition mask is spr_dodgeheart — a 20x20 AxisAlignedRect — so
+        // the FIGHT soul collides as the full square, not the heart-shaped
+        // spr_dodgeheartmask the tester room's directly-created soul keeps.
+        // Verified by the verify21g hitlog (mask name logged per pairing)
+        // and by all four fight wall rests re-deriving from the stored wall
+        // mask under bbox [0..19]. See HEART_RECT in sim/masks.js.
+        state.soul.mask = HEART_RECT;
       }
       e.alive = false;
     },
@@ -1107,7 +1117,18 @@ const director = {
       if (e.spawnDelay === 1) {
         const up = FIGHT_TABLE[e.phase][e.turn];
         const tl = turnLength(up.ac, up.difficulty);
-        if (tl > 0 && state.turntimer < tl) state.turntimer = tl - 1;
+        // THE -1 IS PER-TURN, and the mechanism is not yet derived. Turn 1's
+        // end (the f327 heart-destruction) needs tl-1; turn 3's (verify21g:
+        // game soul-kill at f1135, one frame after a tl-1 clock reaches it)
+        // needs the full tl. The likely mechanism is WHEN the knight's
+        // scr_turntimer floor lands relative to that frame's decrement —
+        // dialogue length shifts it per turn — but no recording traces
+        // global.turntimer per frame yet, so this ships as measured values:
+        // Flurry arms full, everything else keeps the turn-1 fit. The next
+        // oracle patch revision should log turntimer per frame and settle
+        // the rule.
+        const armed = up.ac === 2 ? tl : tl - 1;
+        if (tl > 0 && state.turntimer < armed) state.turntimer = armed;
         state.turntimerArmed = true;
       }
       e.spawnDelay -= 1;

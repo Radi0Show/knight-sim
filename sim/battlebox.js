@@ -51,12 +51,15 @@ export const battlebox = {
     if (e.maxxscale === undefined) e.maxxscale = 2;
     if (e.maxyscale === undefined) e.maxyscale = 2;
     e.isSolid = true; // parent: obj_battlesolid
-    // The FIGHT's default box collides one source pixel thicker than the
-    // stored mask on every side ([3..71], measured four ways — see
-    // BATTLEBG_FIGHT_MASK). The tester room's box, per the t3 recording,
-    // uses the stored [2..72]; scenes that reproduce the tester set
-    // `state.testerBoxMask` and keep the old behaviour.
-    e.mask = state?.testerBoxMask ? BATTLEBG_MASK : BATTLEBG_FIGHT_MASK;
+    // THE STORED MASK, both rooms. The one-pixel "effective dilation"
+    // (BATTLEBG_FIGHT_MASK) is RETIRED: the fight-vs-tester wall
+    // discrepancy it papered over was the HEART's mask difference all
+    // along — the fight soul is the spr_dodgeheart 20x20 rect (bbox
+    // [0..19]) while the tester soul keeps the heart shape ([2..17]), and
+    // all four fight rests (E 372 / W 250 / N 120 / S 242) plus the
+    // tester's (E 374) re-derive from the SAME stored ring under each
+    // room's true heart bbox. See HEART_RECT in sim/masks.js.
+    e.mask = BATTLEBG_MASK;
 
     // THE ARENA IS GREEN, for the whole fight. `obj_growtangle`'s Create sets
     // `image_blend = merge_color(c_green, c_lime, 0.5)`, and its Draw uses it on
@@ -150,16 +153,23 @@ export const battlebox = {
     //    and the sword tunnel's 3 becomes 2.9866666...  The sim's box was
     //    2.25 for the whole turn — every wall sat in a subtly wrong place.
     //
-    //  * THE COLLISION MASK CHANGES SPRITE. spr_battlebg_stretch_hitbox is
-    //    not spr_battlebg_0: its wall sits differently, and the effective
-    //    interior is [3..71] (see sim/masks.js for the oracle fit).
+    //  * THE COLLISION MASK CHANGES SPRITE in the original
+    //    (spr_battlebg_stretch_hitbox), but the EFFECTIVE interior under the
+    //    heart-rect finding is [2..72] on every measured side — identical to
+    //    spr_battlebg_0's stored ring, and TWO pixels thinner than the
+    //    stretch sprite's stored [4..70]. Re-derivation of the Stars-box
+    //    rests (E 381 / N 109 / S 214) with the fight soul's true 20x20
+    //    rect: blocked columns start at source 73 and rows at source 1/73 —
+    //    all [2..72]. So the stored ring ships for custom boxes too; only
+    //    the CORNERS (square here, rounded in the stretch sprite's data)
+    //    are unverified, and no measured rest touches a corner.
     if (!e.init) {
       e.init = true;
       if (e.visible !== false && (e.maxxscale !== 2 || e.maxyscale !== 2)) {
         e.customBox = true;
         if (e.maxxscale % 2 !== 0) e.maxxscale = Math.round(e.maxxscale * 37.5) / 37.5;
         if (e.maxyscale % 2 !== 0) e.maxyscale = Math.round(e.maxyscale * 37.5) / 37.5;
-        e.mask = BATTLEBG_STRETCH_HITBOX_MASK;
+        e.mask = BATTLEBG_MASK;
       }
     }
 

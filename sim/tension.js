@@ -83,11 +83,26 @@ export function stepGraze(state, grazes, only = null) {
     if (!e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;
     if (only && !only(e)) continue;
 
-    // `if (!other.active && other.object_index != obj_sword_tunnel_sword) exit;`
     const active = e.active === 1 || e.active === true;
-    if (!active && e.type.name !== 'obj_sword_tunnel_sword') continue;
 
-    if (!grazes(e, cx, cy, grazeSize)) {
+    // THE PAIRING DECISION. With a recorded pairing table (verification
+    // runs — see tools/fullfight-trace.mjs --grazes) the oracle's own
+    // grazebox event log decides which bullets paired this frame; the
+    // runner's pair enumeration at hit frames is unsolved and this replays
+    // it instead. Matching is by frame + object + position within 0.05px
+    // (trig-ulp drift), each recorded row consumed once. Without the table
+    // (free play, every other scene) the geometric test stands.
+    let paired;
+    if (state.grazeReplay) {
+      const rows = state.grazeReplay.get(state.frame);
+      const match = rows?.find((r) => !r.used && r.type === e.type.name
+        && Math.abs(r.x - e.x) <= 0.05 && Math.abs(r.y - e.y) <= 0.05);
+      if (match) match.used = true;
+      paired = Boolean(match);
+    } else {
+      paired = grazes(e, cx, cy, grazeSize);
+    }
+    if (!paired) {
       // NOTHING CLEARS `grazed` HERE. obj_grazebox's collision event only
       // ever SETS the flag; the dump has no generic clear-on-leave anywhere.
       // Re-arming is strictly per-object: obj_knight_pointing_star and
@@ -100,6 +115,17 @@ export function stepGraze(state, grazes, only = null) {
       continue;
     }
 
+    // KNIGHT_GRAZE_DEBUG=1 mirrors the oracle's grazelog — logged at the
+    // PAIRING, before the active and inv gates, exactly where the oracle
+    // patch writes its row, so the two logs diff row-for-row.
+    if (typeof process !== 'undefined' && process.env?.KNIGHT_GRAZE_DEBUG) {
+      console.error(`[graze] f=${state.frame} ${e.type.name} grazed=${e.grazed}`
+        + ` (${e.x}, ${e.y}) a=${e.image_angle} box=(${cx}, ${cy}) inv=${state.invTimer}`);
+    }
+
+    // `if (!other.active && other.object_index != obj_sword_tunnel_sword) exit;`
+    if (!active && e.type.name !== 'obj_sword_tunnel_sword') continue;
+
     if (state.invTimer >= 0) continue;
 
     // `grazetpfactor` / `grazetimefactor` from obj_grazebox's Create. These
@@ -110,11 +136,18 @@ export function stepGraze(state, grazes, only = null) {
     const gf = grazeFactors(gearOf(state));
     const tp = (e.grazepoints ?? 0) * gf.tp;
     const time = (e.timepoints ?? 0) * gf.time;
+    // TWO SEPARATE IFs, exactly as the event body reads — NOT if/else. A
+    // bullet at grazed == -1 (the teeth between spawn and the splitter's
+    // timer-7 arming) matches NEITHER branch and pays NOTHING. The else
+    // that used to be here dropped -1 into the burst branch: tension-
+    // invisible (pre-arm grazepoints are 0) but a full timepoint off the
+    // turn clock per event — four of them ended verify21g's turn 3 four
+    // frames early, with every traced column still matching.
     if (e.grazed === 1) {
       scrTensionheal(state, tp / 30);
       if (state.turntimer >= 10) state.turntimer -= time / 30;
       state.grazeTimer = Math.max(state.grazeTimer ?? 0, 2);
-    } else {
+    } else if (e.grazed === 0) {
       e.grazed = 1;
       state.grazeCount = (state.grazeCount ?? 0) + 1;
       scrTensionheal(state, tp);
