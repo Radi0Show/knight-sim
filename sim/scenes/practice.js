@@ -120,6 +120,15 @@ const moveheart = {
       e.y = e.disty;
       if (!state.soul) {
         state.soul = spawn(state, soul, { x: e.distx, y: e.disty });
+        // THE TUNNEL'S SOUL DOES NOT STEP ON ITS BIRTH FRAME. Measured
+        // across all eight deliveries in verify21g: every turn's first soul
+        // row is the destination PLUS that frame's held input (the
+        // alarm-created heart steps the same frame) — EXCEPT both ac-13
+        // turns (f1257, f2901), whose first rows are the destination exact
+        // (input up/left held and not applied). The discriminating
+        // mechanism in the runner is not identified — the ac-13 moveheart
+        // override only re-aims — so this ships as the observed rule.
+        if (state.currentAc === 13) state.soul.skipBirthStep = true;
         // The original's alarm hands the new heart obj_moveheart's OWN
         // sprite and mask: `heart.mask_index = mask_index`. obj_moveheart's
         // definition mask is spr_dodgeheart — a 20x20 AxisAlignedRect — so

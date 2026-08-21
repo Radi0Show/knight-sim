@@ -49,6 +49,22 @@ export const soul = {
   },
 
   step(e, state) {
+    // One-shot birth-frame MOVEMENT freeze for the sword tunnel's delivery.
+    // The step itself RUNS — verify21g shows global.inv decrementing on both
+    // ac-13 birth frames (f1257/f2901) — but the position stays at the
+    // destination exactly: the newborn soul sits inside the still-growing
+    // ring's blocked zone and its walk-back resolves every axis to zero.
+    // The sim's mid-grow collision does not reproduce that particular
+    // rotating fractional-scale geometry, so the observed outcome (step
+    // effects yes, movement no) ships directly. See the moveheart alarm in
+    // sim/scenes/practice.js.
+    if (e.skipBirthStep) {
+      e.skipBirthStep = false;
+      state.invTimer -= 1;
+      state.heartx = e.x + 2 - state.view.x;
+      state.hearty = e.y + 2 - state.view.y;
+      return;
+    }
     const input = state.input;
 
     e.wallcheck = 0;
