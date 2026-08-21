@@ -393,6 +393,12 @@ export const swordTunnelManager = {
     if (knight) spawn(state, swordTunnelAnim, { x: knight.x, y: knight.y });
 
     e.timer = -40 + gmlIrandom(state.gmlRng, 10);
+    // `tobyvolleyamount = 10 + irandom(6)` — ORIGINAL BUG: assigned in the
+    // create and read nowhere in the dump (the write-only-variable club).
+    // Dead mechanically, but the irandom still takes its two draws off the
+    // anchored stream, so the whole turn after it would sit two positions
+    // early without this consume.
+    gmlIrandom(state.gmlRng, 6);
     e.finishtimer = 0;
     // The Create reads the KNIGHT's difficulty, not its own, and difficulty 3
     // lengthens the run before the finale. Missing this stopped the sweep 20
