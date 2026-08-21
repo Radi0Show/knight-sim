@@ -98,6 +98,20 @@ export const HEART_RECT = {
   px: Array.from({ length: 20 }, () => new Array(20).fill(true)),
 };
 /**
+ * The same rect flagged for the RECTANGLE routine — the WALL path's model.
+ *
+ * place_meeting(obj_battlesolid) with the fight heart is an AAR-A against a
+ * (possibly rotated, fractionally scaled) precise ring — the graze probe's
+ * exact regime, and masksOverlapRectA reproduces the mid-grow ring's true
+ * coverage 28,000/28,000 against the growmeet probe (all four recorded
+ * grow states of the sword tunnel's box, knight-research
+ * traces/growmeet.csv). The DAMAGE path stays on HEART_RECT's precise flow:
+ * the collision-event path measurably differs from place_meeting (f982's
+ * trailing sliver), so the two routes are two real runner behaviours, not
+ * a convenience split.
+ */
+export const HEART_RECT_WALL = { ...HEART_RECT, name: 'dodgeheart_rect_wall', axisRect: true };
+/**
  * `spr_dodgeheart_smallmask` — an 8x8 square at the soul's centre, against the
  * heart shape's 16x16. THE SWORD TUNNEL'S FINALE SWAPS TO IT: each dashing
  * sword does `with (obj_heart) mask_index = spr_dodgeheart_smallmask` as it

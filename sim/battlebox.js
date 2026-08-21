@@ -1,4 +1,4 @@
-import { mergeColor } from './gml.js';
+import { mergeColor, gmlRound } from './gml.js';
 import { spawn } from './entity.js';
 import { afterimage } from './fx.js';
 // The battle box — obj_growtangle at steady state.
@@ -37,6 +37,16 @@ export function settleBox(gt) {
 
 export const battlebox = {
   name: 'obj_growtangle',
+  // AFTER the soul. The runner's step order is newest-first (three
+  // independent receipts: verify21g f1257's newborn soul freezes against
+  // the box's PRE-step t=7 ring; f1258's slide needs the t=8 states with
+  // the box's own step still pending; the f1094 splitslash payoff lands
+  // before the heart's inv decrement). The sim's global order stays
+  // oldest-first — flipping it wholesale would unsettle three verified
+  // turns — but the box, which every turn's soul is newer than, steps
+  // after the 0-order entities so the soul's wall tests see the grow state
+  // the game's soul sees.
+  stepOrder: 0.5,
 
   create(e, state) {
     // Defaults from obj_growtangle Create, post-grow values.
@@ -167,8 +177,12 @@ export const battlebox = {
       e.init = true;
       if (e.visible !== false && (e.maxxscale !== 2 || e.maxyscale !== 2)) {
         e.customBox = true;
-        if (e.maxxscale % 2 !== 0) e.maxxscale = Math.round(e.maxxscale * 37.5) / 37.5;
-        if (e.maxyscale % 2 !== 0) e.maxyscale = Math.round(e.maxyscale * 37.5) / 37.5;
+        // GML round() is HALF-TO-EVEN: the tunnel's 3 x 37.5 = 112.5 snaps
+        // DOWN to 112 (2.98666...), where Math.round's half-up gave 113
+        // (3.01333) — a whole grow-in ring size off, caught by the verify21h
+        // box telemetry (xscale 1.3937777281 at t=7 vs the sim's 1.4062).
+        if (e.maxxscale % 2 !== 0) e.maxxscale = gmlRound(e.maxxscale * 37.5) / 37.5;
+        if (e.maxyscale % 2 !== 0) e.maxyscale = gmlRound(e.maxyscale * 37.5) / 37.5;
         e.mask = BATTLEBG_MASK;
       }
     }
