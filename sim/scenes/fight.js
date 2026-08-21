@@ -617,7 +617,6 @@ const SURVIVES_TURN = new Set([
   // recording pays one at f804, mid-Flurry, laid by a tracking sword two
   // turns... one turn earlier. Sweeping them here silently ate those pays.
   'obj_tracking_sword_slash_extra_graze',
-  'draw_rng_tail',
   'obj_heart',
   'obj_growtangle',
   'obj_knight_enemy',

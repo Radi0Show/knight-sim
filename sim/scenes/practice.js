@@ -186,35 +186,6 @@ const turnClock = {
   },
 };
 
-/**
- * THE DRAW-PHASE RNG TAIL. The split organism consumes from the live stream
- * in its DRAW events: obj_knight_split_growtangle rolls four
- * irandom_range(-1,1) shakes (8 draws) every frame it exists, and every
- * living split tooth burns two random_range draws a frame. The per-attack
- * scenes strip these as a documented deviation (their oracles pin outcomes
- * instead), but the whole-fight runs the anchored stream LIVE — skipping
- * them desynced every roll after the first Flurry split (slash 2's xoffset
- * came out -3.53 against the recording's -4.0991321728). Runs at the end of
- * the frame, after all step-phase draws, which is where the Draw phase sits.
- */
-const drawRngTail = {
-  name: 'draw_rng_tail',
-  stepOrder: 9999,
-  create(e) {},
-  endStep(e, state) {
-    if (!state.gmlRng) return;
-    let n = 0;
-    for (const x of state.entities) {
-      if (!x.alive) continue;
-      // `(distance > 0) ? irandom_range(-1, 1) : 0` x4 — the shake only
-      // rolls WHILE THE BOX IS SPLIT; a ternary's untaken arm draws nothing.
-      if (x.type.name === 'obj_knight_split_growtangle' && (x.distance ?? 0) > 0) n += 8;
-      else if (x.type.name === 'obj_roaringknight_split_bullet') n += 2;
-    }
-    for (let i = 0; i < n; i++) gmlRandom(state.gmlRng, 1);
-  },
-};
-
 const director = {
   name: 'fight_director',
 
@@ -1195,6 +1166,5 @@ export function buildPracticeScene(state, { seed = 12345 } = {}) {
   state.soul = null;
   const d = spawn(state, director);
   spawn(state, turnClock, { director: d });
-  spawn(state, drawRngTail, {});
   return state;
 }
