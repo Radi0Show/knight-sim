@@ -291,7 +291,13 @@ export const swordTunnelSword = {
             const fnow = globalThis.__simFrame;
             if (fnow >= lo && fnow <= hi) {
               console.error(`[all] f=${fnow} seq=${e.seq} spd=${e._speed} ang=${e.image_angle}`
-                + ` s=(${e.x.toFixed(2)},${e.y.toFixed(2)}) tip=(${tipx.toFixed(2)},${tipy.toFixed(2)})`
+                // FULL PRECISION, never toFixed(2). These decisions flip on
+                // sub-pixel boundaries — a probe at x = 331.9999984 floors to
+                // 331 (inside) while the rounded "332.00" floors to 332
+                // (outside). Logging two decimals silently rewrote the very
+                // cases the fit exists to discriminate, and made a model with
+                // a real false positive at f5549 score fp=0.
+                + ` s=(${e.x},${e.y}) tip=(${tipx},${tipy})`
                 + ` box=[${bx0},${by0},${bx1},${by1}]`
                 + ` hit=${collisionLineRect(e.x, e.y, tipx, tipy, bx0, by0, bx1, by1)}`);
             }

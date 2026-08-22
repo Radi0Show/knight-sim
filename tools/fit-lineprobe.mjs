@@ -19,7 +19,22 @@
 //     --keep-alive --slots 32 --shuffle ... --bolts ... --grazes ... --shards ... \
 //     --out /tmp/x.csv 2>/tmp/sweep-<name>.txt
 //
-// RESULT AS OF 2026-08-22, over 8,126 samples / 603 firings from two tokens:
+// TWO DECIMALS DESTROYED THE FIRST VERSION OF THIS. The sim's sweep log used
+// toFixed(2), so a probe at x = 331.9999984 (floors to 331, INSIDE) was read
+// as "332.00" (floors to 332, outside) — the rounding rewrote exactly the
+// sub-pixel cases the fit exists to discriminate. It scored a candidate
+// fp=0 that has a real false positive at verify21j f5549, and only a full
+// whole-fight run caught it. The log is full precision now and the join keys
+// on 4dp; never widen that.
+//
+// STILL IMPERFECT, stated rather than hidden: 599 of the 603 logged firings
+// currently match a sim evaluation. The four that do not are either a real
+// position divergence at those frames or a join flaw, and until that is
+// settled every score below carries +/-4 of slop — enough to reorder
+// candidates that sit one apart. Fix the join before trusting a close call.
+//
+// EARLIER RESULT, taken at 2dp and therefore UNRELIABLE — kept only so the
+// mistake is legible:
 //
 //   clip floored (shipping)  8123/8126   fp=0  fn=3
 //   walk floor               8124/8126   fp=0  fn=2
@@ -61,19 +76,22 @@ for (const n of NAMES) {
       const r = l.split(',');
       if (r[1] !== 'P') continue;
       // The sidecar stamps obj_time's Draw frame, one behind the step that fired.
-      fired.add(`${+r[0] + 1}|${(+r[3]).toFixed(2)},${(+r[4]).toFixed(2)}`);
+      // Keyed to 4dp: the sidecar writes string_format(x,0,10) and the sim
+    // now logs full precision, so 4dp is comfortably inside both and still
+    // immune to last-bit drift. NEVER 2dp — see the sword-tunnel log note.
+    fired.add(`${+r[0] + 1}|${(+r[3]).toFixed(4)},${(+r[4]).toFixed(4)}`);
     }
   } catch { console.log(`SKIP ${n}: no tunnel sidecar`); continue; }
   let text;
   try { text = readFileSync(`/tmp/sweep-${n}.txt`, 'utf8'); }
   catch { console.log(`SKIP ${n}: no /tmp/sweep-${n}.txt (see the header)`); continue; }
   for (const l of text.split('\n')) {
-    const m = l.match(/\[all\] f=(\d+) seq=\d+ spd=\S+ ang=(\S+) s=\(([-\d.]+),([-\d.]+)\) tip=\(([-\d.]+),([-\d.]+)\) box=\[([-\d]+),([-\d]+),([-\d]+),([-\d]+)\]/);
+    const m = l.match(/\[all\] f=(\d+) seq=\d+ spd=\S+ ang=(\S+) s=\(([-\de.+]+),([-\de.+]+)\) tip=\(([-\de.+]+),([-\de.+]+)\) box=\[([-\d]+),([-\d]+),([-\d]+),([-\d]+)\]/);
     if (!m) continue;
     const sx = +m[3]; const sy = +m[4];
     rows.push({ n, f: +m[1], ang: +m[2], sx, sy, tx: +m[5], ty: +m[6],
       r: [+m[7], +m[8], +m[9], +m[10]],
-      hit: fired.has(`${+m[1]}|${sx.toFixed(2)},${sy.toFixed(2)}`) });
+      hit: fired.has(`${+m[1]}|${sx.toFixed(4)},${sy.toFixed(4)}`) });
   }
 }
 if (!rows.length) { console.log('no samples — nothing to fit'); process.exit(0); }
