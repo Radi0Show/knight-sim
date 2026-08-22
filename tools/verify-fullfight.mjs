@@ -164,8 +164,23 @@ const ANGLE_TOL = 0.02;
 // that magnitude) before re-syncing at 3143. 1e-6 is still five orders
 // below one source pixel at any scale this fight draws; a real scale bug
 // still fails.
+// 1e-6 -> 5e-5: ROARING's stars lerp their scales through longer chains
+// (the outro's 0.1 -> 1.2/1.6 lerpvars, the growing catch stars) and the
+// accumulated ULP envelope over the whole of verify21j is 1.6e-5 (f11523
+// b6_xs). 5e-5 covers it with margin and is still four orders below a
+// source pixel.
 const SCALE_COL = /^b\d+_[xy]s$/;
-const SCALE_TOL = 1e-6;
+const SCALE_TOL = 5e-5;
+// THE SOUL WAS EXACT FOR TWENTY TURNS AND STILL IS — integer positions,
+// integer moves, exact wall clamps. ROARING is the one attack that writes
+// TRIG into the soul: every frame's pull adds lengthdir components of a
+// point_direction aim, f32-narrowed on store, so the proprietary-libm
+// last-bit class reaches the soul columns for the first time. verify21j's
+// envelope over the whole fight is one f32 ULP (3.05e-5, f11288) plus a
+// short re-convergence transient after the shaken-floor pin (6.4e-3,
+// f11780). 0.01px covers it, stays a fiftieth of a pixel, and any real
+// soul bug — a missed input, a wrong clamp, a hit knockback — still fails.
+const SOUL_TOL = 0.01;
 
 function cellsEqual(av, bv, colName) {
   if (av === bv) return true;
@@ -188,6 +203,13 @@ function cellsEqual(av, bv, colName) {
     const bn = parseFloat(bv);
     if (Number.isFinite(an) && Number.isFinite(bn)) {
       return Math.abs(an - bn) <= SCALE_TOL;
+    }
+  }
+  if (colName === 'soul_x' || colName === 'soul_y') {
+    const an = parseFloat(av);
+    const bn = parseFloat(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      return Math.abs(an - bn) <= SOUL_TOL;
     }
   }
   return false;
