@@ -97,6 +97,7 @@ const SUITES = [
   ['sabotage-fullfight.mjs', 'the whole-fight differ itself — 10 injected faults'],
   ['verify-equipment.mjs', 'equipment — tables from the dump, mantle, graze factors'],
   ['verify-knight.mjs', 'knight damage — FIGHT, spells, the reduction ramp'],
+['verify-downstate.mjs', 'down state — the pose gate and the menu gate agree'],
 ['verify-windowsize.mjs', 'SMALL is the window size obj_time would pick'],
 ['verify-replay.mjs', 'replay tokens — round-trip and reproduce a live run'],
 ['verify-determinism.mjs', 'byte-identical across 10 runs'],

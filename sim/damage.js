@@ -567,10 +567,30 @@ export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell
   if (t < 0) t = 0;
 
   hp[target] -= t;
-  if (hp[target] <= 0) hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+  if (hp[target] <= 0) {
+    // THE SAME FELL AS scr_damage, AND IT HAS TO BE. This path had its own
+    // half-copy: it set the HP hole but never called scr_dead, and it drew
+    // TYPE_DEAD for everyone. Both halves were wrong and they broke in
+    // opposite directions.
+    //
+    //   - NO scr_dead meant `chardead` stayed 0 while HP went negative, and
+    //     those are the two SEPARATE gates stepHeroes and isUp read (the pose
+    //     follows the HP sign, the menu follows chardead). So the felled
+    //     character drew the defeat pose and stayed in the menu, the FIGHT
+    //     bar and the target list -- down and still acting.
+    //   - TYPE_DEAD for everyone put the DOWN graphic over Susie and Ralsei,
+    //     who SWOON. That was fixed in scr_damage and missed here, so
+    //     whichever entry point felled you decided which graphic you got.
+    //
+    // scr_damage_maxhp is Flurry's slash, which passes cannotFell and clamps
+    // to hp - 1 -- so this only runs for a caller that does NOT, which is
+    // exactly why it went unnoticed.
+    hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+    scrDead(state, target);
+  }
   heroHurt(state, target);
   spawnDmgNumber(state, PARTY_POS[target].x, PARTY_POS[target].y, t,
-    hp[target] <= 0 ? TYPE_DEAD : TYPE_PARTY, 2);
+    hp[target] > 0 ? TYPE_PARTY : (target === 0 ? TYPE_DEAD : TYPE_SWOON), 2);
   state.invTimer = state.invc * 30;
   return t;
 }

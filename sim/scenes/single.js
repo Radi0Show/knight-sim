@@ -18,7 +18,7 @@ import { gmlCreate } from '../rng.js';
 import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
 import { launchAttack, openArena, clearTurn, FIGHT_TABLE } from './fight.js';
 import { createMenu } from '../menu.js';
-import { freshParty } from '../damage.js';
+import { freshParty, scrRevive } from '../damage.js';
 import { COMBO_ATTACKS } from '../attacks/combination.js';
 
 /** The objects a combination turn can hand itself to. */
@@ -149,6 +149,18 @@ const director = {
       // repetition is unplayable for reasons that have nothing to do with the
       // pattern being practised. The full fight does NOT do this.
       state.partyHp = freshParty();
+      // AND STAND THEM BACK UP. Refilling HP does not undo scr_dead -- being
+      // down is `chardead`, and the pose reads the HP sign while the MENU
+      // reads chardead, so a bare refill left anyone who had fallen during
+      // the previous run standing at full health and unable to act: no menu,
+      // no FIGHT bolt, not targetable. Reported from play as "Kris sometimes
+      // cannot act, and he is not drawn correctly".
+      //
+      // This is CLAUDE.md's "Restoring HP does not stand anyone up" landing
+      // for the second time -- the whole-fight keep-alive path in
+      // sim/index.js already pairs its refill with scr_revive, and this drill
+      // was the copy that did not.
+      for (let i = 0; i < 3; i++) scrRevive(state, i);
       state.invTimer = -1;
       clearTurn(state);
       // …and the drill's next turn has already chosen it, being the same one.
