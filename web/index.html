@@ -58,11 +58,31 @@
     opacity: .75;
   }
   body.hud #hud { display: block; }
+  /* ATTRIBUTION. Small, dim, and at the very bottom of the window rather than
+     inside the 640x480 frame -- the frame is the game's own art and nothing
+     of ours belongs on it. `pointer-events: none` so it can never eat a click
+     meant for the canvas, and it steps up out of the way when the debug HUD
+     is showing, since both live on the bottom edge. */
+  #credit {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 4px 8px;
+    text-align: center;
+    font-size: 11px;
+    color: #555;
+    pointer-events: none;
+    user-select: none;
+  }
+  body.hud #credit { bottom: 26px; }
 </style>
 </head>
 <body>
   <canvas id="game" width="640" height="480"></canvas>
   <div id="hud">loading…</div>
+  <p id="credit">Game is by Toby Fox and the Deltarune Team</p>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
