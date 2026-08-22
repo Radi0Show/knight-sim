@@ -20,8 +20,8 @@ point of the project rather than a side issue — see §3.
 | turn structure, phases 1-4, the ending | translated, matches the selector and the wiki's independent table |
 | menu, items, spells, ACT, attack bar, TP | working; several details settled this session |
 | damage, targeting, mantle, SWOON | translated from the dump, incl. the Kris-only scaling |
-| whole-fight diff vs the oracle | **row-exact through frame 1722 against `fullfight-verify21j`** — turns 1-4 complete (the whole sword tunnel including finale) plus turn 5's open. Canonical premise: equip arrays pinned, graze pairings replayed (`--grazes`). Attribution tools: `KNIGHT_DRAW_TRACE=a-b`, `KNIGHT_HIT_DEBUG=1`, `KNIGHT_GRAZE_DEBUG=1`; the box sidecar now carries per-frame turntimer, knight x/y/sprite/alpha, and the tunnel manager's cycle state. **Front: f1723 — the rotating slash's box-jitter chooses sit at an unfitted stream offset.** The method that closes it: the box telemetry's per-frame (x−320, y−170) IS the jitter-choose log (`x = xstart + choose(-2..2)` in the slash's End Step); ledger the turn-5 aim/intro consumption (the sim's KNIGHT_DRAW_TRACE ordinals vs candidate offsets into gmlCreate(21+4000) — n counts from the SECOND launch, so turn 5 is n=4) the way turn 4's launch was ledgered. Suspects: the aim state's `movebox_x += 20 + irandom(40)` cadence, event_user(0)'s difficulty table, the per-slash create rolls. Every launch now consumes the dc's `basedir = irandom(360)` centrally; the shuffle REPLAY burns 16/element. |
-| the three load-bearing discoveries | (1) **The fight soul's hitbox is the spr_dodgeheart 20x20 RECT** — obj_moveheart's alarm hands over its own (-1) mask; the tester soul keeps the heart shape. This dissolved the wall-dilation deviation, the stretch-mask deviation, and the entire "irreconcilable collision convention" hunt: with the right A-mask the plain 2nd-gen model fits every receipt. Walls (place_meeting) route rect-A via `HEART_RECT_WALL`; damage (the event path) keeps the precise flow — the two paths measurably differ at trailing slivers. (2) **The runner steps NEWEST-FIRST**: the soul's inv decrement lives in the sim's motion phase (after attack steps, before collisions) so step-phase damage traces `invc*30 - 1`; the box steps after the soul (stepOrder 0.5). (3) **GML round() is half-even everywhere** — including the box scale snap (`round(112.5)` = 112 → the tunnel's 2.98666 xscale, not 3.01333). |
+| whole-fight diff vs the oracle | **row-exact through frame 4371 against `fullfight-verify21j`** — turns 1-11 complete: all of phases 1 and 2, plus phase 3's first turn (Stars d2) through its release. Canonical premise: equip arrays pinned, graze pairings replayed (`--grazes`, gating on each row's recorded inv — the graze/hit event order flips with instance-slot reuse and cannot be modelled). Attribution tools: `KNIGHT_DRAW_TRACE=a-b`, `KNIGHT_HIT_DEBUG=1`, `KNIGHT_GRAZE_DEBUG=1`, `KNIGHT_TALK_DEBUG=1`, `KNIGHT_SHARD_DEBUG=1`, `KNIGHT_TT_DEBUG=a-b`, `KNIGHT_TUNNEL_DEBUG=1`, `KNIGHT_RS_DEBUG=a-b`. **Front: f4372 — the d2 starchild homing-delay chain.** The controller hands each homing shard `25 + running-counter` in INIT order, which follows the runner's instance-slot order (underivable): the game's chain reaches ~70-72 over the same shard population where the sim's peaks at 65, so the game's late shards get culled offscreen at f4372-4381 (con-0 `scr_onscreen_tolerance` at delay-elapse) while the sim's turn home and survive. A within-burst reversal was tried and REGRESSED b0's verified kick — the pair order is not simply newest-first. A probe recording (`verify21m`) with a new `oracle_shard.csv` sidecar (frame, id, difficulty, delay per homing shard's init) is the settle: replay or fit the recorded delays. |
+| the load-bearing discoveries | (1) **The fight soul's hitbox is the spr_dodgeheart 20x20 RECT** — obj_moveheart's alarm hands over its own (-1) mask; the tester soul keeps the heart shape. Its collision ROUTING SPLITS ON B'S ROTATION: unrotated bullets take the floored-corner precise model (f982), rotated ones the raw-position rectangle routine (f3392, growmeet's 28,000 points); masks flagged `axisRect: 'always'` (graze box, wall) stay rectangle at every angle. (2) **The runner steps NEWEST-FIRST**, and it keeps mattering: the box after the soul (stepOrder 0.5), the splitter half BEFORE the soul (-0.5, the cut-close freeze at f2500), the tracking manager before the vortex manager (-0.1, the f3366 slot order), the heart follower AFTER the shards (0.5) reading the pre-step soul. (3) **GML round() is half-even everywhere.** (4) **The dmg writers run at the frame's END, ticking from birth** — stepFrame steps them after the endStep phase; three stream ledgers pin it (see sim/dmgnumbers.js). (5) **The writer machine**: flag[10] auto-advance is ON in the reference save; b3 presses drive per-writer automash (pmb 3, SKIP/DISMISS alternating), step-created writers run their draw on the birth frame, balloons exist only from balloonturn 6, Kris's ACT is two stages (bmenuno 11 then 9) and its chatbox text holds the attack bar. Measured whole in verify21k's writer sidecar. |
 | visuals | the long tail. This is where "1:1" is now won or lost |
 
 **Nothing invented ships.** If a placeholder is unavoidable it is labelled in
@@ -62,20 +62,25 @@ even when the mechanism they propose is not the one at fault.
 This is the measuring instrument for everything else. Until it runs clean,
 "1:1" cannot be asserted about anything downstream of frame 25.
 
-State: the bar instrumentation ruled out routing, schedule, boltx, window and
-scoring — **all identical**. What remains is an input-parity offset: the
-oracle receives confirm on even frames, the sim on odd. One inconsistency is
-recorded and unresolved: 74 points implies a press at boltx 16 (frame 23,
-odd), which contradicts the oracle's even-frame `b1p`, meaning the frame
-`obj_attackpress` ACTS on a press differs from where the diagnostic SAMPLES
-it. Resolve that before changing either side.
+State: **row-exact through f4371** (turns 1-11). The front (f4372) is the d2
+starchild delay chain — see the table in §1; a probe recording (`verify21m`,
+with the new `oracle_shard.csv` sidecar) is the settle. After that: phase 3's
+remaining turns (Flurry d2, tracking d3, tunnel d4, rotating slash d2), the
+phase-4 gate, ROARING, the ending.
 
-**Re-record first.** The recordings in `~/knight-research/traces/` predate the
-Flurry damage fix, so they are stale:
+Rebuild + record + diff in one command (the recorder mirrors --keep-alive and
+all the replay feeds; ~40 min of wall time for a 20k-frame token):
 
 ```bash
-~/knight-research/tools/record-fullfight.sh <name>
+~/knight-research/tools/build-oracle.sh tools/patches/oracle_fullfight.csx
+~/knight-research/tools/record-fullfight.sh <name> "$(cat /tmp/tok20-21.txt)"
 ```
+
+Parked open questions, all pinned by suites or replay feeds in the meantime:
+the two unattributed Stars launch pads (case 1), the turn-1 clock arming
+`tl` vs `tl-1` mechanism, the tunnel-anim %3 pair PHASE (net-zero at every
+boundary measured so far), and the graze/hit dispatch order (replayed via
+the grazelog's recorded inv — genuinely slot-reuse state).
 
 ### P1 — the visual tail, which is what "1:1" now means
 
