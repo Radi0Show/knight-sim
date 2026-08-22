@@ -96,6 +96,22 @@ export const pointingCone = {
   stepOrder: -1,
 
   create(e, state) {
+    // `obj_knight_enemy.visible = false` — the cone's Create HIDES THE KNIGHT,
+    // because the cone draws its own pointing pose in his place. An invisible
+    // instance's Draw event does not run at all in GameMaker, so for the whole
+    // of Stars the real Knight contributes nothing to the screen.
+    //
+    // Nothing in the sim set this. clearTurn already restored `visible = true`
+    // (standing in for the cone's CleanUp) and carried a comment describing
+    // exactly this behaviour — but the flag was only ever set back to true, so
+    // the Knight was drawn straight through all six Stars turns on top of the
+    // cone's copy of him. The draw log found it: the oracle has ELEVEN windows
+    // with no knight draw at all and the sim had six, the five it did have
+    // being the sword tunnels.
+    {
+      const k = state.entities.find((x) => x.alive && x.type.name === 'obj_knight_enemy');
+      if (k) k.visible = false;
+    }
     // MEASURED from the recording, like the star's. Not in the GML dump.
     //
     // THE CONE IS THE KNIGHT during Stars. Its Draw calls `draw_self()`, and
@@ -185,7 +201,14 @@ export const pointingCone = {
       // cone has slid into place. con 5 is unreachable and the restore always
       // comes from CleanUp instead (sim/scenes/fight.js does the CleanUp's
       // job). Translated as-is rather than "corrected".
-      if (e.tween === 0) e.con = 5;
+      if (e.tween === 0) {
+        e.con = 5;
+        // The same branch restores him: `obj_knight_enemy.visible = true`.
+        // Unreachable for the reason above, translated as-is rather than
+        // "corrected" — the restore really does come from CleanUp.
+        const kv = state.entities.find((x) => x.alive && x.type.name === 'obj_knight_enemy');
+        if (kv) kv.visible = true;
+      }
       const knight = state.entities.find(
         (x) => x.alive && x.type.name === 'obj_knight_enemy',
       );

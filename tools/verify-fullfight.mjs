@@ -421,6 +421,104 @@ function newestSimMtime() {
  * exits on `end_cutscene_version > 0`, so the bar is off screen before any of
  * this runs and the quantity is provably invisible.
  */
+/**
+ * THE KNIGHT'S DRAW CALLS — what is actually put on screen, in order.
+ *
+ * The 176 columns say where things ARE; this says what is DRAWN. Three
+ * successive wrong versions of the enemy-selection highlight passed a fully
+ * green suite because nothing compared the second kind of fact: an invented
+ * additive halo, then the right pulse on the wrong LAYER (the sprite's own
+ * alpha instead of a white overlay), then the wrong gate. Each is a one-line
+ * difference here.
+ *
+ * The comparison is per frame and ORDERED, because order is part of the
+ * answer: an overlay composited underneath its base is exactly the failure
+ * this is for, and it produces an identical multiset.
+ *
+ * Alpha and position carry a small tolerance for the same reason the row diff
+ * does — the sim's f64 arithmetic against the game's f32 built-ins — but the
+ * TAG, SPRITE and ORDER must match exactly, and those are what actually go
+ * wrong.
+ */
+function reportDraw(oraPath, simPath) {
+  if (!existsSync(oraPath) || !existsSync(simPath)) return;
+  const load = (p) => {
+    const lines = readFileSync(p, 'utf8').trim().split('\n');
+    const head = lines[0].split(',');
+    const byFrame = new Map();
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(',');
+      const f = Number(c[0]);
+      if (Number.isNaN(f)) continue;
+      if (!byFrame.has(f)) byFrame.set(f, []);
+      byFrame.get(f).push(c);
+    }
+    return { head, byFrame };
+  };
+  const O = load(oraPath);
+  const S = load(simPath);
+  if (!O.byFrame.size) return;
+  const NUM_TOL = { x: 0.05, y: 0.05, alpha: 1e-4, index: 1e-4, xs: 5e-5, ys: 5e-5, ang: 0.02 };
+  const cols = O.head.filter((h) => S.head.includes(h) && h !== 'frame');
+
+  // THE FRAME OFFSET IS DETECTED, NOT ASSUMED. The Knight's Draw and
+  // obj_time's row write happen at different points in the frame, so the two
+  // logs are numbered from different origins — the oracle's first row is at
+  // oracle_frame -1. Rather than bake a constant in, find the shift that lines
+  // the two up and PRINT it: a constant offset is bookkeeping, a drifting one
+  // is a bug, and hardcoding would hide the difference between them.
+  let offset = 0;
+  let best = -1;
+  for (const cand of [0, 1, 2, 3, -1, -2]) {
+    let hit = 0;
+    for (const [f, o] of O.byFrame) {
+      const sr = S.byFrame.get(f + cand);
+      if (sr && sr.length === o.length && sr[0][1] === o[0][1]
+        && Math.abs(parseFloat(sr[0][4]) - parseFloat(o[0][4])) < 1e-6) hit++;
+    }
+    if (hit > best) { best = hit; offset = cand; }
+  }
+
+  let compared = 0;
+  let first = null;
+  for (const f of [...O.byFrame.keys()].sort((a, b) => a - b)) {
+    const o = O.byFrame.get(f);
+    const sr = S.byFrame.get(f + offset);
+    if (!sr) continue;
+    compared++;
+    if (o.length !== sr.length) {
+      if (first === null) {
+        first = { f, what: `${o.length} draw(s) in the game, ${sr.length} in the sim`,
+          detail: `oracle [${o.map((r) => r[1]).join(' ')}] vs sim [${sr.map((r) => r[1]).join(' ')}]` };
+      }
+      continue;
+    }
+    for (let n = 0; n < o.length && first === null; n++) {
+      for (const col of cols) {
+        const ov = o[n][O.head.indexOf(col)];
+        const sv = sr[n][S.head.indexOf(col)];
+        const a = parseFloat(ov);
+        const b = parseFloat(sv);
+        const same = Number.isNaN(a) || Number.isNaN(b)
+          ? ov === sv
+          : Math.abs(a - b) <= (NUM_TOL[col] ?? 0);
+        if (!same) {
+          first = { f, what: `draw ${n} (${o[n][1]}), column ${col}`,
+            detail: `oracle ${ov}, sim ${sv}` };
+          break;
+        }
+      }
+    }
+  }
+  if (!compared) return;
+  if (first === null) {
+    console.log(`  draws: ${compared} frames one-to-one (order, sprite and parameters), frame offset ${offset}`);
+  } else {
+    console.log(`  draws: DIFFER at f${first.f} (offset ${offset}) — ${first.what}`);
+    console.log(`         ${first.detail}`);
+  }
+}
+
 function reportEnd(oraPath, simPath) {
   if (!existsSync(oraPath) || !existsSync(simPath)) return;
   const load = (p) => {
@@ -580,6 +678,7 @@ function main() {
     const rowFront = res.findings?.length
       ? Number(res.oracle.rows[res.findings[0].row][0])
       : null;
+    reportDraw(join(TRACES, `${name}.draw.csv`), simPath.replace(/\.csv$/, '') + '.draw.csv');
     reportEnd(join(TRACES, `${name}.end.csv`), simPath.replace(/\.csv$/, '') + '.end.csv');
     reportCamera(join(TRACES, `${name}.camera.csv`), simPath.replace(/\.csv$/, '') + '.view.csv',
       rowFront);

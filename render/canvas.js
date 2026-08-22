@@ -492,7 +492,11 @@ export async function createRenderer(canvas) {
       // takeover all still win -- the Knight is never selectable during any
       // of them, but a branch order that only works by luck is not one to
       // rely on.
-      if (k?.flash) {
+      // IDLE ONLY. draw_monster_body_part is reached through
+      // scr_enemy_drawidle_generic's `state == 0` branch, so the base draw AND
+      // its flash overlay both stop while he is hurt — the strobe above owns
+      // those frames instead.
+      if (k?.flash && k.animState === 0) {
         const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
         if (entry && entry.frames.length) {
           const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;

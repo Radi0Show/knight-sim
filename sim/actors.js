@@ -114,14 +114,28 @@ export const knightActor = {
     // 0 -> 1 edge only, so the pulse always starts near transparent and
     // rises, and re-entering the menu restarts it from the same phase.
     //
-    // obj_knight_enemy inherits flash/fsiner/becomeflash from
-    // scr_enemy_object_init and its bespoke Draw never reads them -- it keeps
-    // only the `if (becomeflash == 0) flash = 0;` bookkeeping at the bottom.
-    // So in the original the Knight is the one enemy this does not visibly
-    // affect. Drawing it is a DELIBERATE DEVIATION, kept because the
-    // highlight was asked for; what is no longer invented is the ANIMATION,
-    // which is now the game's own curve, range, period and reset rule
-    // instead of a made-up additive halo on the menu's siner.
+    // THE KNIGHT REALLY DOES FLASH -- this is not a deviation, and calling it
+    // one was a THIRD bad negative grep on the same behaviour. His own Draw
+    // contains no flash code, which is what two greps of that file reported;
+    // the call is three levels down, in a shared helper:
+    //
+    //     knight Draw -> scr_enemy_drawidle_generic(1/6) -> draw_monster_body_part:
+    //
+    //         draw_sprite_ext(spr, idx, x, y, xs, ys, ang, blend, image_alpha);
+    //         if (flash == 1)
+    //             draw_sprite_ext_flash(spr, idx, x, y, xs, ys, ang, blend,
+    //                                   (-cos(fsiner / 5) * 0.4) + 0.6);
+    //
+    // and draw_sprite_ext_flash is `d3d_set_fog(true, arg7, 0, 1)` around the
+    // same draw -- so the overlay is fogged to IMAGE_BLEND, which is white for
+    // the Knight. CLAUDE.md's rule that a negative grep only counts over the
+    // WHOLE dump applies to helper indirection too, not just to filenames.
+    //
+    // TWO CONSEQUENCES, both of which the old model got wrong: `fsiner`
+    // advances inside scr_enemy_drawidle_generic, which is gated on
+    // `state == 0` -- so it counts while IDLE, not while flashing -- and the
+    // flash draw lives on that same idle path, so a Knight who is mid-HURT
+    // shows no highlight at all.
     //
     // These live on `state.knight`, NOT on the entity, because that is where
     // the Knight's other Draw-state variables are (whiteflash, hurttimer,
@@ -133,11 +147,20 @@ export const knightActor = {
         && (state.menu.submenu === 'enemy' || state.menu.submenu === 'actpick'));
       if (selecting && !k.flash) k.fsiner = 0;
       k.flash = selecting ? 1 : 0;
-      // `fsiner += 1` sits INSIDE the `if (flash == 1)` block, so it only runs
-      // while the enemy is the highlighted one. The reset on entry makes this
-      // indistinguishable from counting always, but it keeps the counter from
-      // climbing for the whole fight for no reason.
-      if (k.flash) k.fsiner = (k.fsiner ?? 0) + 1;
+      // `fsiner += 1` is the first line of scr_enemy_drawidle_generic's
+      // `state == 0` branch, so it runs while IDLE whether or not anything is
+      // flashing. It matters only while flashing, and the controller zeroes it
+      // on entry, so the visible pulse is the same either way -- but a Knight
+      // knocked into state 3 mid-menu stops advancing it, and that is the
+      // behaviour worth being right about.
+      if (k.animState === 0) {
+        k.fsiner = (k.fsiner ?? 0) + 1;
+        // `siner += arg0` on the same line of scr_enemy_drawidle_generic, with
+        // arg0 = 1/6 from the Knight's call. spr_roaringknight_idle has ONE
+        // frame so it changes nothing on screen, but it is the image_index
+        // every one of his draws passes and the draw log compares it.
+        k.siner = (k.siner ?? 0) + (1 / 6);
+      }
     }
 
     // `if (i_ex(obj_knight_swordtunnelanim)) exit;` — during Sword Tunnel a

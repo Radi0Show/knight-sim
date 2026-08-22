@@ -17,6 +17,7 @@ import { real } from '../sim/trace.js';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
+import { knightDrawCalls } from '../render/knightdraw.js';
 
 const argv = process.argv.slice(2);
 const token = argv.find((a) => a.startsWith('K1.'));
@@ -275,6 +276,7 @@ if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verif
 const rows = [traceHeader(state)];
 const viewRows = [];
 const endRows = ['frame,ecv,endcon,endtimer,hurttimer,stronghurt,shakex,kstate,fade,fade_alpha,tb_x,tb_hspeed'];
+const drawRows = ['frame,tag,sprite,index,x,y,xs,ys,ang,blend,alpha,fog'];
 // The refill itself lives INSIDE stepFrame (state.keepAlive), before the
 // trace row is captured — the oracle recorder refills before composing its
 // row, so a refill done out here, after the row was already pushed, left
@@ -336,6 +338,20 @@ for (let f = 0; f < replay.frames; f++) {
     `${viewFrame},${real(state.view.x)},${real(state.view.y)},` +
       `${state.entities.filter((e) => e.alive && e.type.name === 'obj_shake').length}`,
   );
+  // THE KNIGHT'S DRAW CALLS. render/knightdraw.js is DOM-free precisely so
+  // this can run headless; the oracle logs the same list from
+  // draw_monster_body_part and the Knight's own Draw.
+  {
+    const ke = state.entities.find((x) => x.alive && x.type?.name === 'obj_knight_enemy');
+    if (ke) {
+      for (const d of knightDrawCalls(state, ke)) {
+        drawRows.push([
+          viewFrame, d.tag, d.sprite, real(d.index), real(d.x), real(d.y),
+          real(d.xs), real(d.ys), real(d.ang), d.blend, real(d.alpha), d.fog,
+        ].join(','));
+      }
+    }
+  }
   // THE ENDING, once it starts. The oracle used to stop recording at the very
   // frame `end_cutscene_version` goes positive, so the whole end cutscene sat
   // outside every trace and nothing about it was ever checked. The oracle
@@ -390,6 +406,7 @@ writeFileSync(out, `${rows.join('\n')}\n`);
 if (/\.csv$/.test(out)) {
   writeFileSync(out.replace(/\.csv$/, '') + '.view.csv', `${viewRows.join('\n')}\n`);
   writeFileSync(out.replace(/\.csv$/, '') + '.end.csv', `${endRows.join('\n')}\n`);
+  writeFileSync(out.replace(/\.csv$/, '') + '.draw.csv', `${drawRows.join('\n')}\n`);
 }
 
 console.log(`${replay.frames} frames -> ${out}`);
