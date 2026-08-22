@@ -151,27 +151,6 @@ export function spawnDmgNumber(state, x, y, damage, type, delay = 8, opts = {}) 
     special,
     delay,
     delaytimer: 0,
-    // NO TICK ON THE BIRTH FRAME. Writers are created during the collision
-    // phase, and the runner's draw pass that frame iterates a list that does
-    // not yet contain them — measured at verify21j f1720-1722: the writers'
-    // one-shot `vspeed = -5 - random(2)` landed at spawn+2 (stream positions
-    // 100-102, seed 4021), bracketed by the slash jitter pairs at 98-99 and
-    // 103-104. delay=2 with a first tick at spawn+1 puts it exactly there; a
-    // first tick at spawn (the old behaviour) put it one frame early. Turns
-    // 1-4 never noticed because nothing else consumed in that window — the
-    // ORDER only became observable when the jitter interleaved with it.
-    // A consumed-once flag, not a frame compare: harnesses that step without
-    // advancing state.frame (verify-dmgnumbers) must skip exactly one tick.
-    //
-    // ...EXCEPT for STEP-DISPATCHED damage. The tunnel sword deals its hit
-    // from its own Step (the swept `event_user(5)` at
-    // obj_sword_tunnel_sword's line 91), and a writer created during a step
-    // phase runs its draw the same frame — the balloon writer measurement
-    // (pos 2 at birth) and the turn-8 boundary ledger agree: the sweep-hit
-    // writers' throws land at birth+1 (verify21j f2970/f2975), where the
-    // collision-born ones land at birth+2 (f1722). One stream position at
-    // the 2976 boundary was the whole fingerprint.
-    skipBirthTick: !state.damageFromStep,
     hspeed: 0,
     vspeed: 0,
     vstart: 0,
@@ -276,16 +255,31 @@ export function stepHealWriters(state) {
   d.heals = d.heals.filter((h) => h.alpha >= 0);
 }
 
+// THE WRITERS RUN AT THE FRAME'S END — obj_dmgwriter's whole behaviour is
+// its DRAW event, and draws run after every step, collision and end step of
+// the frame, including the frame the writer is born (any-phase creations
+// join that frame's draw pass; the balloon writer measured pos 2 at birth).
+// So the delay clock TICKS FROM BIRTH and the one-shot throw roll lands at
+// birth+delay-1 in the END-OF-FRAME slot. Three ledgers pin the ordering,
+// and an earlier per-dispatch "skip the birth tick" model fit the first two
+// only by accident of call-site ordering:
+//
+//   f1720-1722 (turn 5): jitter pairs at stream 96-97 / 98-99, the three
+//     throws at 100-102 — the throws are f1721's END slot, after f1721's
+//     end-step jitter, not f1722's start;
+//   f2969/f2974 (turn 8): throws at birth+1 (2970/2975), the +1 that moved
+//     the tunnel boundary rolls to their measured positions;
+//   f4213 (phase 3 Stars): three throws at 4214's end slot, BEFORE the
+//     f4215 star's chain roll — the sim's old model put them after it, and
+//     the star's u read three positions early (u at 152 vs the game's 155).
+//
+// stepFrame calls this AFTER runPhase('endStep') for exactly that reason —
+// a scene-level endStep call site puts the rolls before every same-frame
+// end-step consumer and inverts the second receipt.
 export function stepDmgNumbers(state, rng) {
   const d = state.dmg;
   if (!d) return;
   for (const n of d.list) {
-    // See `skipBirthTick` at the spawn site: the runner never draws an
-    // instance on its creation frame, so the delay clock starts a tick late.
-    if (n.skipBirthTick) {
-      n.skipBirthTick = false;
-      continue;
-    }
     // NOTHING HAPPENS UNTIL THE DELAY ELAPSES. With `delay = 8` the number
     // appears eight frames after the hit registers — after the character's
     // swing has connected, which is why it reads as a consequence.

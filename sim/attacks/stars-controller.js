@@ -74,7 +74,14 @@ export const starsController = {
 
     e.btimer += 1;
 
-    if (state.turntimer <= e.endtimer + 1) {
+    // POST-DECREMENT READ. The dc's stop check sees the clock as of this
+    // frame's END: verify21j turn 11 (Stars d2, endtimer 210) spawns its
+    // last star at f4239 and stays silent at f4243, where the pre-decrement
+    // value is 211.9 (> 211, would spawn) and the post 210.9 (stops). The
+    // cone's own release check stays on the pre-decrement read the earlier
+    // turns pinned — the two objects genuinely read the clock at different
+    // effective moments, and each check carries the receipt that set it.
+    if (state.turntimer - 1 <= e.endtimer + 1) {
       e.init = 3;
       return;
     }

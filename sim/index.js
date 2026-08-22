@@ -10,6 +10,8 @@ import { traceRow } from './trace.js';
 import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK, grazeMaskAt } from './masks.js';
 import { stepGraze } from './tension.js';
 import { freshParty, scrRevive } from './damage.js';
+import { stepDmgNumbers } from './dmgnumbers.js';
+import { rngNext } from './rng.js';
 
 export { createState } from './state.js';
 export { spawn, destroy, ALARM_COUNT } from './entity.js';
@@ -303,13 +305,7 @@ function runCollisions(state) {
           + ` a=${b.image_angle} xs=${b.image_xscale} ys=${b.image_yscale}`
           + ` inv=${state.invTimer} soul=(${heart.x}, ${heart.y})`);
       }
-      // In the GAME this dispatch may come from the bullet's own STEP (the
-      // tunnel sword's swept event_user(5)) rather than the collision phase;
-      // dmg writers born under a step dispatch tick their delay clock on the
-      // birth frame. See skipBirthTick in sim/dmgnumbers.js.
-      state.damageFromStep = !!b.type.stepDamage;
       b.type.other15(b, state);
-      state.damageFromStep = false;
     }
     }
   }
@@ -413,6 +409,12 @@ export function stepFrame(state, input) {
   runMotion(state);
   runCollisions(state);
   runPhase(state, 'endStep');
+
+  // THE FRAME'S END SLOT — the dmg writers' draw pass. Their one-shot throw
+  // roll must land after every end-step consumer of the same frame (the
+  // slash jitter, the tunnel boundary rolls, the star chain); see the
+  // ledger header over stepDmgNumbers.
+  stepDmgNumbers(state, state.rng ? () => rngNext(state.rng) : undefined);
 
   // obj_grazebox's End Step: the box moves to the heart NOW, after this
   // frame's collisions already tested against where it was. See runCollisions.

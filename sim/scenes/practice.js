@@ -278,10 +278,13 @@ const director = {
     stepHeroes(state);
     // obj_knight_enemy's reaction timers — hurt strobe, shake, block vfx.
     stepKnightAnim(state);
-    // obj_dmgwriter's Draw, for every live number. It consumes randomness
-    // (`vspeed = -5 - random(2)`), so it draws from the sim's generator and a
-    // replayed seed replays the same arcs.
-    stepDmgNumbers(state, () => rngNext(state.rng));
+    // obj_dmgwriter's Draw is now stepped by stepFrame itself, AFTER the
+    // endStep phase — the writers' throw rolls belong to the frame's END
+    // slot, after every end-step consumer of the same frame. See the header
+    // over stepDmgNumbers in sim/dmgnumbers.js for the three ledgers that
+    // pin the ordering; calling it from this endStep put the rolls before
+    // the slash jitter and the tunnel boundary rolls, which only balanced
+    // out under the old skip-a-tick model by call-site accident.
     // obj_healwriter has no delay and no RNG — it rises and fades on its own.
     stepHealWriters(state);
     stepAttackVfx(state);
