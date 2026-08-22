@@ -980,6 +980,38 @@ export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
   //
   // The flooring matches the "instance positions floored" family every
   // other calibrated collision routine here uses.
+  //
+  // MEASURED AGAINST THE GAME'S OWN FIRINGS, 2026-08-22, and the measurement
+  // is worth more than the result. The tunnel sword's contact path is this
+  // call inside its Step invoking event_user(5) — it never reaches
+  // obj_heart's Collision event and the swords hold no trace slot, so the
+  // corridor had no coverage at all. A throwaway oracle variant
+  // (oracle_fullfight_probelog.csx) logs every firing; KNIGHT_SWEEP_ALL logs
+  // every evaluation; tools/fit-lineprobe.mjs joins them.
+  //
+  // A stepped-walk candidate (GameMaker samples points along the line rather
+  // than clipping it) appeared to score 8,124/8,126 with ZERO false
+  // positives against this model's 8,123, and it is NOT better. That score
+  // came from a sweep log printing toFixed(2), and these decisions turn on
+  // sub-pixel boundaries: a probe at x = 331.9999984 floors to 331 and is
+  // INSIDE the box, while the logged "332.00" floors to 332 and is outside.
+  // The rounding rewrote exactly the cases the fit existed to discriminate.
+  //
+  // At full precision the walk has a real false positive at verify21j f5549.
+  // Diffing the two sims settles it without any fitting: they are
+  // byte-identical through f5548 and first differ at f5549, where the walk
+  // fires a hit the recording does not have. Over all 8,126 evaluations the
+  // two models disagree on exactly ONE other sample — f1507, where the
+  // recording's inv is 1.2, so that firing does nothing (these swords carry
+  // destroyonhit = 0) and the runs stay identical through it.
+  //
+  // What still stands: this model's known misses (verify37 f3041 and f3199)
+  // are segments clipping under a pixel outside a corner that the game fires
+  // on anyway, so SOME sampled-walk behaviour is real. Finding the variant
+  // that gains those without the f5549 false positive is the open work, and
+  // it needs the fit's join repaired first — only 599 of 603 logged firings
+  // currently match an evaluation, which is enough slop to reorder
+  // candidates that sit one apart.
   x1 = Math.floor(x1);
   y1 = Math.floor(y1);
   x2 = Math.floor(x2);
