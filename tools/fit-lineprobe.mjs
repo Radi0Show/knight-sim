@@ -66,20 +66,23 @@ import { join } from 'node:path';
 const TRACES = process.env.KNIGHT_TRACES
   || join(process.env.HOME, 'knight-research', 'traces');
 const NAMES = (process.env.KNIGHT_FIT_NAMES || 'verify21j,verify37').split(',');
+/** Both sides store these positions as f32 and agree to about five decimals;
+ *  0.01px sits far inside the 8px gap between consecutive probe samples and
+ *  far outside last-bit drift. An EXACT key cannot work here — 4dp split
+ *  259.7454528809 from 259.7453918457 and lost 4 firings of 603. */
+const MATCH_TOL = 0.01;
+const unmatched = [];
 
 const rows = [];
 for (const n of NAMES) {
-  let fired;
+  let firings;
   try {
-    fired = new Set();
+    firings = [];
     for (const l of readFileSync(join(TRACES, `fullfight-${n}.tunnel.csv`), 'utf8').trim().split('\n')) {
       const r = l.split(',');
       if (r[1] !== 'P') continue;
       // The sidecar stamps obj_time's Draw frame, one behind the step that fired.
-      // Keyed to 4dp: the sidecar writes string_format(x,0,10) and the sim
-    // now logs full precision, so 4dp is comfortably inside both and still
-    // immune to last-bit drift. NEVER 2dp — see the sword-tunnel log note.
-    fired.add(`${+r[0] + 1}|${(+r[3]).toFixed(4)},${(+r[4]).toFixed(4)}`);
+      firings.push({ f: +r[0] + 1, x: +r[3], y: +r[4], used: false });
     }
   } catch { console.log(`SKIP ${n}: no tunnel sidecar`); continue; }
   let text;
@@ -89,10 +92,20 @@ for (const n of NAMES) {
     const m = l.match(/\[all\] f=(\d+) seq=\d+ spd=\S+ ang=(\S+) s=\(([-\de.+]+),([-\de.+]+)\) tip=\(([-\de.+]+),([-\de.+]+)\) box=\[([-\d]+),([-\d]+),([-\d]+),([-\d]+)\]/);
     if (!m) continue;
     const sx = +m[3]; const sy = +m[4];
-    rows.push({ n, f: +m[1], ang: +m[2], sx, sy, tx: +m[5], ty: +m[6],
-      r: [+m[7], +m[8], +m[9], +m[10]],
-      hit: fired.has(`${+m[1]}|${sx.toFixed(4)},${sy.toFixed(4)}`) });
+    const fr = +m[1];
+    let best = null;
+    let bestD = Infinity;
+    for (const g of firings) {
+      if (g.used || g.f !== fr) continue;
+      const d = Math.max(Math.abs(g.x - sx), Math.abs(g.y - sy));
+      if (d < bestD) { bestD = d; best = g; }
+    }
+    const matched = Boolean(best) && bestD <= MATCH_TOL;
+    if (matched) best.used = true;
+    rows.push({ n, f: fr, ang: +m[2], sx, sy, tx: +m[5], ty: +m[6],
+      r: [+m[7], +m[8], +m[9], +m[10]], hit: matched });
   }
+  for (const g of firings) if (!g.used) unmatched.push(g);
 }
 if (!rows.length) { console.log('no samples — nothing to fit'); process.exit(0); }
 
@@ -146,7 +159,13 @@ const MODELS = {
   'walk floor': (r) => walk(r.sx, r.sy, r.tx, r.ty, ...r.r),
 };
 
-console.log(`probe samples: ${rows.length}  fired: ${rows.filter((r) => r.hit).length}\n`);
+console.log(`probe samples: ${rows.length}  fired: ${rows.filter((r) => r.hit).length}`);
+if (unmatched.length) {
+  console.log(`WARNING: ${unmatched.length} logged firing(s) matched no evaluation —`);
+  console.log('the scores below are unreliable by that much. Investigate before trusting them.');
+  for (const g of unmatched.slice(0, 6)) console.log(`  f${g.f} (${g.x}, ${g.y})`);
+}
+console.log('');
 for (const [name, f] of Object.entries(MODELS)) {
   let ok = 0; let fp = 0; let fn = 0;
   const bad = [];

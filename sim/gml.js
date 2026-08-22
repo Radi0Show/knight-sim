@@ -295,10 +295,35 @@ const PI32 = Math.fround(Math.PI);
 // discriminates: its sword hangs within the snap window of vertical, and
 // the recording's lengthdir_y value is the UNSNAPPED sine (frame 36,
 // y 277.4966... vs the snapped 277.5050...).
+// EXACT AT THE CARDINALS — which is NOT the snap the note above forbids.
+// That snap rounds anything within 1e-4 of an axis, and the vortex suite
+// rightly rejects it (its sword hangs near vertical and the recording keeps
+// the unsnapped sine). This fires only when the angle is EXACTLY a multiple
+// of 90 after normalisation, where traces/trig-probe.csv measured the runner
+// returning true zeros and ones. A near-vertical sword is untouched.
+//
+// It is not cosmetic. `lengthdir_x(37, 90)` is 0 in the game and -1.6e-6 in
+// plain JS, so a swept probe fired straight up along x = 340 arrives at
+// 339.99999838 — which floors to 339 and falls outside a box whose left edge
+// is 340. probe21 f7636 and probe37 f5521 are exactly that: the game
+// connects, the sim missed, and it read as a collision-model error for a
+// while. The mirror case (probe21 f5549, a probe just PAST the right edge)
+// must keep missing, and does: 332 stays 332 instead of drifting to
+// 331.99999838 and floating into the box.
+function cardinal(dir) {
+  const a = ((dir % 360) + 360) % 360;
+  return a % 90 === 0 ? a : -1;
+}
+const COS_CARDINAL = [1, 0, -1, 0];
+const SIN_CARDINAL = [0, 1, 0, -1];
 function runnerCos(dir) {
+  const a = cardinal(dir);
+  if (a >= 0) return COS_CARDINAL[a / 90];
   return Math.cos(Math.fround(Math.fround(Math.fround(dir) * PI32) / 180));
 }
 function runnerSin(dir) {
+  const a = cardinal(dir);
+  if (a >= 0) return SIN_CARDINAL[a / 90];
   return Math.sin(Math.fround(Math.fround(Math.fround(dir) * PI32) / 180));
 }
 

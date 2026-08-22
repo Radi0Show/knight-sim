@@ -968,79 +968,65 @@ export function scrPreciseHitRotatedRect(heart, e, meta, n = 3) {
  * Segment against an axis-aligned rectangle, by slab clipping.
  */
 export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
-  // ENDPOINTS FLOORED, EDGES INCLUSIVE — two swept receipts on opposite
-  // sides of every uniform real-valued model pin this pair:
+  // GAMEMAKER WALKS THE LINE; IT DOES NOT CLIP IT. `collision_line` steps
+  // along the segment and tests SAMPLED POINTS against the target, so a
+  // segment passing a hair outside a corner still registers when one of its
+  // samples lands on the corner cell. Exact slab clipping — what this used to
+  // do — is the right answer to the wrong question and misses those.
   //
-  //   f1334: the probe tip at soul.y + 19.5 CONNECTS in the recording —
-  //     floor(195.5) = 195 touches the inclusive bottom edge;
-  //   f5549: a probe line at x = soul.x + 20 − 1.6e-6 (the runner-trig
-  //     cos(90) residue) MISSES — floored, its x stays past the inclusive
-  //     right edge through the soul's whole y-band, and the game connects
-  //     one frame later when the sample lands a full 8px step inside.
+  // ENDPOINTS RAW, SAMPLES FLOORED, step count ceil(max(|dx|,|dy|)). Each
+  // part is load-bearing: flooring the endpoints first changes the
+  // interpolated PATH rather than merely its rounding, and a step count that
+  // is not ceiled never samples t = 1 — sometimes the only in-box point
+  // (probe21 f1500, a real damage hit).
   //
-  // The flooring matches the "instance positions floored" family every
-  // other calibrated collision routine here uses.
+  // MEASURED AGAINST THE GAME'S OWN FIRINGS, and the measurement mattered
+  // more than the result. This call is the tunnel sword's contact path — it
+  // runs inside that sword's Step and invokes event_user(5) directly, never
+  // reaching obj_heart's Collision event, and those swords hold no trace
+  // slot, so the corridor had no coverage at all. A throwaway oracle variant
+  // (knight-research oracle_fullfight_probelog.csx) logs every firing,
+  // KNIGHT_SWEEP_ALL logs every evaluation, and tools/fit-lineprobe.mjs
+  // joins them. Over 8,126 evaluations and 603 firings from two tokens:
   //
-  // MEASURED AGAINST THE GAME'S OWN FIRINGS, 2026-08-22, and the measurement
-  // is worth more than the result. The tunnel sword's contact path is this
-  // call inside its Step invoking event_user(5) — it never reaches
-  // obj_heart's Collision event and the swords hold no trace slot, so the
-  // corridor had no coverage at all. A throwaway oracle variant
-  // (oracle_fullfight_probelog.csx) logs every firing; KNIGHT_SWEEP_ALL logs
-  // every evaluation; tools/fit-lineprobe.mjs joins them.
+  //   walk  (this)   8,124   fp=0  fn=2      clip (old)  8,123  fp=0  fn=3
   //
-  // A stepped-walk candidate (GameMaker samples points along the line rather
-  // than clipping it) appeared to score 8,124/8,126 with ZERO false
-  // positives against this model's 8,123, and it is NOT better. That score
-  // came from a sweep log printing toFixed(2), and these decisions turn on
-  // sub-pixel boundaries: a probe at x = 331.9999984 floors to 331 and is
-  // INSIDE the box, while the logged "332.00" floors to 332 and is outside.
-  // The rounding rewrote exactly the cases the fit existed to discriminate.
+  // The two disagree on exactly ONE sample of 8,126 — probe21 f1507, where
+  // the recording's inv is 1.2, so the firing does nothing (these swords
+  // carry destroyonhit = 0). Both tokens diff identically under either model;
+  // the walk is adopted because it is the mechanism the game implements and
+  // it carries one fewer miss with no false positives.
   //
-  // At full precision the walk has a real false positive at verify21j f5549.
-  // Diffing the two sims settles it without any fitting: they are
-  // byte-identical through f5548 and first differ at f5549, where the walk
-  // fires a hit the recording does not have. Over all 8,126 evaluations the
-  // two models disagree on exactly ONE other sample — f1507, where the
-  // recording's inv is 1.2, so that firing does nothing (these swords carry
-  // destroyonhit = 0) and the runs stay identical through it.
+  // THREE TRAPS THIS ROUTINE COST, all worth more than the model:
   //
-  // What still stands: this model's known misses (verify37 f3041 and f3199)
-  // are segments clipping under a pixel outside a corner that the game fires
-  // on anyway, so SOME sampled-walk behaviour is real. Finding the variant
-  // that gains those without the f5549 false positive is the open work, and
-  // it needs the fit's join repaired first — only 599 of 603 logged firings
-  // currently match an evaluation, which is enough slop to reorder
-  // candidates that sit one apart.
-  x1 = Math.floor(x1);
-  y1 = Math.floor(y1);
-  x2 = Math.floor(x2);
-  y2 = Math.floor(y2);
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  let t0 = 0;
-  let t1 = 1;
-
-  for (const [p, q] of [
-    [-dx, x1 - rx0],
-    [dx, rx1 - x1],
-    [-dy, y1 - ry0],
-    [dy, ry1 - y1],
-  ]) {
-    if (p === 0) {
-      if (q < 0) return false; // parallel and outside this slab
-      continue;
-    }
-    const r = q / p;
-    if (p < 0) {
-      if (r > t1) return false;
-      if (r > t0) t0 = r;
-    } else {
-      if (r < t0) return false;
-      if (r < t1) t1 = r;
-    }
+  //   * The first version of the fit scored a walk fp=0 that had a REAL false
+  //     positive, because the sweep log printed toFixed(2) — and these
+  //     decisions turn on sub-pixel boundaries, so 331.9999984 (floors to
+  //     331, inside) was read as "332.00" (floors to 332, outside). Rounding
+  //     erased exactly the cases the fit existed to discriminate.
+  //   * An EXACT join key cannot work: both sides store f32 and agree to
+  //     about five decimals, so 4dp split 259.7454528809 from 259.7453918457
+  //     and silently lost 4 firings of 603. The join matches on a tolerance.
+  //   * Two of this model's apparent misses were never a collision problem at
+  //     all — they were `lengthdir_x(37, 90)` returning -1.6e-6 instead of 0,
+  //     which walked a probe tip off the box edge. Fixed in sim/gml.js at the
+  //     cardinals; see the note there.
+  //
+  // Remaining misses, both probe37 (f3041 and f3199): segments clipping under
+  // a pixel outside a corner that the game still fires on. Whatever explains
+  // them is a refinement of the sampling, not of the shape.
+  const steps = Math.ceil(Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)));
+  if (steps <= 0) {
+    const px = Math.floor(x1);
+    const py = Math.floor(y1);
+    return px >= rx0 && px <= rx1 && py >= ry0 && py <= ry1;
   }
-  return true;
+  for (let i = 0; i <= steps; i++) {
+    const px = Math.floor(x1 + ((x2 - x1) * i) / steps);
+    const py = Math.floor(y1 + ((y2 - y1) * i) / steps);
+    if (px >= rx0 && px <= rx1 && py >= ry0 && py <= ry1) return true;
+  }
+  return false;
 }
 
 /** obj_heart's bounding box in world space, from spr_dodgeheartmask's bbox. */
