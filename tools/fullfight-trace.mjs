@@ -12,7 +12,7 @@
 // reproduces a live run exactly, which is the property that lets one recording
 // stand in for a fight forever.
 
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
@@ -155,6 +155,32 @@ if (gzIdx >= 0) {
   }
   state.grazeReplay = byFrame;
   console.log(`grazes: replaying ${n} recorded pairing(s)`);
+}
+
+// --shards <file>: the d2 starchildren's homing delays, one row per homing
+// shard's init (oracle_shard.csv: frame, id, difficulty, delay, x, y). The
+// controller's delay chain hands values out in instance-slot order, which
+// the sim cannot derive (verify21j f4372) — so the recorded delay is matched
+// back at init by frame + position, the graze replay's arrangement. The
+// label lag is the same +1 (the shard's init logs in its step phase).
+const shIdx = argv.indexOf('--shards');
+if (shIdx >= 0 && existsSync(argv[shIdx + 1])) {
+  const text = readFileSync(argv[shIdx + 1], 'utf8').trim();
+  const byFrame = new Map();
+  let n = 0;
+  for (const line of text ? text.split(/\r?\n/) : []) {
+    const r = line.split(',');
+    if (r.length < 6) continue;
+    const fight = Number(r[0]) + 1;
+    if (!Number.isFinite(fight)) continue;
+    if (!byFrame.has(fight)) byFrame.set(fight, []);
+    byFrame.get(fight).push({
+      delay: Number(r[3]), x: Number(r[4]), y: Number(r[5]), used: false,
+    });
+    n++;
+  }
+  state.shardDelays = byFrame;
+  console.log(`shards: replaying ${n} recorded homing delay(s)`);
 }
 
 const boltIdx = argv.indexOf('--bolts');

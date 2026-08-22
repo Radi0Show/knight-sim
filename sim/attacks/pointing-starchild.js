@@ -172,7 +172,18 @@ export const pointingStarchild = {
     if (!e.init) {
       e.init = true;
       if (e.difficulty >= 2) {
+        // The chain always advances — the game's did too — but a replayed
+        // delay (matched by frame + position, tools/fullfight-trace.mjs
+        // --shards) overrides the value: the chain's hand-out order follows
+        // the runner's instance-slot state, which only the recording knows.
         chainChildDelay(e, state);
+        const rows = state.shardDelays?.get(state.frame);
+        const match = rows?.find((r) => !r.used
+          && Math.abs(r.x - e.x) <= 0.1 && Math.abs(r.y - e.y) <= 0.1);
+        if (match) {
+          match.used = true;
+          e.delay = match.delay;
+        }
       }
       if (globalThis.process?.env?.KNIGHT_SHARD_DEBUG) {
         console.error(`[shard] init f=${globalThis.__simFrame} seq=${e.seq}`
