@@ -360,7 +360,11 @@ for (let f = 0; f < replay.frames; f++) {
 }
 rows.push(...state.trace);
 writeFileSync(out, `${rows.join('\n')}\n`);
-writeFileSync(out.replace(/\.csv$/, '') + '.view.csv', `${viewRows.join('\n')}\n`);
+// Only beside a real .csv output. `--out /dev/null` is a normal way to run
+// this for its stderr probes, and appending to that path is an EPERM.
+if (/\.csv$/.test(out)) {
+  writeFileSync(out.replace(/\.csv$/, '') + '.view.csv', `${viewRows.join('\n')}\n`);
+}
 
 console.log(`${replay.frames} frames -> ${out}`);
 console.log(`  final: hp ${state.partyHp.join('/')} · knight ${state.knight.hp}`

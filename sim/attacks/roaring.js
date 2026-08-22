@@ -95,7 +95,35 @@ export const roaring2 = {
     // as the knight appearing, then appearing a second time — which is
     // exactly what it was doing.
     e.fake_alpha = 0;
-    e.rand_angle = 0; // irandom(360) in the original; replayed by the scene
+    // `rand_angle = irandom(360)` — IN THE ORIGINAL'S CREATE, so the draw is
+    // taken here and not by the caller. It was left at 0 with a note saying
+    // the scene would replay it, and only ONE scene ever did: sim/scenes/
+    // fight.js. The whole-fight runner builds the PRACTICE scene, which never
+    // set it, so every ROARING in a full fight fired its star rings from a
+    // base of 0 while the game fired from a random one.
+    //
+    // Invisible until the camera work pushed verify37's front this far: at
+    // f11269 the six ring stars sat on the right circle, 60 degrees apart,
+    // uniformly 2 degrees off — the token's roll happened to be 58, and 58
+    // minus a whole 60-degree step is what that 2 degrees was.
+    //
+    // Position in the stream matters as much as the value: irandom is two
+    // draws, and taking them at Create is what the runner does.
+    e.rand_angle = gmlIrandom(state.gmlRng, 360);
+    // ONE U32 DRAW IS MISSING BEFORE THIS ROLL, and it is CONDITIONAL.
+    // verify37's front sits on the six-star ring at f11269: the ring is right
+    // (radius 590, 60 degrees apart) but rotated, because rand_angle is 220
+    // here and 278 in the game. The anchor is correct (n=27, seed 27037) and
+    // 278 is exactly what this roll returns after THREE u32 draws off that
+    // anchor, where the sim takes two (obj_dbulletcontroller's basedir).
+    //
+    // Do NOT pad it unconditionally: measured, a single extra draw here moves
+    // verify37 to f11726 AND makes the camera match on every one of its
+    // 12,007 frames -- and BREAKS verify21j, which is byte-exact today, at
+    // f11274. So the third draw happens in token 37's roar and not token
+    // 21's. Launch conditions look identical in both (no live bullets, inv
+    // -5, full party), so what varies has not been found yet. Attribute it
+    // before adding it; this project has been burnt by blind pads twice.
     e.rand_dist = 320;
     e.starcount_p1 = 0;
     e.starcount_p2 = 0;

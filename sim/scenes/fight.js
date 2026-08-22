@@ -458,9 +458,10 @@ export function launchAttack(state, entry) {
       return spawnRotatingSlash(state, kx, ky, { difficulty });
 
     case 9: {
-      const r = spawn(state, roaring2, { x: state.view.x + 320, y: state.view.y + 88 });
-      r.rand_angle = gmlIrandom(state.gmlRng, 360);
-      return r;
+      // rand_angle is rolled by roaring2's own create(), where the original
+      // has it. Doing it here as well took the draw twice and put it after
+      // Create instead of inside it.
+      return spawn(state, roaring2, { x: state.view.x + 320, y: state.view.y + 88 });
     }
 
     case 11:
