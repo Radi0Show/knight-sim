@@ -30,11 +30,21 @@
 // and all three of the shipping model's are sub-pixel corner clips — the
 // segment passes 0.3-1.4px outside a corner and the game fires anyway.
 //
-// The walk is strictly better on this data and fixes verify37 f3199, but
-// adopting it regressed verify21j to f5549: it also (correctly) ADDS the
-// firing at f1507, and something downstream of that hit diverges. Settle
-// that before switching models — the probe model is not the open question,
-// what the game does with the hit is.
+// SCORE BY WHAT THE ERRORS COST, NOT BY HOW MANY THERE ARE. The walk looks
+// one better and behaves worse, because the two models miss different KINDS
+// of firing:
+//
+//   f1507  clip misses, walk catches — the recording's inv is 1.2 there,
+//          POSITIVE. event_user(5) gates on inv < 0 and a tunnel sword has
+//          destroyonhit = 0, so that firing changes nothing. A free miss.
+//   f1500  clip catches, walk misses — inv resets to 3.2, a REAL damage hit,
+//          and the only in-box sample is the segment's far endpoint (a float
+//          step count with an integer loop never reaches it; ceil fixes that
+//          much).
+//
+// So check every candidate's mismatch frames against the recording's inv
+// column before believing a score. A model that drops a damaging firing is
+// worse than one that drops a free one, however the totals read.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -67,6 +77,24 @@ for (const n of NAMES) {
   }
 }
 if (!rows.length) { console.log('no samples — nothing to fit'); process.exit(0); }
+
+// REFUSE TO SCORE AGAINST ABSENT LABELS. The `P` rows come from a probe
+// logger that is deliberately NOT in the canonical oracle patch: writing it
+// means re-importing the sword's decompiled Step, and a recording made
+// against that round-trip is not a faithful control (it moved verify37's
+// front from f3199 to f4399). So the shipped recordings carry M/S rows and
+// no P rows, and without them every sample reads as "did not fire" — which
+// would print a confident 7526/8126 with 600 false positives and mean
+// nothing at all. Re-add the logger from git history, record into a
+// THROWAWAY name, and point KNIGHT_FIT_NAMES at it.
+const fired = rows.filter((r) => r.hit).length;
+if (fired === 0) {
+  console.log(`${rows.length} samples but ZERO recorded firings — the tunnel`);
+  console.log('sidecar has no P rows, so there is nothing to score against.');
+  console.log('Re-add the probe logger (see the header) and record into a');
+  console.log('throwaway name before running this.');
+  process.exit(0);
+}
 
 function clip(x1, y1, x2, y2, rx0, ry0, rx1, ry1, { floor = false, pad = 0 } = {}) {
   if (floor) { x1 = Math.floor(x1); y1 = Math.floor(y1); x2 = Math.floor(x2); y2 = Math.floor(y2); }
