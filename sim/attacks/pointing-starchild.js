@@ -82,13 +82,25 @@ function onscreen(e, spacer, state) {
 export const heartFollower = {
   name: 'obj_heart_follower',
 
+  // AFTER THE SHARDS. The runner steps newest-first: the shards (born at
+  // the burst) run before the launch-born follower, so their homing reads
+  // the follower's PREVIOUS-frame position — live reads in the sim's
+  // spawn order handed them the current one. Stepping the follower after
+  // every order-0 entity makes the shards' live read exactly that stale
+  // value. And the follower itself is newer than the turn's soul, so IT
+  // reads the soul pre-step — state.soulPrev, the frame-start snapshot.
+  // Both lags are invisible while the soul is parked (turn 1's squeeze,
+  // turn 6), and ~1.5px on a moving soul: verify21j f4314's shard turned
+  // toward a target 0.86 degrees off, drifting b0_y from f4313.
+  stepOrder: 0.5,
+
   create(e) {
     e.smoothing = 0.125;
     e.max_speed = 4;
   },
 
   step(e, state) {
-    const t = state.soul;
+    const t = state.soulPrev ?? state.soul;
     if (!t) return;
     const xdiff = t.x - e.x;
     const ydiff = t.y - e.y;
@@ -96,6 +108,31 @@ export const heartFollower = {
     e.y = scrMovetowards(e.y, t.y, clamp(Math.abs(ydiff) * e.smoothing, 1, e.max_speed));
   },
 };
+
+/**
+ * The d2+ shard's homing delay — 25 plus the controller's running counter,
+ * which advances +1 per shard with a +5 skip every fifth (measured delays
+ * 25, 26, 27, 28, 29, 34, ... 72). The counter lives on `state` because
+ * these scenes model the controller as this pair of fields.
+ *
+ * ASSIGNED IN INIT ORDER, and the runner inits newest-first: the two homing
+ * shards of one burst (i 0 and 3) take their counter values in REVERSE
+ * creation order — the burst loop calls this for i 3 before i 0.
+ * verify21j f4372: the game's earlier-delay shard was the one the offscreen
+ * cull caught at y -89; with the sim's spawn-order assignment the delays
+ * were swapped and the wrong shard outlived the recording.
+ */
+export function chainChildDelay(e, state) {
+  e.delay = 25;
+  e.delay += state.childDelay ?? 0;
+  if ((state.childSubdelay ?? 0) === 4) {
+    state.childSubdelay = 0;
+    state.childDelay = (state.childDelay ?? 0) + 5;
+  } else {
+    state.childSubdelay = (state.childSubdelay ?? 0) + 1;
+    state.childDelay = (state.childDelay ?? 0) + 1;
+  }
+}
 
 export const pointingStarchild = {
   name: 'obj_knight_pointing_starchild',
@@ -135,19 +172,11 @@ export const pointingStarchild = {
     if (!e.init) {
       e.init = true;
       if (e.difficulty >= 2) {
-        e.delay = 25;
-        // The controller's running counter — see the header. Held on `state`
-        // because these scenes model the controller only as this pair of
-        // fields; a scene with several controllers would need them per
-        // instance.
-        e.delay += state.childDelay ?? 0;
-        if ((state.childSubdelay ?? 0) === 4) {
-          state.childSubdelay = 0;
-          state.childDelay = (state.childDelay ?? 0) + 5;
-        } else {
-          state.childSubdelay = (state.childSubdelay ?? 0) + 1;
-          state.childDelay = (state.childDelay ?? 0) + 1;
-        }
+        chainChildDelay(e, state);
+      }
+      if (globalThis.process?.env?.KNIGHT_SHARD_DEBUG) {
+        console.error(`[shard] init f=${globalThis.__simFrame} seq=${e.seq}`
+          + ` diff=${e.difficulty} delay=${e.delay} y=${e.y.toFixed(1)}`);
       }
     }
 
@@ -163,6 +192,10 @@ export const pointingStarchild = {
       if (e.con === 0 && e.delay > 0) {
         e.timer += 1;
         if (e.timer >= e.delay) {
+          if (globalThis.process?.env?.KNIGHT_SHARD_DEBUG) {
+            console.error(`[shard] check f=${globalThis.__simFrame} seq=${e.seq}`
+              + ` delay=${e.delay} y=${e.y.toFixed(1)} on=${onscreen(e, 10, state)}`);
+          }
           // A child that has drifted off screen by the time its turn comes
           // never gets to home.
           if (!onscreen(e, 10, state)) {
