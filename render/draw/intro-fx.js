@@ -189,19 +189,18 @@ export function drawIntroFx(ctx, e, sprites) {
     }
   }
 
-  // The white circle FLASH at the roar itself (the persistent red layer is
-  // drawn by the scene, over everything).
-  if (e.circleFlash > 0 && e.circleFlash < 30) {
-    const t = e.circleFlash / 30;
-    ctx.save();
-    ctx.globalAlpha = (1 - t) * 0.8;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(1, 12 * (1 - t));
-    ctx.beginPath();
-    ctx.arc(px, py, 20 + t * 260, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
+  // NO STROKED RING HERE. There used to be one — a flat white outline
+  // expanding to r=280 over 30 frames — and it was INVENTED. Nothing in
+  // obj_knight_roaring_fx's Draw strokes a circle: that event is the vertical
+  // bar, the shift_ol sprite with its shudder offsets, and the white-fogged
+  // whiteout copy, and that is all. The climax's actual circle is
+  // obj_knight_circle, a FILLED additive gradient (black centre to (r,g,b)
+  // rim) growing 40px a frame to 960 while g and b fall to zero over 28 —
+  // modelled in sim/intro.js and drawn as the red layer below.
+  //
+  // The invented ring sat on top of that bloom as a hard flat arc, which is
+  // what read as a badly drawn white circle: a thin outline over a
+  // screen-filling flash. Removing it lets the real thing carry the moment.
 
   // The vertical flash bar. The decay lives in sim (see intro.js).
   if (e.bar) {
