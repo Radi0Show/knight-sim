@@ -91,6 +91,51 @@ export const knightActor = {
     // to be locked in place.
     if (!roaring) e.siner2 += 1;
 
+    // THE SELECTION FLASH, and it is REAL game behaviour -- the note that
+    // used to sit in the renderer calling it "a deliberate addition, nothing
+    // in the dump ever sets becomeflash" was a bad negative grep, the fourth
+    // in this project. obj_battlecontroller's Draw, inside the enemy-select
+    // block (bmenuno 1/3/11/12/13), does:
+    //
+    //     with (global.monsterinstance[global.bmenucoord[bmenuno][charturn]])
+    //     {
+    //         if (flash == 0) fsiner = 0;
+    //         flash = 1;
+    //         becomeflash = 1;
+    //     }
+    //
+    // and every enemy's own Draw counts `fsiner += 1` each frame and, while
+    // flashing, draws ITSELF at
+    //
+    //     (-cos(fsiner / 5) * 0.4) + 0.6
+    //
+    // so the highlight is the enemy PULSING IN OPACITY between 0.2 and 1.0
+    // over ~31 frames -- not a halo, not a tint. `fsiner` is zeroed on the
+    // 0 -> 1 edge only, so the pulse always starts near transparent and
+    // rises, and re-entering the menu restarts it from the same phase.
+    //
+    // obj_knight_enemy inherits flash/fsiner/becomeflash from
+    // scr_enemy_object_init and its bespoke Draw never reads them -- it keeps
+    // only the `if (becomeflash == 0) flash = 0;` bookkeeping at the bottom.
+    // So in the original the Knight is the one enemy this does not visibly
+    // affect. Drawing it is a DELIBERATE DEVIATION, kept because the
+    // highlight was asked for; what is no longer invented is the ANIMATION,
+    // which is now the game's own curve, range, period and reset rule
+    // instead of a made-up additive halo on the menu's siner.
+    //
+    // These live on `state.knight`, NOT on the entity, because that is where
+    // the Knight's other Draw-state variables are (whiteflash, hurttimer,
+    // stronghurtanim) and it is what the renderer reads. The entity and
+    // state.knight are two different objects here; writing to the wrong one
+    // is silent, which is exactly what verify-selectflash caught.
+    if (k) {
+      const selecting = !!(state.menu?.open
+        && (state.menu.submenu === 'enemy' || state.menu.submenu === 'actpick'));
+      if (selecting && !k.flash) k.fsiner = 0;
+      k.flash = selecting ? 1 : 0;
+      k.fsiner = (k.fsiner ?? 0) + 1;
+    }
+
     // `if (i_ex(obj_knight_swordtunnelanim)) exit;` — during Sword Tunnel a
     // separate object performs the whole animation, and this Draw stops dead:
     // no bob, no afterimages, no sprite. Without this he bobbed and trailed

@@ -1,14 +1,4 @@
 
-/**
- * Is the battle menu currently pointing at the enemy? True for the enemy row
- * (`bmenuno == 1`) and for Kris's ACT enemy picker (`bmenuno == 11`), the two
- * states where the player is choosing the Knight as a target.
- */
-function menuTargetsEnemy(state) {
-  const m = state.menu;
-  if (!m || !m.open) return false;
-  return m.submenu === 'enemy' || m.submenu === 'actpick';
-}
 // Canvas renderer. Reads sim state, never writes to it.
 //
 // Draws the game's own sprites (assets/sprites, extracted from the player's
@@ -418,35 +408,6 @@ export async function createRenderer(canvas) {
     obj_knight_enemy(ctx, e, state) {
       const k = state.knight;
 
-      // THE SELECTION GLOW — a DELIBERATE ADDITION, not game behaviour.
-      // obj_knight_enemy carries `flash`/`becomeflash` from
-      // scr_enemy_object_init, but nothing in the dump ever sets becomeflash
-      // for him, so the original never highlights the enemy you are pointing
-      // at: the only feedback is the heart cursor on the name row. This adds
-      // it because it was asked for, and it is renderer-only -- no sim state,
-      // no RNG, no effect on any trace or suite.
-      //
-      // A halo UNDER the sprite, not a tint over it: he is a dark silhouette
-      // with a white outline, so a white copy on top would erase him. Three
-      // scaled-up fogged copies at low alpha, additive, pulsing on the menu's
-      // own siner so it breathes at the same rate as the cursor.
-      if (menuTargetsEnemy(state)) {
-        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
-        if (entry && entry.frames.length) {
-          const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
-          const halo = fogged(entry.frames[idx], [255, 255, 255]);
-          const pulse = 0.5 + 0.5 * Math.sin((state.menu?.siner ?? 0) / 6);
-          const xs = e.image_xscale ?? 1;
-          const ys = e.image_yscale ?? 1;
-          ctx.save();
-          ctx.globalCompositeOperation = 'lighter';
-          for (const [grow, a] of [[1.22, 0.16], [1.13, 0.22], [1.05, 0.28]]) {
-            blit(halo, entry.meta.ox, entry.meta.oy, e.x, e.y,
-              xs * grow, ys * grow, e.image_angle ?? 0, a * (0.55 + 0.45 * pulse));
-          }
-          ctx.restore();
-        }
-      }
       // ROARING's launch. con 3 is "gone until the CleanUp hands him back";
       // con 2 is the TEN-FRAME WHITE BURN-OUT that gets him there, and it is
       // NOT dead code — the retraction this replaces assumed `chargeuptimer`
@@ -511,9 +472,37 @@ export async function createRenderer(canvas) {
           Math.min(1, t / 10));
         return true;
       }
-      return state.entities.some(
+      if (state.entities.some(
         (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
-      );
+      )) return true;
+
+      // THE SELECTION FLASH. sim/actors.js drives `flash` and `fsiner` exactly
+      // as obj_battlecontroller and the enemies' own Draws do; this only
+      // renders it. The alpha curve is the game's, character for character:
+      //
+      //     draw_sprite_ext(..., image_blend, (-cos(fsiner / 5) * 0.4) + 0.6)
+      //
+      // a pulse from 0.2 to 1.0 over ~31 frames, starting near transparent
+      // because the controller zeroes fsiner on the frame it becomes
+      // selected. What was here before was invented: three scaled-up fogged
+      // copies blended additively under the sprite, pulsing on the MENU's
+      // siner. Wrong layer, wrong curve, wrong period, wrong reset.
+      //
+      // It sits LAST so the charge-up, the roar burn-out and the sword-tunnel
+      // takeover all still win -- the Knight is never selectable during any
+      // of them, but a branch order that only works by luck is not one to
+      // rely on.
+      if (k?.flash) {
+        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
+        if (entry && entry.frames.length) {
+          const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
+          blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y,
+            e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
+            (-Math.cos((k.fsiner ?? 0) / 5) * 0.4) + 0.6, e.image_blend);
+          return true;
+        }
+      }
+      return false;
     },
   };
 
