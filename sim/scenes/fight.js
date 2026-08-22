@@ -559,7 +559,9 @@ export function launchAttack(state, entry) {
       const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       tr.variant = 0;
       tr.damage = 206;
-      trackingSwordsManager.init(tr, state);
+      // The rotating slash sibling (type 104) sparsens the cadence — see
+      // the chainedType note in trackingSwordsManager.init.
+      trackingSwordsManager.init(tr, state, 104);
       return mg;
     }
 
@@ -605,10 +607,18 @@ export function launchAttack(state, entry) {
       mg.damage = CONTROLLER_DAMAGE;
       // The SECOND scr_bulletspawner call of the ac-15 branch (type 151).
       reanchorRng(state);
+      // Every scr_bulletspawner's dc rolls its dead `basedir = irandom(360)`
+      // — two draws off this second anchor too, same as the central consume
+      // at launchAttack's entry. Its absence displaced the vortex manager's
+      // centermove targets by two stream positions (verify21j f3367: the
+      // center's first lerp read irandom(120)=31 where the game drew 107).
+      if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
       const tr = spawn(state, trackingSwordsManager, { x: arena.x, y: state.view.y });
       tr.variant = 0;
       tr.damage = CONTROLLER_DAMAGE;
-      trackingSwordsManager.init(tr, state);
+      // The vortex sibling (type 154) retunes the tracking cadence — see
+      // the chainedType note in trackingSwordsManager.init.
+      trackingSwordsManager.init(tr, state, 154);
       return mg;
     }
 

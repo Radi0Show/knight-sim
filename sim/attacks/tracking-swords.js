@@ -266,6 +266,14 @@ export const trackingSword = {
       }
     }
 
+    if (globalThis.process?.env?.KNIGHT_TRACK_DEBUG) {
+      const f = globalThis.__simFrame;
+      const [a, b] = globalThis.process.env.KNIGHT_TRACK_DEBUG.split('-').map(Number);
+      if (f >= a && f <= (b ?? a)) {
+        console.error(`[trk] f=${f} seq=${e.seq} con=${e.con} timer=${e.timer}`
+          + ` len=${e.len} dir=${e.direction} x=${e.x}`);
+      }
+    }
     if (e.con === 1) {
       e.timer += 1;
       if (e.timer >= e.waittime) {
@@ -357,6 +365,17 @@ export const trackingSword = {
 export const trackingSwordsManager = {
   name: 'obj_tracking_swords_manager',
 
+  // BEFORE THE VORTEX MANAGER. ac 15 creates the vortex controller first and
+  // the tracking controller second; the runner steps newest-first, so the
+  // game's tracking manager runs BEFORE the vortex's — its first telegraph
+  // takes the earlier spawn seq on their shared birth frame (verify21j
+  // f3366: oracle b2 is the telegraph, the sim's was the vortex's first
+  // sword; the trajectories were identical and only the slot order
+  // diverged). Every solo-tracking turn (ac 11/14) has no vortex to order
+  // against, and soulPrev reads are snapshot-based, so the earlier slot is
+  // safe there.
+  stepOrder: -0.1,
+
   create(e, state) {
     e.timer = 0;
     e.con = 0;
@@ -386,7 +405,7 @@ export const trackingSwordsManager = {
   },
 
   /** Other_10 — event_user(0), fired from the Create in the original. */
-  init(e, state) {
+  init(e, state, chainedType = null) {
     if (e.variant === 0) {
       e.rate = 32;
       e.ratedecay = 4;
@@ -429,7 +448,21 @@ export const trackingSwordsManager = {
     }
 
     // Chained launches retune the cadence: rotatingslash (104) makes it much
-    // sparser, the sword vortex (154) keeps it dense.
+    // sparser, the sword vortex (154) keeps it dense. The dump's Other_10
+    // scans live obj_dbulletcontroller instances for the sibling's type; the
+    // sim spawns its managers directly and has no dc entities to find, so
+    // the launch site passes the sibling type in (`chainedType`) — the
+    // entity scan stays for any scene that does model the controllers.
+    // Without this, ac 15's tracking ran rate 32 and its second sword came
+    // at +33 instead of the recording's +25 (verify21j f3386).
+    if (chainedType === 104 || chainedType === 154) {
+      e.rate = chainedType === 104 ? 55 : 24;
+      e.ratedecay = chainedType === 104 ? 0 : 4;
+      e.rateminimum = chainedType === 104 ? 24 : 16;
+      e.maxswords = 99;
+      e.multiswordmax = 0;
+      if (chainedType === 104) e.multiswordframes = 0;
+    }
     for (const dc of state.entities) {
       if (!dc.alive || dc.type.name !== 'obj_dbulletcontroller') continue;
       if (dc.dcType === 104) {
@@ -467,9 +500,18 @@ export const trackingSwordsManager = {
     // Past the end of a replayed list, fall back to the live stream: a
     // spawn-count divergence in a later turn must show up as a diff, not as
     // an undefined direction crashing the trace.
+    // THE CHOOSE IS CONSUMED EITHER WAY. The game rolls
+    // `choose(0,45,...,315)` for every sword; the replay only substitutes
+    // the OUTCOME (the post-wheel heading the oracle logged). Skipping the
+    // draw under replay left the anchored stream one short per sword —
+    // invisible on tracking-only turns, but ac 15's vortex rolls its second
+    // centermove target from the same stream and verify21j f3423 read
+    // irandom(120)=54 at the sim's position where the game (three swords
+    // in) drew 65 three positions later.
+    const rolledHeading = state.gmlRng ? gmlChoose(state.gmlRng, HEADINGS) : null;
     inst.direction = state.swordDirections && state.swordIndex < state.swordDirections.length
       ? state.swordDirections[state.swordIndex++]
-      : gmlChoose(state.gmlRng, HEADINGS);
+      : rolledHeading;
     inst.variant = e.variant;
     inst.damage = e.damage;
 

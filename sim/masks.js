@@ -79,14 +79,20 @@ export const HEART_MASK = build(raw.heart);
  * one-pixel wall dilation (BATTLEBG_FIGHT_MASK) was compensating for the
  * wrong heart, not measuring a thicker wall.
  *
- * Deliberately NOT `axisRect` (that flag routes through the graze box's
- * rectangle routine): as a full-true pixel grid this flows through
- * masksOverlapPrecise — the same floored-position corner-sampling model as
- * every other precise pair. With the RIGHT heart mask, that one model
- * reproduces every collision receipt in the fight (f904/f947/f982/f898
- * hits, f903/f946/f986 misses); the elaborate two-branch "event rule"
- * this replaced was an artifact of fitting those receipts against the
- * heart-shaped mask the fight soul never wears.
+ * `axisRect` AFTER ALL — the eighth receipt settled it. This was
+ * deliberately left off the rect routine on the strength of seven receipts
+ * (f904/f947/f982/f898 hits, f903/f946/f986 misses) that the precise
+ * corner-sampling model reproduced — but none of the seven happened to
+ * discriminate the two routines. verify21j f3392 does: the first vortex
+ * sword's contact (sword at 247.2818/146.0177, angle 84.667, soul at
+ * 250/148) HITS in the recording, hits under the rectangle routine (raw
+ * positions, round bbox, floor-inverse into B — the same routine the
+ * 30,976-point graze probe and the 28,000-point growmeet fit calibrated
+ * for AAR-A x rotated-B), and misses under the precise model by a hair.
+ * The runner routes by MASK KIND, and spr_dodgeheart's AxisAlignedRect
+ * mask is exactly that kind. The seven old receipts ride along: turns 1-4
+ * of the whole-fight diff contain every one of them and stay row-exact
+ * under the flip.
  */
 export const HEART_RECT = {
   name: 'dodgeheart_rect',
@@ -96,6 +102,7 @@ export const HEART_RECT = {
   originY: 0,
   bbox: [0, 0, 19, 19],
   px: Array.from({ length: 20 }, () => new Array(20).fill(true)),
+  axisRect: true,
 };
 /**
  * The same rect flagged for the RECTANGLE routine — the WALL path's model.
@@ -110,7 +117,7 @@ export const HEART_RECT = {
  * trailing sliver), so the two routes are two real runner behaviours, not
  * a convenience split.
  */
-export const HEART_RECT_WALL = { ...HEART_RECT, name: 'dodgeheart_rect_wall', axisRect: true };
+export const HEART_RECT_WALL = { ...HEART_RECT, name: 'dodgeheart_rect_wall', axisRect: 'always' };
 /**
  * `spr_dodgeheart_smallmask` — an 8x8 square at the soul's centre, against the
  * heart shape's 16x16. THE SWORD TUNNEL'S FINALE SWAPS TO IT: each dashing
@@ -579,6 +586,28 @@ export function masksOverlap(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   // collides nothing at zero scale.
   if (!bsx || !bsy) return false;
   if (maskA.axisRect) {
+    // THE B-SIDE'S ROTATION SPLITS THE RECT-A FAMILY — forced by two
+    // receipts on opposite sides of any single rule:
+    //
+    //   f982  (tooth, angle 0, soul at fractional x): HITS in the recording,
+    //         hits under the floored-corner precise model, MISSES under the
+    //         raw-position rectangle routine;
+    //   f3392 (vortex sword, angle 84.667): HITS in the recording, hits
+    //         under the rectangle routine, MISSES under the precise model.
+    //
+    // The toothmeet probe (place_meeting, unrotated B) already measured
+    // floored-x semantics, and the growmeet fit (28,000 points, rotated B)
+    // measured the raw-position rectangle — the two datasets were never in
+    // conflict because they sit on opposite sides of this split. An A with
+    // `axisRect: 'always'` (the graze box, whose sprite has NO mask data at
+    // all, and the wall path) stays on the rectangle routine at every angle
+    // — its 30,976-point calibration includes unrotated pairs. The wall
+    // cannot tell the difference: its contacts happen at integer soul
+    // positions, where floored and raw agree.
+    const unrotated = ((bangle % 360) + 360) % 360 === 0;
+    if (unrotated && maskA.axisRect !== 'always') {
+      return masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
+    }
     return masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
   }
   return masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
@@ -963,7 +992,7 @@ export const GRAZE_MASK = build({
 })
 // AxisAlignedRect in the game data (maskcount=0): takes the rectangle
 // collision routine, not the precise one. See masksOverlap.
-GRAZE_MASK.axisRect = true;
+GRAZE_MASK.axisRect = 'always';
 
 /**
  * The graze box AT ITS EQUIPPED SIZE.
@@ -1002,7 +1031,7 @@ export function grazeMaskAt(factor) {
     bbox: [0, 0, side - 1, side - 1],
     rows: Array.from({ length: side }, () => '1'.repeat(side)),
   });
-  m.axisRect = true;
+  m.axisRect = 'always';
   grazeScaled.set(key, m);
   return m;
 }
