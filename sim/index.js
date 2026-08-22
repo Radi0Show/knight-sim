@@ -61,6 +61,7 @@ export const PHASES = ['animation', 'beginStep', 'alarm', 'step', 'motion', 'col
  */
 function runMotion(state) {
   state.eventPhase = 'motion';
+
   for (const e of state.entities) {
     if (!e.alive) continue;
 
@@ -172,8 +173,15 @@ function runMotion(state) {
       const gr = Math.fround(Math.fround(Math.fround(e.gravity_direction) * PI32) / 180);
       let gc = Math.cos(gr);
       let gsn = Math.sin(gr);
-      if (Math.abs(gsn) > 1 - 1e-4) gsn = Math.sign(gsn);
-      if (Math.abs(gc) > 1 - 1e-4) gc = Math.sign(gc);
+      // SAME SNAP_EPS as the direction vector above. These two were left at
+      // 1e-4 when that one was tightened, and the half-fix is exactly what
+      // verify37's next front was: a star whose speed reaches 0 arms
+      // `gravity_direction = direction - 180`, so a heading of 180.6504 gives
+      // a gravity direction of 0.6504 -- cos 0.99993555, inside the old
+      // window. The sim accelerated it by a clean 0.1 in x while the oracle
+      // used 0.1 * cos, and the two crept apart one f32 ulp at a time.
+      if (Math.abs(gsn) > 1 - SNAP_EPS) gsn = Math.sign(gsn);
+      if (Math.abs(gc) > 1 - SNAP_EPS) gc = Math.sign(gc);
       hs = Math.fround(hs + Math.fround(Math.fround(e.gravity) * Math.fround(gc)));
       vs = Math.fround(vs + Math.fround(Math.fround(e.gravity) * -Math.fround(gsn)));
       e.speed = Math.sqrt(hs * hs + vs * vs);
