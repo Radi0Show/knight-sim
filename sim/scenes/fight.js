@@ -386,8 +386,8 @@ export function launchAttack(state, entry) {
   // frame's tick (tickChargeup runs from the director, which steps after the
   // launcher).
   const _k = state.knight;
-  // MINUS ONE, AND THAT IS MEASURED, NOT FITTED -- but the reason for the
-  // offset is NOT yet known, so it is flagged rather than explained away.
+  // MINUS ONE, MEASURED AND STILL UNEXPLAINED -- see the elimination log
+  // below. It is NOT the charge-up frame offset it was first read as.
   // What IS established: an oracle probe at the top of obj_dbulletcontroller's
   // Step (tools/patches/oracle_fullfight_drawprobe.csx) read the stream
   // position there as exactly 3 u32 draws off the anchor, where basedir alone
@@ -396,13 +396,42 @@ export function launchAttack(state, entry) {
   // probe recording's main trace is byte-identical to the canonical one
   // before the probe frame, so the measurement is sound.
   //
-  // The residual: the sim's chargeuptimer reads 185 here and the game's
-  // behaves as 184 (token 21: 190 vs 189, which is why it takes NO draw and
-  // stays byte-exact). Both tokens agree on the -1, so it is a real one-frame
-  // misalignment somewhere in the chargeup's start, not a per-token fudge --
-  // but the stomp at timer 60 is verified correct in the sim, so the whole
-  // timeline cannot simply be shifted. FIND THE FRAME where the game's tick
-  // and the sim's part company before removing this.
+  // THIS OFFSET IS NOT A CHARGE-UP MISALIGNMENT, and the note that used to
+  // stand here -- "find the frame where the game's tick and the sim's part
+  // company" -- was chasing a frame that does not exist. Three eliminations,
+  // all cheap to redo and none worth redoing:
+  //
+  //   1. THE START FRAME IS ALREADY RIGHT. The charge is armed on the sim's
+  //      turntimer-arm frame (f10953 on token 37) and the game sets
+  //      `chargeupcon = 1` in the dispatch ladder at Step line 532, which is
+  //      the sim's LAUNCH frame, f10954. Moving the arm to the launch to
+  //      match looks obviously correct and BREAKS ALL FOUR FIGHTS at f11027,
+  //      column `menu`: `chargeuptimer == 60` stomps global.turntimer to 1
+  //      and that stomp is what ends the turn, so a start one frame later
+  //      opens the menu one frame later than the oracle does. The oracle's
+  //      own menu frame therefore PINS the game's charge-up to f10953, and
+  //      with a tick every frame its timer at this launch is 185, not 184.
+  //   2. THE GAME NEVER SKIPS A TICK. A skipped tick would reconcile both
+  //      (stomp stays at f11012, launch reads 184). obj_knight_enemy's Step
+  //      has exactly one early exit, `!i_ex(obj_herosusie) ||
+  //      !i_ex(obj_heroralsei)`, and the heroes are created once in
+  //      obj_battlecontroller's Create and never destroyed. It cannot fire.
+  //   3. A DELAYED ROAR CREATE CANNOT SPLIT THE TOKENS. If the stream were
+  //      read d frames after the anchor, token 37 first reaches a `% 4` draw
+  //      3 frames out (timer 188) and token 21 reaches one at 2 (timer 192),
+  //      so any d that gives 37 a draw gives 21 one too. No d works.
+  //
+  // What that leaves: at 185 the charge-up block CANNOT fire (185 % 4 == 1),
+  // so the one extra u32 draw the probe measured is NOT this afterimage, and
+  // `- 1` is a coincidence -- it encodes "timer mod 4 == 1", which happens to
+  // be true on 37 and false on 21. It is load-bearing and must not be removed
+  // without a replacement, but it is NOT the mechanism it claims to be.
+  //
+  // NEXT: the only single-draw call in the knight's Step below the selector
+  // is this one, so the draw belongs to ANOTHER object stepping between the
+  // knight and obj_dbulletcontroller. Settle it by probing the oracle for
+  // `chargeuptimer` and the stream position TOGETHER on the launch frame --
+  // one recording, the same needle-substitution idiom that cracked f11269.
   const _ct = _k ? _k.chargeuptimer - 1 : 0;
   if (_k && _k.chargeupcon === 1 && _ct % 4 === 0 && _ct > 10 && state.gmlRng) {
     gmlRandom(state.gmlRng, 360);
