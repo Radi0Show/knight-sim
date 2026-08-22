@@ -5,10 +5,10 @@
       "name": "knight-sim",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
-        "tools/devserver.py",
-        "8177"
+        "tools/devserver.py"
       ],
-      "port": 8177
+      "port": 8177,
+      "autoPort": true
     },
     {
       "name": "knight-dev",

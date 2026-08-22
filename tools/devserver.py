@@ -28,6 +28,7 @@ must fetch and instantiate afresh. Two page loads never share a module.
 This is a DEV server only; nothing here ships.
 """
 
+import os
 import re
 import sys
 import time
@@ -116,6 +117,8 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8177
+    # $PORT first so a launcher that assigns the port (Claude Code's preview
+    # pane does) is obeyed; then an explicit argv port; then the default.
+    port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8177))
     print(f"serving with no-store + per-load module versioning on http://localhost:{port}", flush=True)
     ThreadingHTTPServer(("", port), NoCacheHandler).serve_forever()
