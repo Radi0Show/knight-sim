@@ -47,7 +47,7 @@ import {
   BLACK,
   RED,
 } from '../gml.js';
-import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
+import { collidebulletOther15, regularbulletStep, regularbulletCreate } from '../bullets/regularbullet.js';
 import { starOther15 } from './pointing-star.js';
 import { STARCHILD_MASK, STARCHILD_TRAIL_MASK, scrPreciseHit, enginePairHit } from '../masks.js';
 
@@ -63,10 +63,21 @@ function scrAngleLerp(from, to, t) {
   return from + lerp(0, angleDifference(to, from), t);
 }
 
+// spr_knight_starchild_parts, the sprite every shard wears (Create).
+// GML's sprite_width/sprite_height are the FULL sprite dimensions times the
+// SIGNED image scales — not the bbox, and not origin-adjusted, so
+// scr_onscreen_tolerance's `x + sprite_width` treats a centre-origin sprite
+// as if its origin were top-left. Faithful: the game's own sloppiness is the
+// margin. Reading these as 0 killed a homer whose delay expired at
+// y = -10.78: the game sees y + 32*0.73 + 10 = 22.6 (onscreen, turns home,
+// verify21j f6496 b10); a zero footprint reads -0.78 and destroys it.
+const STARCHILD_SPRITE_W = 33;
+const STARCHILD_SPRITE_H = 32;
+
 /** scr_onscreen_tolerance(self, spacer). */
 function onscreen(e, spacer, state) {
-  const w = e.sprite_width ?? 0;
-  const h = e.sprite_height ?? 0;
+  const w = STARCHILD_SPRITE_W * (e.image_xscale ?? 1);
+  const h = STARCHILD_SPRITE_H * (e.image_yscale ?? 1);
   if (e.x + w + spacer < state.view.x) return false;
   if (e.x - spacer > state.view.x + 640) return false;
   if (e.y + h + spacer < state.view.y) return false;
@@ -115,12 +126,13 @@ export const heartFollower = {
  * 25, 26, 27, 28, 29, 34, ... 72). The counter lives on `state` because
  * these scenes model the controller as this pair of fields.
  *
- * ASSIGNED IN INIT ORDER, and the runner inits newest-first: the two homing
- * shards of one burst (i 0 and 3) take their counter values in REVERSE
- * creation order — the burst loop calls this for i 3 before i 0.
- * verify21j f4372: the game's earlier-delay shard was the one the offscreen
- * cull caught at y -89; with the sim's spawn-order assignment the delays
- * were swapped and the wrong shard outlived the recording.
+ * ASSIGNED IN INIT ORDER. verify21n's shard ledger shows the game handing
+ * the chain out in plain creation order for turn 11's cohort (the sim's
+ * spawn-order assignment matches it shard-for-shard); a within-burst
+ * reversal was tried against that hypothesis and regressed a verified
+ * receipt. The --shards replay overrides the value per shard anyway, so
+ * any turn where the slot order does scramble the hand-out is covered by
+ * the recording rather than a model.
  */
 export function chainChildDelay(e, state) {
   e.delay = 25;
@@ -138,7 +150,13 @@ export const pointingStarchild = {
   name: 'obj_knight_pointing_starchild',
 
   create(e, state) {
-    scrBulletInit(e);
+    // `event_inherited()` — the FIRST line of the original's Create. The
+    // parent (obj_regularbullet) Create runs scr_bullet_init AND sets the
+    // step-cull's fields: `wall_destroy = 1` is what lets the inherited
+    // step remove a homer that flies off past view -80 (verify21n's cull
+    // ledger). The sim called only scrBulletInit here, so wall_destroy was
+    // undefined and the cull never armed.
+    regularbulletCreate(e, state);
     e.deceleration = 0.1;
     e.minspeed = 1;
     e.timer = 0;
@@ -190,6 +208,21 @@ export const pointingStarchild = {
           + ` diff=${e.difficulty} delay=${e.delay} y=${e.y.toFixed(1)}`);
       }
     }
+
+    // `event_inherited()` — the FIRST line after the init in the original.
+    // The parent (obj_regularbullet) runs the wall_destroy cull: any shard
+    // past view -80 / +760 / -80 / +580 is destroyed. The homers that miss
+    // the soul and fly off are exactly what it removes — verify21n's cull
+    // ledger shows the game's leaving at x/y just past -80 from f4372 on,
+    // while the sim's flew forever and held the bullet count one high.
+    if (globalThis.process?.env?.KNIGHT_SHARD_DEBUG
+        && (e.x < state.view.x - 70 || e.y < state.view.y - 70)) {
+      console.error(`[shard] edge f=${globalThis.__simFrame} seq=${e.seq}`
+        + ` x=${e.x.toFixed(1)} y=${e.y.toFixed(1)} wd=${e.wall_destroy}`
+        + ` view=${state.view?.x},${state.view?.y}`);
+    }
+    regularbulletStep(e, state);
+    if (!e.alive) return;
 
     const follower = state.entities.find(
       (x) => x.alive && x.type.name === 'obj_heart_follower',

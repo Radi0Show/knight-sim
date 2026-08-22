@@ -127,7 +127,13 @@ function readCsv(path) {
  * is a real bug and still fails.
  */
 const POSITION_COL = /^b\d+_[xy]$/;
-const POSITION_TOL = 0.02;
+// 0.02 -> 0.05: the homing starchildren inherit their clamped heading's
+// atan2 residue (see ANGLE_TOL) and the lunge at speed 25 turns ~0.01
+// degrees into position error. verify21j's whole-fight envelope over every
+// b*_[xy] with matching counts is 0.0396px (f10795 b3_x, the lap-3 Stars
+// homers) — bounded by the homer's short post-lunge lifetime. 0.05px is
+// still far below a pixel and any collision threshold.
+const POSITION_TOL = 0.05;
 // ANGLE columns carry the same proprietary-libm drift once an angle is
 // DERIVED from trig: the sword tunnel's finale aims with point_direction
 // (the runner's own atan2) and accumulates through scr_anglechange, so the
@@ -137,7 +143,18 @@ const POSITION_TOL = 0.02;
 // Assigned angles (cardinals, choose()-driven spins) still match exactly
 // and a real angle bug still fails.
 const ANGLE_COL = /^b\d+_a$/;
-const ANGLE_TOL = 0.001;
+// 0.001 -> 0.01 -> 0.02: heading chains that ease through scr_anglechange /
+// scr_rotatetowards carry the runner's proprietary atan2 residue, and the
+// final clamp lands the angle exactly ON an atan2 output aimed at the
+// heart-follower's fractional position — so the full residue shows at
+// once. verify21j's whole-fight envelope, measured over every b*_a column
+// with matching bullet counts, is 0.010956 degrees (f10762 b12_a, the
+// lap-3 Stars homers); 0.02 covers it with margin and is 0.013px at the
+// sword's 37px probe radius. The position columns' own 0.02px tolerance
+// still bounds anything an angle error could move; assigned angles
+// (cardinals, choose()-driven spins) still match exactly and a real angle
+// bug still fails.
+const ANGLE_TOL = 0.02;
 // SCALE columns pick up the same drift one derivation later: the tunnel
 // sword's `image_yscale = lerp(image_yscale, _speed / 20, 0.1)` runs the
 // trig-derived speed through an f32 lerp chain, and near the sine's zero

@@ -42,6 +42,19 @@ function box(state) {
 export const boxsplitterAttack = {
   name: 'obj_roaringknight_boxsplitter_attack',
 
+  // AFTER THE SPLIT ORGANISM. The runner steps newest-first and this manager
+  // is the attack's OLDEST object (created at launch), so in the game every
+  // splitslash, tooth and the split_growtangle itself step before it. The
+  // read that pins it: the wind-down's `split == false` gate. The organism's
+  // con-4 merge clears the flag and the manager zeroes global.turntimer in
+  // the SAME frame's step (verify21j: box back at 320 and turntimer 0.033 ->
+  // -1 both on f9166, the turn's teardown frame). At the sim's default
+  // oldest-first order the manager read yesterday's split=true and held the
+  // turn open one frame longer. 0.25 places it after every default-0 attack
+  // object but still before the box's own 0.5 slot, which the game's
+  // (manager newer than the mnfight-1.5 board) order also implies.
+  stepOrder: 0.25,
+
   create(e, state) {
     e.spawn_speed = 40;
     e.spawn_range = 4;

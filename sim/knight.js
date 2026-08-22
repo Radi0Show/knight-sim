@@ -215,6 +215,35 @@ export function damageKnight(state, amount) {
  * One frame of the Knight's reaction, from the Draw event's tail and the
  * blockanim block in the Step.
  */
+/**
+ * THE CHARGE-UP TURN'S OWN CLOCK — `obj_knight_enemy`'s Step:
+ *
+ *     if (chargeupcon == 1) {
+ *         chargeuptimer++;
+ *         if (chargeuptimer == 1) snd_play(snd_knight_powerup_white);
+ *         ...white afterimages...
+ *         if (chargeuptimer == 60) global.turntimer = 1;
+ *     }
+ *
+ * Phase 4's middle turn spawns no bullets (ac -1), so the one sound is the
+ * whole audible content of "The Knight's hands glow a strange color...".
+ *
+ * TIMING IS THE WHOLE POINT of this being its own function. The selector
+ * sets chargeupcon = 1 and this block ticks timer -> 1 in the SAME knight
+ * Step (the block sits below the selector in one event), and the stomp at
+ * 60 lands in the STEP phase — the controller's decrement follows it within
+ * the frame, so `1 - 1 <= 0` tears the turn down THAT frame. verify21j:
+ * launch f10953, teardown f11012, the ROARING menu at f11027. Ticking from
+ * the director's endStep (post-decrement) pushed each edge a frame.
+ */
+export function tickChargeup(state) {
+  const k = state.knight;
+  if (!k || k.chargeupcon !== 1) return;
+  k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
+  if (k.chargeuptimer === 1) cue(state, 'snd_knight_powerup_white');
+  if (k.chargeuptimer === 60) state.turntimer = 1;
+}
+
 export function stepKnightAnim(state) {
   const k = state.knight;
   if (!k) return;
@@ -272,14 +301,12 @@ export function stepKnightAnim(state) {
   // sound is the whole audible content of "The Knight's hands glow a strange
   // color..." — without it the wind-up plays in silence. Found by auditing
   // every snd_play in the live knight objects against the sim's cues.
-  if (k.chargeupcon === 1) {
-    k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
-    if (k.chargeuptimer === 1) cue(state, 'snd_knight_powerup_white');
-    // `if (chargeuptimer == 60) global.turntimer = 1;` — THE CHARGE TURN IS
-    // SHORT. The wind-up ends itself two seconds in; without this the empty
-    // turn ran the default 90 and the finale arrived a second late.
-    if (k.chargeuptimer === 60) state.turntimer = 1;
-  }
+  // The chargeupcon-1 tick used to live here — stepKnightAnim runs in the
+  // director's END step, after turnClock's decrement, so the timer-60
+  // `turntimer = 1` stomp landed post-decrement and the teardown slipped a
+  // frame. It is now tickChargeup(), run from the STEP phase (turnClock's
+  // step) the way the knight's own Step orders it, plus once inline at the
+  // arm frame. See practice.js.
   // chargeupcon 2 is ROARING's launch, and it runs a TEN-FRAME WHITE
   // BURN-OUT before he disappears — `(10 - chargeuptimer) / 10` on a
   // fog-white copy, then `chargeupcon = 3; image_alpha = 0`.
@@ -366,6 +393,12 @@ export function advanceTurn(state) {
  * rather than the first one granting invulnerability against the other two.
  */
 export function knightCatch(state) {
+  // THE WHOLE CATCH IS `if (global.inv < 0)` — Other_12's first line wraps
+  // everything. A star that clips the soul during invulnerability does
+  // nothing at all: verify21j f11343-11344 logs the pairing at inv 7 and 6
+  // with no damage and no reset, while the ungated sim caught the party for
+  // 120 and flipped the rest of the finale.
+  if (state.invTimer >= 0) return 0;
   let total = 0;
   for (let ti = 0; ti < 3; ti++) {
     const hp = state.partyHp[ti];

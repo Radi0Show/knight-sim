@@ -613,6 +613,22 @@ export function masksOverlap(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   return masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle);
 }
 
+/**
+ * The collision rotation's [cos, sin]. EXACT values at the cardinals — the
+ * runner's trig lands true zeros and ones there (traces/trig-probe.csv:
+ * 90/270 return exactly 0) — and plain JS trig everywhere else, which the
+ * 30,976-point graze probe validated at non-cardinal angles. The receipt
+ * that forces the split is verify21j f9433 (see masksOverlapRectA).
+ */
+function collisionTrig(bangle) {
+  const a = ((bangle % 360) + 360) % 360;
+  if (a % 90 === 0) {
+    return [[1, 0], [0, 1], [-1, 0], [0, -1]][a / 90];
+  }
+  const r = (bangle * Math.PI) / 180;
+  return [Math.cos(r), Math.sin(r)];
+}
+
 function masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
   // PIXEL-INTERSECTION MODEL — CALIBRATED, second generation.
   //
@@ -638,10 +654,16 @@ function masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
   //      (pixel - (pos - origin)), B by inverse rotation about its raw
   //      position, floor-divided into source cells.
   //
-  // Cardinal-exact f32 trig and JS trig score identically on the probe; JS
-  // trig is kept.
-  const cos = Math.cos((bangle * Math.PI) / 180);
-  const sin = Math.sin((bangle * Math.PI) / 180);
+  // Cardinal-exact trig — the 30,976-point graze probe scored JS trig and
+  // cardinal-exact identically (its angles sat at 270/90/336/204 with
+  // geometry that never straddled a residue), and verify21j f9433 finally
+  // discriminates: a 900x1 slash at EXACT angle 180, line at y 120, soul
+  // band ending 119. With sin(pi)'s 1.22e-16 JS residue the inverse sample
+  // lands at v = 1 - 1.7e-14 -> mask row 1, ink, a hit the game does not
+  // have; with the runner's exact zero (traces/trig-probe: cardinals return
+  // exact values) v = 1 -> row 2, outside the 1x2 mask, miss — the
+  // recording's frame. Non-cardinal angles keep JS trig, as probed.
+  const [cos, sin] = collisionTrig(bangle);
 
   const [al, at, ar, ab] = maskA.bbox;
   const aox = maskA.originX ?? 0;
@@ -700,8 +722,17 @@ function masksOverlapRectA(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
 }
 
 function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0) {
-  const px = Math.floor(bx);
-  const py = Math.floor(by);
+  // ROUND, not floor. verify21j f9093 discriminates: a tooth at
+  // x 428.9574890137 (ink reach +6 of origin) registers against the heart
+  // rect starting at 435 in the recording — floored, its rightmost ink cell
+  // is 434 and the hit comes a frame late; rounded to 429 it is 435 and the
+  // hit lands on the game's frame. Every earlier receipt (t6 toothmeet, the
+  // t4 contact sweep, 14 verified turns of fullfight hits) is indifferent
+  // between the two — the suites all pass either way — because a bullet
+  // crossing at several px/frame rarely puts the marginal pixel inside the
+  // [.5, 1) fraction window on the exact touching frame.
+  const px = Math.round(bx);
+  const py = Math.round(by);
   const [al, at, ar, ab] = maskA.bbox;
   const [bl, bt, br, bb] = maskB.bbox;
 
@@ -709,9 +740,9 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   // local (u,v) -> (u cos a + v sin a, -u sin a + v cos a); sampling uses
   // the inverse. Standard f64 trig — the bbox pre-check below, not trig
   // epsilon behaviour, is what decides the degenerate axis-aligned cases.
-  const r = (bangle * Math.PI) / 180;
-  const cos = Math.cos(r);
-  const sin = Math.sin(r);
+  // Same cardinal-exact trig as masksOverlapRectA — see the f9433 receipt
+  // there. Unrotated calls (the common case here) get 1/0 either way.
+  const [cos, sin] = collisionTrig(bangle);
 
   // B's world-space integer bounding box: rotate the corners of its scaled
   // bbox rectangle, then floor the min edge and ceil-1 the max edge. This is
@@ -937,6 +968,22 @@ export function scrPreciseHitRotatedRect(heart, e, meta, n = 3) {
  * Segment against an axis-aligned rectangle, by slab clipping.
  */
 export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
+  // ENDPOINTS FLOORED, EDGES INCLUSIVE — two swept receipts on opposite
+  // sides of every uniform real-valued model pin this pair:
+  //
+  //   f1334: the probe tip at soul.y + 19.5 CONNECTS in the recording —
+  //     floor(195.5) = 195 touches the inclusive bottom edge;
+  //   f5549: a probe line at x = soul.x + 20 − 1.6e-6 (the runner-trig
+  //     cos(90) residue) MISSES — floored, its x stays past the inclusive
+  //     right edge through the soul's whole y-band, and the game connects
+  //     one frame later when the sample lands a full 8px step inside.
+  //
+  // The flooring matches the "instance positions floored" family every
+  // other calibrated collision routine here uses.
+  x1 = Math.floor(x1);
+  y1 = Math.floor(y1);
+  x2 = Math.floor(x2);
+  y2 = Math.floor(y2);
   const dx = x2 - x1;
   const dy = y2 - y1;
   let t0 = 0;
@@ -971,8 +1018,11 @@ export function heartBBox(heart) {
   // ([2..17]), and the sword tunnel's swept probe reads whichever is
   // current (verify21h f1372: an edge contact the [2..17] box misses).
   const [l, t, r, b] = (heart.mask ?? HEART_MASK).bbox;
-  // Inclusive bbox, so the far edge is one pixel past the stored index.
-  return [heart.x + l, heart.y + t, heart.x + r + 1, heart.y + b + 1];
+  // INCLUSIVE integer edges, [l..r] x [t..b] — the coordinates of the last
+  // included pixel, exactly as the runner's bbox fields hold them. The
+  // segment side is floored before the test (collisionLineRect); together
+  // the two conventions satisfy both swept receipts — see there.
+  return [heart.x + l, heart.y + t, heart.x + r, heart.y + b];
 }
 
 

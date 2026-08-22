@@ -228,7 +228,13 @@ export const roaringStar = {
         }
       }
 
-      if (e.timer >= 4) destroy(e);
+      if (e.timer >= 4) {
+        if (globalThis.process?.env?.KNIGHT_RSTAR_DEBUG) {
+          console.error(`[rstar] burst f=${state.frame} seq=${e.seq}`
+            + ` (${e.x.toFixed(2)},${e.y.toFixed(2)})`);
+        }
+        destroy(e);
+      }
     }
   },
 };

@@ -146,10 +146,17 @@ if (gzIdx >= 0) {
     const fight = Number(r[0]) + 1;
     if (!Number.isFinite(fight)) continue;
     if (!byFrame.has(fight)) byFrame.set(fight, []);
-    // `inv` is the game's global.inv AT the event — the graze gate's input
-    // with the frame's hit ordering already resolved (see stepGraze).
+    // `inv` is the game's global.inv AT the event, and `active` the bullet's
+    // active flag at the same instant — both gates' inputs with the frame's
+    // hit ordering already resolved (see stepGraze). `active` matters when a
+    // strike zeroes the bullet's flag between the heart pairing and the
+    // graze pairing of ONE collision phase: verify21j f1084's splitslash cut
+    // lands (Other_15: active = 0) and the graze event logs active 0 and
+    // pays nothing, while the sim's damage pass runs after graze(old) and
+    // its own flag still read true.
     byFrame.get(fight).push({
-      type: r[2], x: Number(r[4]), y: Number(r[5]), inv: Number(r[10]), used: false,
+      type: r[2], x: Number(r[4]), y: Number(r[5]),
+      active: Number(r[8]), inv: Number(r[10]), used: false,
     });
     n++;
   }
@@ -259,6 +266,7 @@ for (let f = 0; f < replay.frames; f++) {
       + ` menu=${state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-'}`
       + ` bar=${dir?.bar ? `x${dir.bar.boltx}${dir.bar.done ? 'D' : ''}` : '-'}`
       + ` talked=${dir?.talked ?? '-'} started=${dir?.started ?? '-'}`
+      + ` view=(${state.view.x},${state.view.y}) inv=${state.invTimer}`
       + (cone ? ` cone con=${cone.con} end=${cone.endtimer}` : ''));
   }
 }

@@ -85,10 +85,16 @@ export const swordTunnelHitbox = {
     if (e.timer === 3) destroy(e);
   },
 
-  collides(e, heart) {
+  collides(e, heart, state) {
     if (e.active !== 1) return false;
+    // PRE-STEP soul, like the swept probe and the proximity gate: the bar's
+    // one active frame connects against where the soul stood at the top of
+    // the frame — verify21j f5683: the recording hits with the soul's row
+    // at 212 where the live-position precise test's hit region ends at 211;
+    // the pre-step position (208) is inside it.
+    const hp = state?.soulPrev ?? heart;
     return masksOverlap(
-      heart.mask ?? HEART_MASK, heart.x, heart.y,
+      heart.mask ?? HEART_MASK, hp.x, hp.y,
       PXWHITE2_MASK, e.x, e.y, e.image_xscale, e.image_yscale, e.image_angle,
     );
   },
@@ -275,6 +281,11 @@ export const swordTunnelSword = {
           const tipx = e.x + lengthdirX(37, e.image_angle);
           const tipy = e.y + lengthdirY(37, e.image_angle);
           if (collisionLineRect(e.x, e.y, tipx, tipy, bx0, by0, bx1, by1)) {
+            if (globalThis.process?.env?.KNIGHT_SWEEP_DEBUG) {
+              console.error(`[sweep] f=${globalThis.__simFrame} seq=${e.seq}`
+                + ` sample=(${e.x},${e.y}) tip=(${tipx},${tipy})`
+                + ` box=[${bx0},${by0},${bx1},${by1}] inv=${state.invTimer}`);
+            }
             e.tunnelHits = (e.tunnelHits ?? 0) + 1;
             state.tunnelHits = (state.tunnelHits ?? 0) + 1;
             // `event_user(5)` IS Other_15 — the swept probe does not just

@@ -39,7 +39,7 @@ import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
 import { castSpell } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
-  fightDamage, damageKnight, advanceTurn, stepKnightAnim, phase4Reached,
+  fightDamage, damageKnight, advanceTurn, stepKnightAnim, tickChargeup, phase4Reached,
   endCutsceneReached, startEndCutscene, stepEndCutscene, DR_PHASE4, KNIGHT_MAXHP,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
@@ -174,6 +174,11 @@ const turnClock = {
   // A Step-phase decrement at order -100 satisfied only the third. All
   // steps, then the decrement: End Step.
   step(e, state) {
+    // The charge-up's tick belongs to the STEP phase — the knight's own
+    // Step, before the controller's decrement — so its timer-60
+    // `turntimer = 1` stomp is decremented to 0 and torn down within the
+    // same frame. See tickChargeup in sim/knight.js.
+    tickChargeup(state);
     // THE HEART DIES BEFORE ITS OWN STEP on the frame the clock expires.
     // The controller's block runs [decrement; if <= 0 destroy obj_heart] and
     // the controller steps BEFORE the per-turn heart — so on the expiry
@@ -591,6 +596,14 @@ const director = {
         // table (a phase's LAST turn has already reset phaseturn to 0 at
         // selection, and nx.turn is 0 there too).
         e.resumeTurn = nx.turn;
+        // THE GATE FLIPS THE KNIGHT'S OWN PHASE ON THIS FRAME, not at the
+        // next selector: `if (hp <= maxhp*0.8 ...) phase = 4;` runs in the
+        // knight's Step on the turn's LAST frame (turntimer <= 1). The
+        // trace column rides state.knightPhase, which otherwise updates in
+        // the mnfight-1.5 block ~15 frames on — verify21j f10831 has the
+        // recording at 4 with the sim still 3.
+        state.knightPhase = 4;
+        state.phaseNum = 4;
       }
       return;
     }
@@ -1227,7 +1240,16 @@ const director = {
         // launch override floor it away twelve frames later; the charge-up
         // and knightlines keep this 90, already worn down by the spawn
         // window, exactly as the recording's diag shows.
-        if (state.turntimer < 90) state.turntimer = 90;
+        //
+        // 89, NOT 90: the knight's floor lands during his Step and the
+        // battlecontroller's decrement follows within the SAME frame, so
+        // the armed frame ENDS one lower. verify21j's per-frame clock
+        // (oracle_box.csv) shows every 1.5-transition ending its frame at
+        // 89 — all fourteen of them — and every launch override ending at
+        // tl - 1. The sim's decrement for this frame has already run (or
+        // is gated off), so the same-frame wear is folded into the armed
+        // value.
+        if (state.turntimer < 90) state.turntimer = 89;
         e.clockOn = true;
         openArena(state, upcoming);
         // THE SELECTOR HAS RUN (this tick is the game's post-dialogue
@@ -1245,6 +1267,16 @@ const director = {
           // through so the flip is visible on ITS OWN frame's trace row,
           // as the recording has it.
           state.phaseNum = state.knightPhase;
+        }
+        // ROARING'S SELECTOR LINES land HERE — Other_10's `phase4turn == 3`
+        // branch assigns `damagereduction = 0.4` and `haveusedroaring =
+        // true` alongside `myattackchoice = 9`, and Other_10 runs on this
+        // mnfight-1.5 frame, eleven frames before the launch. verify21j
+        // f11130: the recording's dr flips to 0.4 on the same frame its
+        // clock floors to 89.
+        if (upcoming?.name?.toLowerCase().includes('roaring') && state.knight) {
+          state.knight.haveusedroaring = true;
+          state.knight.damagereduction = DR_PHASE4;
         }
         const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
         if (gt) gt.arenaOpened = upcoming.ac;
@@ -1321,19 +1353,30 @@ const director = {
       if (e.spawnDelay === 1) {
         const up = FIGHT_TABLE[e.phase][e.turn];
         const tl = turnLength(up.ac, up.difficulty);
-        // THE -1 IS PER-TURN, and the mechanism is not yet derived. Turn 1's
-        // end (the f327 heart-destruction) needs tl-1; turn 3's (verify21g:
-        // game soul-kill at f1135, one frame after a tl-1 clock reaches it)
-        // needs the full tl. The likely mechanism is WHEN the knight's
-        // scr_turntimer floor lands relative to that frame's decrement —
-        // dialogue length shifts it per turn — but no recording traces
-        // global.turntimer per frame yet, so this ships as measured values:
-        // Flurry arms full, everything else keeps the turn-1 fit. The next
-        // oracle patch revision should log turntimer per frame and settle
-        // the rule.
-        const armed = up.ac === 2 ? tl : tl - 1;
+        // tl - 1, EVERY TURN — the rule the old per-turn fit asked a future
+        // recording to settle, now settled: verify21j's per-frame clock
+        // (oracle_box.csv) shows every launch override in the fight ending
+        // its frame at tl - 1, Flurry included (349 for 350 at f800, f2432,
+        // f4577, f6735, f8833). The knight's scr_turntimer floor lands in
+        // his Step and the battlecontroller's decrement follows in the same
+        // frame. The old `ac === 2 ? tl` exception (fitted to verify21g's
+        // turn-3 soul-kill under the older harness) ran every Flurry clock
+        // one high for its whole turn — invisible while Flurry's manager
+        // zeroed the clock itself, and caught at f9166 where lap 2's last
+        // split was still mid-flight and the NATURAL expiry decided.
+        const armed = tl - 1;
         if (tl > 0 && state.turntimer < armed) state.turntimer = armed;
         state.turntimerArmed = true;
+        // THE CHARGE-UP STARTS ON THE ARM FRAME. The selector's
+        // `chargeupcon = 1` and the charge block's first tick share ONE
+        // knight Step (the block sits below the selector in the same
+        // event) — the game's rtimer-12 frame. The sim's launchAttack runs
+        // a frame later than its arm, so the flag and tick land here:
+        // verify21j — launch f10953, tick 60 at f11012, teardown f11012.
+        if (up.ac === -1 && state.knight) {
+          state.knight.chargeupcon = 1;
+          tickChargeup(state);
+        }
       }
       e.spawnDelay -= 1;
       return;
