@@ -9,9 +9,14 @@ export PATH="$HOME/tools/node/bin:$PATH"
 cd ~/knight-sim && npm run verify
 ```
 
-Expected: **40 of 41 suites green.** The one failure, `verify-fullfight`, is
-the whole-fight oracle diff and is TRACKED, not ignored — see task #28 and
-`docs/HANDOFF.md`. Any OTHER failure means stop and fix before adding anything.
+Expected: **all 55 suites green, including `verify-fullfight`.** The
+whole-fight oracle diff now passes on BOTH recorded tokens — 12,011 and 12,007
+frames, 176 columns — under the four measured micro-tolerances that have always
+been part of its premise (POSITION 0.05px, ANGLE 0.02deg, SCALE 5e-5, SOUL
+0.01px). It is NOT bit-exact: a raw tolerance-free scan still shows ULP-scale
+differences from a constant one-ulp offset that does not accumulate. Say
+"one-to-one under the declared tolerances", never "bit-exact". Any failure at
+all now means stop and fix before adding anything.
 
 Also run `node tools/verify-damage.mjs`: it asserts no live bullet is still
 carrying `scr_bullet_init`'s placeholder damage, which is a bug class that

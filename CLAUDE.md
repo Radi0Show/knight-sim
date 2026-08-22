@@ -14,8 +14,8 @@ checks it.
 
 ```bash
 export PATH="$HOME/tools/node/bin:$PATH"   # Node is NOT on PATH
-cd ~/knight-sim && npm run verify          # expect 40/41; verify-fullfight
-                                           # is task #28 and is tracked
+cd ~/knight-sim && npm run verify          # expect 55/55, all green
+                                           # (the whole-fight diff passes on both tokens)
 node tools/verify-damage.mjs               # no bullet holds the placeholder
 ```
 
