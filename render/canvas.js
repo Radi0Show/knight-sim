@@ -849,6 +849,44 @@ export async function createRenderer(canvas) {
     // numbers (under the band) the first frames of every heal were hidden
     // behind the very box whose HP it is reporting.
     drawHealWriters(ctx, state, sprites);
+
+    // THE SOUL FLYING HOME — obj_returnheart, spr_dodgeheart (its sprite is
+    // on the object definition, so no grep of the code could find it). Drawn
+    // here, over the band, because it travels from the arena down to Kris.
+    const rh = state.returnHeart;
+    if (rh) {
+      const hs = sprites.get('spr_dodgeheart');
+      if (hs?.frames?.length) {
+        blit(hs.frames[0], hs.meta.ox, hs.meta.oy, rh.x, rh.y, 1, 1, 0, 1);
+      }
+    }
+    // obj_heartburst — three expanding outlines, from its Draw:
+    //
+    //   draw_sprite_ext(spr_heartoutline2, 0, xs+9, ys+9, 0.25+b, 0.25+b/2, ...
+    //                   c_white, 0.8 - b/6);
+    //   draw_sprite_ext(spr_heartoutline,  0, xs+9, ys+9, 0.25+b/1.5, ...
+    //
+    // spr_heartoutline and spr_heartoutline2 are NOT in the sprite pack, so
+    // the burst is approximated with spr_dodgeheart at the same scales and
+    // alphas rather than skipped — LABELLED, and a note for whoever next runs
+    // the sprite extraction: adding those two names makes this exact.
+    const hb = state.heartBurst;
+    if (hb) {
+      const hs = sprites.get('spr_dodgeheart');
+      if (hs?.frames?.length) {
+        const b = hb.burst;
+        const rings = [
+          [0.25 + b, 0.25 + b / 2, 0.8 - b / 6],
+          [0.25 + b / 1.5, 0.25 + b / 3, 1 - b / 6],
+          [0.2 + b / 2.5, 0.2 + b / 5, 1.2 - b / 6],
+        ];
+        for (const [sx, sy, a] of rings) {
+          if (a <= 0) continue;
+          blit(hs.frames[0], hs.meta.ox, hs.meta.oy, hb.x + 9, hb.y + 9,
+            sx, sy, 0, Math.min(1, a));
+        }
+      }
+    }
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.
     drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);
 

@@ -451,6 +451,28 @@ export function stepFrame(state, input) {
   // like its owner instance in the game, so it keeps moving while the menu is
   // open — which is when items are actually used.
   stepHealWriters(state);
+  // obj_returnheart: `move_towards_point(distx, disty, dist / flytime)` with
+  // flytime 8 — a CONSTANT speed set once at creation, so it covers an eighth
+  // of the original distance every frame and arrives on frame 8, where
+  // alarm[0] snaps it to the target and swaps it for obj_heartburst.
+  // Frame-level because it outlives the turn that made it.
+  const rh = state.returnHeart;
+  if (rh) {
+    rh.t += 1;
+    const p = Math.min(1, rh.t / rh.flytime);
+    rh.x = rh.x + (rh.tx - rh.x) * (1 / Math.max(1, rh.flytime - rh.t + 1));
+    rh.y = rh.y + (rh.ty - rh.y) * (1 / Math.max(1, rh.flytime - rh.t + 1));
+    if (p >= 1) {
+      // `x = distx; y = disty; instance_create(x, y, obj_heartburst);`
+      state.returnHeart = null;
+      state.heartBurst = { x: rh.tx, y: rh.ty, burst: 0 };
+    }
+  }
+  // obj_heartburst's Draw is its whole life: `burst += 1` and out at > 10.
+  if (state.heartBurst) {
+    state.heartBurst.burst += 1;
+    if (state.heartBurst.burst > 10) state.heartBurst = null;
+  }
 
   // obj_grazebox's End Step: the box moves to the heart NOW, after this
   // frame's collisions already tested against where it was. See runCollisions.

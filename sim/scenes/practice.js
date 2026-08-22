@@ -23,7 +23,7 @@ import { gmlCreate, gmlChoose, gmlIrandom, gmlRandom } from '../rng.js';
 import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry, turnLength } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
-import { partyWiped, PARTY as PARTY_STATS, isUp } from '../damage.js';
+import { partyWiped, PARTY as PARTY_STATS, isUp, PARTY_POS} from '../damage.js';
 import { createFightBar, stepFightBar, fightTp } from '../fightbar.js';
 import { endTurnItems } from '../menu.js';
 import { applyItem } from '../items.js';
@@ -191,6 +191,12 @@ const turnClock = {
     // decrement below.
     const d = e.director;
     if (d?.started && state.soul && gmlLte(state.turntimer, 1) && state.turntimer > -900000) {
+      // THE RETURN HEART IS BORN HERE, in the same breath as the destroy —
+      // `with (obj_heart) { instance_create(x, y, obj_returnheart);
+      // instance_destroy(); }`. This is the controller's block, so it is the
+      // site that actually sees the soul; the director's endStep below runs
+      // after it and finds nothing left.
+      spawnReturnHeart(state, state.soul.x, state.soul.y);
       state.soul.alive = false;
       state.soul = null;
     }
@@ -1420,6 +1426,29 @@ const director = {
     e.drain = 0;
   },
 };
+
+/**
+ * `obj_returnheart` — spr_dodgeheart (from the object definition; its Create
+ * sets no sprite), flying to Kris and bursting.
+ *
+ *     flytime = 8;
+ *     distx = obj_herokris.x + 10; disty = obj_herokris.y + 40;
+ *     move_towards_point(distx, disty, dist / flytime);
+ *     alarm[0] = flytime;   ->  snap, obj_heartburst, destroy
+ *
+ * PURELY VISUAL: plain state, not an entity, so it cannot reach a traced
+ * column, and it draws no RNG. Stepped from sim/index.js because it outlives
+ * the turn that made it.
+ */
+function spawnReturnHeart(state, x, y) {
+  state.returnHeart = {
+    x, y,
+    tx: PARTY_POS[0].x + 10,
+    ty: PARTY_POS[0].y + 40,
+    t: 0,
+    flytime: 8,
+  };
+}
 
 export function buildPracticeScene(state, { seed = 12345 } = {}) {
   state.menu = createMenu();
