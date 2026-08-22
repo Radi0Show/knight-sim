@@ -59,7 +59,8 @@
 //
 // LABELLED APPROXIMATIONS: dialogue is the chatbox (no balloons, faces or
 // portrait art); c_talk_wait is a fresh-confirm gate; the wind track
-// (wind_highplace.ogg at pitch 0.5) is cued but plays only if the local
+// (wind_highplace.ogg at pitch 0.5) is cued and now PLAYS — the file is a
+// loose .ogg in Resources/mus and is in the audio pack. Formerly gated on the local
 // audio pack carries it; camera pans use inout easing (c_pan's curve is the
 // cutscene master's default, not re-derived). X skips the whole scene.
 

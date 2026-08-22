@@ -743,9 +743,27 @@ function frame(now) {
       }
       const cues = [];
       stepVictoryScene(cutsceneSeq, input, cues);
-      // The scene's music ops ride the cue list: the wind track plays only
-      // if the local pack carries it (wind_highplace is not extracted), so
-      // 'wind' is a labelled no-op today; 'stop' quiets any loop.
+      // THE WIND. The ending's ambience is a real track and it is now in the
+      // pack: obj_ch3_PTB02 does
+      //
+      //     c_mus2("initloop", "wind_highplace.ogg", 0);
+      //     c_mus2("pitch", 0.5, 0);
+      //     c_mus2("volume", 0, 0); c_mus2("volume", 1, 60);
+      //
+      // a LOOP at HALF PITCH under the whole cutscene. It used to be a
+      // labelled no-op because the file was thought unextracted; it is a
+      // loose .ogg in Resources/mus, like knight.ogg and AUDIO_DRONE, so it
+      // needed no extraction pass at all. The 60-frame volume ramp is not
+      // reproduced — the driver has no fade — so it comes in at full gain;
+      // that is the one approximation here and it is deliberate.
+      for (const c of cues) {
+        if (!c.music) continue;
+        if (c.music === 'wind') {
+          audio.play([{ name: 'wind_highplace', pitch: 0.5, gain: 1, loop: true }]);
+        } else if (c.music === 'stop') {
+          audio.stopLoop('wind_highplace');
+        }
+      }
       const sound = cues.filter((c) => !c.music);
       if (sound.length) audio.play(sound);
       if (cutsceneSeq.done) break;

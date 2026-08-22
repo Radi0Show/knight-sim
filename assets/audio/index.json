@@ -90,5 +90,6 @@
  "snd_txtsus": "snd_txtsus.wav",
  "snd_weaponpull_fast": "snd_weaponpull_fast.wav",
  "snd_wideslash_low": "snd_wideslash_low.wav",
- "snd_wing": "snd_wing.wav"
+ "snd_wing": "snd_wing.wav",
+ "wind_highplace": "wind_highplace.ogg"
 }
