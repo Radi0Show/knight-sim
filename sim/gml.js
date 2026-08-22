@@ -92,6 +92,25 @@ export function gmlEq(a, b) {
 }
 
 /**
+ * GML `a <= b` on reals, with the same tolerance `==` carries.
+ *
+ * The engine's real comparisons are epsilon-based, so a value sitting a few
+ * float-ulps ABOVE a threshold still compares as reaching it. That is not a
+ * curiosity for the turn clock: `global.turntimer` is ACCUMULATED — the graze
+ * events subtract `timepoints / 30` and `timepoints` all turn long — so a turn
+ * that grazed a lot lands on 3.2e-14 rather than a clean 0, and a bit-exact
+ * `<= 0` then runs the whole turn ONE FRAME LONG.
+ *
+ * Measured: verify37 f2315. Both clocks read 1.0 at f2314; the game tears the
+ * turn down at f2315 while the sim, holding 3.197e-14, waited for f2316 and
+ * diverged the rest of the run. verify21j never showed it because its turns
+ * happened to land on exact values.
+ */
+export function gmlLte(a, b) {
+  return a <= b + GML_EPSILON;
+}
+
+/**
  * GML `median(...)` — and in this codebase it is a CLAMP, written three ways.
  *
  *     median(-arg2, arg2, angle_difference(arg1, arg0))     // scr_anglechange

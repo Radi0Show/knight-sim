@@ -37,7 +37,7 @@
 // only to award TP and shave turntimer on a graze (out of scope: dodge-only).
 
 import { spawn, destroy } from '../entity.js';
-import { masksOverlap, HEART_MASK, PXWHITE2_MASK } from '../masks.js';
+import { masksOverlap, HEART_MASK, HEART_RECT, PXWHITE2_MASK } from '../masks.js';
 import { scrTensionheal } from '../tension.js';
 import { gearOf } from '../damage.js';
 import { partyWearing } from '../equipment.js';
@@ -84,40 +84,31 @@ export const trackingSlashExtraGraze = {
     // PRE-MOVE soul, like the grazebox and the sword's aim: the band pays on
     // the frame the recording pays (f508, not f507) only against the soul's
     // last-frame position. grazePrev is heart+10 on both axes.
+    //
+    // THE CHECK IS `place_meeting`, so it runs the project's OWN calibrated
+    // precise-mask routine — not a bespoke shape. This used to be a rotated
+    // rectangle spanning [-6..+9] across the bar, fitted to 2,586 logged
+    // probes of the game's place_meeting (traces/retired/
+    // fullfight-slashlog.bandcheck.csv). That fit scored 2581/2586 and the
+    // precise routine scores 2574 — but the fit's five misses include two
+    // FALSE NEGATIVES, and the precise routine's twelve are ALL false
+    // positives, never a missed hit. A fitted shape that can miss a real hit
+    // is the dangerous kind: verify37 f577 is exactly that case, a band the
+    // game pays and the rectangle refused by 1.07px, which cost a frame of
+    // TP and diverged the run. The mask is spr_pxwhite2 (1x2, origin (0,1))
+    // scaled 900x7 against the fight soul's 20x20 rect.
+    //
+    // Same probe set also settles the SOUL POSITION with no fitting at all:
+    // the probe logs obj_heart's coordinates at the instant place_meeting
+    // ran, and they match the trace row at the same (lagged) label 2468/2586
+    // with ZERO matches against the next frame — the band always sees the
+    // pre-move soul, never the live one.
+    const overlaps = (sx, sy) => masksOverlap(
+      HEART_RECT, sx, sy, PXWHITE2_MASK, e.x, e.y, 900, 7, e.image_angle,
+    );
     const hx = state.grazePrev ? state.grazePrev.x - 10 : heart.x;
     const hy = state.grazePrev ? state.grazePrev.y - 10 : heart.y;
-    // THE CHECK, FITTED FROM 2586 LOGGED PROBES of the game's own
-    // place_meeting across every tracking turn of the recording
-    // (oracle_bandcheck.csv): the band behaves as a ROTATED RECTANGLE from
-    // its origin, 900 long, spanning [-6..+9] across the bar (asymmetric —
-    // the sprite's origin sits on row 1 of 2), against the soul's [+2..+18]
-    // square, by separating-axis test. 2581/2586 probes agree; the five
-    // stragglers are sub-pixel edge sampling, all within ~1px of a boundary.
-    // A literal precise 900x14 bar misses recorded hits by up to 12px and
-    // the rotated AABB overpays whole bands.
-    const r = (e.image_angle * Math.PI) / 180;
-    const cosA = Math.cos(r);
-    const sinA = Math.sin(r);
-    const x0 = hx + 2, x1 = hx + 18, y0 = hy + 2, y1 = hy + 18;
-    const corners = [[0, -6], [900, -6], [0, 9], [900, 9]].map(([t, d]) => [
-      e.x + t * cosA + d * sinA, e.y - t * sinA + d * cosA,
-    ]);
-    const cxs = corners.map((q) => q[0]);
-    const cys = corners.map((q) => q[1]);
-    let bandHit = !(Math.max(...cxs) < x0 || Math.min(...cxs) > x1
-      || Math.max(...cys) < y0 || Math.min(...cys) > y1);
-    if (bandHit) {
-      for (const [ax, ay, lo, hi] of [[cosA, -sinA, 0, 900], [sinA, cosA, -6, 9]]) {
-        let mn = Infinity;
-        let mx = -Infinity;
-        for (const [qx, qy] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
-          const v = (qx - e.x) * ax + (qy - e.y) * ay;
-          mn = Math.min(mn, v);
-          mx = Math.max(mx, v);
-        }
-        if (mx < lo || mn > hi) { bandHit = false; break; }
-      }
-    }
+    const bandHit = overlaps(hx, hy);
     if (!bandHit) return;
 
     const loadout = gearOf(state);

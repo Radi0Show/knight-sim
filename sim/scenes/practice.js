@@ -15,6 +15,7 @@
 // themselves are the verified ones.
 
 import { spawn } from '../entity.js';
+import { gmlLte } from '../gml.js';
 import { soul } from '../soul.js';
 import { HEART_RECT } from '../masks.js';
 import { battlebox, settleBox } from '../battlebox.js';
@@ -189,7 +190,7 @@ const turnClock = {
     // the director's endStep, which sees the same expiry after the End-Step
     // decrement below.
     const d = e.director;
-    if (d?.started && state.soul && state.turntimer <= 1 && state.turntimer > -900000) {
+    if (d?.started && state.soul && gmlLte(state.turntimer, 1) && state.turntimer > -900000) {
       state.soul.alive = false;
       state.soul = null;
     }
@@ -474,7 +475,7 @@ const director = {
       // The controller's own form: `turntimer <= 0` tested right after its
       // decrement. This endStep runs AFTER turnClock's (stepOrder -100
       // orders End Steps too), so the value here IS the post-decrement one.
-      const finished = state.turntimer <= 0;
+      const finished = gmlLte(state.turntimer, 0);
       if (!finished) return;
 
       e.started = false;

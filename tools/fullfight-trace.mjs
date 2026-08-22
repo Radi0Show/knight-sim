@@ -288,6 +288,35 @@ const dtRange = (process.env.KNIGHT_DRAW_TRACE ?? '').split('-').map(Number);
 for (let f = 0; f < replay.frames; f++) {
   globalThis.__simFrame = f;
   globalThis.__trap = dtRange.length === 2 && f >= dtRange[0] && f <= dtRange[1];
+  // KNIGHT_TT_WRITES="lo-hi" logs every WRITE to the turn clock with its
+  // caller, for a frame window. The clock is the fight's most-shared piece of
+  // state — grazes, the Stars controller, Flurry's manager and the turn
+  // machinery all move it — so "which line changed it" is otherwise guesswork.
+  // It found verify37 f2315 (a 3.2e-14 graze residue defeating a bit-exact
+  // `<= 0`) in one run. Accessor installed only inside the window and removed
+  // after; CLAUDE.md's warning about defineProperty applies to BUILT-IN fields
+  // like the soul's x, not to a plain state property like this one.
+  if (process.env.KNIGHT_TT_WRITES) {
+    const [lo, hi] = process.env.KNIGHT_TT_WRITES.split('-').map(Number);
+    if (f === lo) {
+      let v = state.turntimer;
+      Object.defineProperty(state, 'turntimer', {
+        configurable: true,
+        get() { return v; },
+        set(nv) {
+          if (nv !== v) {
+            console.error(`[ttw] f=${state.frame} ${v} -> ${nv}  ${new Error().stack.split('\n')[2]?.trim().slice(0, 90)}`);
+          }
+          v = nv;
+        },
+      });
+    }
+    if (f === hi + 1) {
+      const v = state.turntimer;
+      delete state.turntimer;
+      state.turntimer = v;
+    }
+  }
   stepFrame(state, replay.inputAt(f));
   if (ttRanges.some(([a, b]) => f >= a && f <= (b ?? a))) {
     const cone = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_pointing_cone');
