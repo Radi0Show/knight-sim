@@ -268,16 +268,20 @@ export function tickChargeup(state) {
   // Step. On a launch frame scr_bulletspawner has already re-anchored the
   // stream by the time this runs, so the draw belongs AFTER the launch --
   // taken here it would be discarded by the reseed.
-  state.pendingChargeupDraw = k.chargeuptimer % 4 === 0 && k.chargeuptimer > 10;
+  // Taken HERE, which is already the game's order: obj_knight_enemy's Step
+  // runs the attack selector first and this block afterwards, and in the sim
+  // the launching entity steps before the director that calls this. The one
+  // nuance left is that the game's controller does not create the attack
+  // object until its OWN Step, later in the same frame, so this draw lands
+  // BEFORE the attack's Create randoms; sim launchAttack creates them inside
+  // the launch, so it lands after. Unobservable in the current data -- the
+  // condition is false on both tokens' ROARING launch frames (timer 185 and
+  // 190) -- but it is why f11269's missing draw has nowhere to sit.
+  if (k.chargeuptimer % 4 === 0 && k.chargeuptimer > 10 && state.gmlRng) {
+    gmlRandom(state.gmlRng, 360);
+  }
 
   if (k.chargeuptimer === 60) state.turntimer = 1;
-}
-
-/** Takes the chargeup afterimage's draw, if this frame is due one. */
-export function consumeChargeupDraw(state) {
-  if (!state.pendingChargeupDraw) return;
-  state.pendingChargeupDraw = false;
-  if (state.gmlRng) gmlRandom(state.gmlRng, 360);
 }
 
 export function stepKnightAnim(state) {

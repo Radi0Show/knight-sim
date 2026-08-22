@@ -40,7 +40,7 @@ import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
 import { castSpell } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
-  fightDamage, damageKnight, advanceTurn, stepKnightAnim, tickChargeup, consumeChargeupDraw, phase4Reached,
+  fightDamage, damageKnight, advanceTurn, stepKnightAnim, tickChargeup, phase4Reached,
   endCutsceneReached, startEndCutscene, stepEndCutscene, DR_PHASE4, KNIGHT_MAXHP,
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
@@ -197,10 +197,6 @@ const turnClock = {
   },
 
   endStep(e, state) {
-    // FALLBACK for the chargeup afterimage draw. tickChargeup defers it so a
-    // launch frame takes it after scr_bulletspawner's reseed; on every other
-    // frame nothing else claims it, so it is taken here.
-    consumeChargeupDraw(state);
     // `clockOn` covers the WHOLE bullet phase, spawn delay included — the
     // controller decrements on every `mnfight == 2` frame, and the oracle's
     // diag shows the clock falling from the first rtimer frame (f77: 120 ->
@@ -1417,9 +1413,6 @@ const director = {
       state.knight.damagereduction = DR_PHASE4;
     }
     e.owner = launchAttack(state, entryNow);
-    // The knight's chargeup afterimage draw is BELOW the selector in the same
-    // Step, so on a launch frame it lands after scr_bulletspawner's reseed.
-    consumeChargeupDraw(state);
     e.started = true;
     e.elapsed = 0;
     e.drain = 0;
