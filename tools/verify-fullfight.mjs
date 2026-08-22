@@ -37,7 +37,7 @@
 // forty, so a count mismatch is reported as its own finding and the positional
 // columns are suppressed for that frame.
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // KNIGHT_TRACES overrides where the oracle CSVs are read from. It exists so
@@ -379,6 +379,23 @@ function showContext(res, f) {
   return lines.join('\n');
 }
 
+/** Newest mtime of any .js under sim/ — the watermark a sim trace must beat. */
+function newestSimMtime() {
+  let newest = 0;
+  const walk = (dir) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (ent.name.endsWith('.js')) {
+        const m = statSync(full).mtimeMs;
+        if (m > newest) newest = m;
+      }
+    }
+  };
+  walk(new URL('../sim', import.meta.url).pathname);
+  return newest;
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null;
@@ -416,6 +433,22 @@ function main() {
     if (!existsSync(simPath)) {
       console.log(`  FAIL: no sim trace at ${simPath}`);
       console.log(`  run: node tools/fullfight-trace.mjs --token <token> --out ${simPath}`);
+      failed++;
+      continue;
+    }
+
+    // A SIM TRACE OLDER THAN sim/ IS NOT EVIDENCE. It was produced by code
+    // that no longer exists, so comparing it answers a question about the
+    // past and reports it as a pass — the "green does not mean verified"
+    // trap in CLAUDE.md, reached twice in one session: once by chasing a
+    // divergence in a trace built by a since-reverted experiment, and once
+    // by two token-21 fights that silently kept passing across a real change
+    // to runMotion. Both tokens' recordings predate tools/record-fullfight.sh
+    // saving its token, so those two cannot be regenerated at all.
+    if (statSync(simPath).mtimeMs < newestSimMtime()) {
+      console.log('  FAIL: sim trace is STALE — older than sim/, so it was');
+      console.log('        produced by code that has since changed. Regenerate');
+      console.log(`        it (needs ${TRACES}/${name}.token) or delete it.`);
       failed++;
       continue;
     }
