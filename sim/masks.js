@@ -974,11 +974,22 @@ export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
   // samples lands on the corner cell. Exact slab clipping — what this used to
   // do — is the right answer to the wrong question and misses those.
   //
-  // ENDPOINTS RAW, SAMPLES FLOORED, step count ceil(max(|dx|,|dy|)). Each
-  // part is load-bearing: flooring the endpoints first changes the
-  // interpolated PATH rather than merely its rounding, and a step count that
-  // is not ceiled never samples t = 1 — sometimes the only in-box point
-  // (probe21 f1500, a real damage hit).
+  // ENDPOINTS RAW, SAMPLES FLOORED, FOUR STEPS PER PIXEL. Each part is
+  // load-bearing: flooring the endpoints first changes the interpolated PATH
+  // rather than merely its rounding, and the step count must reach t = 1 —
+  // sometimes the only in-box point (probe21 f1500, a real damage hit).
+  //
+  // THE DENSITY IS NOT A FITTED KNOB. Swept over the labelled set, the score
+  // is flat from 2 steps per pixel all the way to 2048:
+  //
+  //     0.5x  1x  1.5x   fn=2, fp=0        (too coarse — misses f3041/f3199)
+  //     2x ... 2048x     PERFECT, 8126/8126
+  //
+  // Four orders of magnitude of plateau, so any half-pixel-or-finer sampling
+  // is the same model; 4x sits well clear of the cliff below 2x and costs a
+  // few hundred iterations per probe. What the coarse end was missing is
+  // narrow: at probe37 f3199 the segment satisfies both floor conditions only
+  // for t in (0.9377, 0.958) — a window 0.020 wide that a 1/32 step can jump.
   //
   // MEASURED AGAINST THE GAME'S OWN FIRINGS, and the measurement mattered
   // more than the result. This call is the tunnel sword's contact path — it
@@ -989,13 +1000,14 @@ export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
   // KNIGHT_SWEEP_ALL logs every evaluation, and tools/fit-lineprobe.mjs
   // joins them. Over 8,126 evaluations and 603 firings from two tokens:
   //
-  //   walk  (this)   8,124   fp=0  fn=2      clip (old)  8,123  fp=0  fn=3
+  //   walk 4x (this)  8,126   fp=0  fn=0     <- every firing, every miss
+  //   walk 1x          8,124   fp=0  fn=2
+  //   clip (old)       8,123   fp=0  fn=3
   //
-  // The two disagree on exactly ONE sample of 8,126 — probe21 f1507, where
-  // the recording's inv is 1.2, so the firing does nothing (these swords
-  // carry destroyonhit = 0). Both tokens diff identically under either model;
-  // the walk is adopted because it is the mechanism the game implements and
-  // it carries one fewer miss with no false positives.
+  // ZERO ERRORS on 603 firings and 7,523 non-firings. Note the model is NOT
+  // the continuous limit of itself: exact segment-vs-pixel-coverage (any cell
+  // the line passes through) over-fires. The game samples discretely, and a
+  // dense-but-discrete walk is what reproduces it.
   //
   // THREE TRAPS THIS ROUTINE COST, all worth more than the model:
   //
@@ -1012,10 +1024,11 @@ export function collisionLineRect(x1, y1, x2, y2, rx0, ry0, rx1, ry1) {
   //     which walked a probe tip off the box edge. Fixed in sim/gml.js at the
   //     cardinals; see the note there.
   //
-  // Remaining misses, both probe37 (f3041 and f3199): segments clipping under
-  // a pixel outside a corner that the game still fires on. Whatever explains
-  // them is a refinement of the sampling, not of the shape.
-  const steps = Math.ceil(Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)));
+  // The two misses this routine carried until 2026-08-22 (probe37 f3041 and
+  // f3199) were exactly that coarse-sampling gap, not a shape error — which
+  // is what the monotone plateau above proves: refining density fixed them
+  // and introduced nothing.
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) * 4));
   if (steps <= 0) {
     const px = Math.floor(x1);
     const py = Math.floor(y1);
