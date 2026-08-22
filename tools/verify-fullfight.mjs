@@ -396,6 +396,48 @@ function newestSimMtime() {
   return newest;
 }
 
+/**
+ * Compare the oracle's camera sidecar to the sim's view sidecar. Both are
+ * `frame, x, y, live obj_shake count`; either being absent is not an error,
+ * since recordings predating the sidecar are still perfectly good traces.
+ */
+function reportCamera(oraPath, simPath, rowFront) {
+  if (!existsSync(oraPath) || !existsSync(simPath)) return;
+  const load = (p) => {
+    const m = new Map();
+    for (const line of readFileSync(p, 'utf8').trim().split('\n')) {
+      const c = line.split(',');
+      if (!c[0] || Number.isNaN(Number(c[0]))) continue;
+      m.set(Number(c[0]), { x: c[1], y: c[2], n: c[3] });
+    }
+    return m;
+  };
+  const ora = load(oraPath);
+  const sim = load(simPath);
+  let first = null;
+  let count = 0;
+  for (const [f, o] of [...ora].sort((a, b) => a[0] - b[0])) {
+    const s = sim.get(f);
+    if (!s) continue;
+    if (o.x !== s.x || o.y !== s.y) {
+      count++;
+      if (first === null) first = { f, o, s };
+    }
+  }
+  if (first === null) {
+    console.log('  camera: matches on every compared frame');
+    return;
+  }
+  const ahead = rowFront !== undefined && rowFront !== null && first.f < rowFront;
+  console.log(
+    `  camera: ${count} frame(s) differ, first at f${first.f} ` +
+      `(oracle ${first.o.x}/${first.o.y} shakes=${first.o.n}, sim ${first.s.x}/${first.s.y} shakes=${first.s.n})`,
+  );
+  if (ahead) {
+    console.log(`     ^ EARLIER than the row divergence at f${rowFront} — likely its cause.`);
+  }
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null;
@@ -460,6 +502,21 @@ function main() {
       continue;
     }
     if (res.lengths) console.log(`  note: ${res.lengths}`);
+
+    // THE CAMERA, compared separately because it is in no traced column.
+    // Nothing in the 176 holds camerax/cameray, yet every wall cull is
+    // written against them — obj_regularbullet destroys on `x < view.x - 80`
+    // — so a shake the sim never makes moves a despawn boundary and changes
+    // the live bullet count. Two missing shakes hid here for the whole
+    // project (verify37's f6832). The oracle records the camera in a sidecar
+    // and fullfight-trace writes the sim's alongside its trace; this reports
+    // where they first part. A camera divergence EARLIER than the row front
+    // is very likely its cause, so it is called out rather than merely noted.
+    const rowFront = res.findings?.length
+      ? Number(res.oracle.rows[res.findings[0].row][0])
+      : null;
+    reportCamera(join(TRACES, `${name}.camera.csv`), simPath.replace(/\.csv$/, '') + '.view.csv',
+      rowFront);
 
     if (res.findings.length === 0 && !res.lengths) {
       console.log(`  OK  ${res.rows} frames, ${res.sim.header.length} columns, byte-exact`);

@@ -13,6 +13,7 @@
 // stand in for a fight forever.
 
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { real } from '../sim/trace.js';
 import { createState, stepFrame, traceHeader, traceRow } from '../sim/index.js';
 import { decodeReplay } from '../sim/replay.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
@@ -272,6 +273,7 @@ if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verif
 // showed up as the sim being consistently one frame behind on the menu, the
 // bar and everything downstream.
 const rows = [traceHeader(state)];
+const viewRows = [];
 // The refill itself lives INSIDE stepFrame (state.keepAlive), before the
 // trace row is captured — the oracle recorder refills before composing its
 // row, so a refill done out here, after the row was already pushed, left
@@ -317,7 +319,22 @@ for (let f = 0; f < replay.frames; f++) {
       state.turntimer = v;
     }
   }
+  const viewFrame = state.frame;
   stepFrame(state, replay.inputAt(f));
+  // THE VIEW, alongside the trace. The oracle records camerax/cameray in its
+  // own sidecar because the camera is not decoration: every wall cull
+  // compares against it (obj_regularbullet destroys on `x < view.x - 80`), so
+  // a shake the sim never made moves a despawn boundary and changes the live
+  // bullet count. Two such shakes were missing and nothing could see them,
+  // because no column in the 176 ever held the camera. Writing it here makes
+  // the oracle's sidecar comparable instead of merely recorded.
+  // LABELLED WITH THE PRE-STEP FRAME: stepFrame advances state.frame, and
+  // the shake offsets read here are the ones that were live DURING that
+  // frame's steps, which is what the oracle's obj_time Draw records.
+  viewRows.push(
+    `${viewFrame},${real(state.view.x)},${real(state.view.y)},` +
+      `${state.entities.filter((e) => e.alive && e.type.name === 'obj_shake').length}`,
+  );
   if (process.env.KNIGHT_DUMP_BULLETS) {
     const [lo, hi] = process.env.KNIGHT_DUMP_BULLETS.split('-').map(Number);
     if (f >= lo && f <= hi) {
@@ -343,6 +360,7 @@ for (let f = 0; f < replay.frames; f++) {
 }
 rows.push(...state.trace);
 writeFileSync(out, `${rows.join('\n')}\n`);
+writeFileSync(out.replace(/\.csv$/, '') + '.view.csv', `${viewRows.join('\n')}\n`);
 
 console.log(`${replay.frames} frames -> ${out}`);
 console.log(`  final: hp ${state.partyHp.join('/')} · knight ${state.knight.hp}`
