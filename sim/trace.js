@@ -179,7 +179,15 @@ function wideRow(state) {
     // trace; they are different quantities, so the sim tracks the game's own
     // counter and reports that.
     int(state.phaseturn ?? 0),
-    state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-',
+    // The oracle's coarse menu vocabulary (oracle_fullfight.csx) folds
+    // bmenuno 2 (the non-Kris spell list) and 11 (Kris's act picker) into
+    // "act", and leaves 9 (the act option grid) as its raw number. The sim's
+    // internal submenu names map onto that vocabulary here, so the two
+    // columns compare without either side knowing the other's naming.
+    state.menu?.open
+      ? ({ magic: 'act', actpick: 'act', actgrid: '9' }[state.menu.submenu]
+        ?? state.menu.submenu ?? 'buttons')
+      : '-',
     state.fightBar ? int(state.fightBar.boltx) : '-',
     int(state.dialogue?.balloonturn ?? 0),
     int(bullets.length),

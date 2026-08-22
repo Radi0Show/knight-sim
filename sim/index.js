@@ -238,6 +238,27 @@ function runCollisions(state) {
   // the graze-then-damage order; instances created mid-frame get their
   // collision events in a catch-up pass afterwards, hit first. So the
   // phases here are [graze(old)] [damage(old)] [damage(new)] [graze(new)].
+  // THE GRAZE<->HIT ORDER IS PER-TURN STATE, NOT A CONSTANT. Two receipts,
+  // same object class, opposite orders, both colseq-pinned (the shared
+  // counter both collision logs bump):
+  //
+  //   f217  (turn 1): star 110101 — graze colseq 64, hit colseq 65: the
+  //         trickle pays at inv -133 and the hit's 30 lands after, ON THE
+  //         SAME row (inv 30 AND tension +1/15 both at row 217);
+  //   f2166 (turn 6): star 116362 — hit colseq 796, graze colseq 797: the
+  //         graze logs global.inv already at 30 and pays nothing. The sim's
+  //         fixed graze-first order paid a burst there and cut the turn
+  //         clock one extra unit, pulling the cone's <=120 release to f2189.
+  //
+  // obj_grazebox is created in obj_heart's CREATE, both fresh each turn, so
+  // no static rule orders the two instances' collision events — GameMaker's
+  // instance-slot reuse decides, and the measured bit flips even mid-turn
+  // (frames 216-218 graze-first, 219 hit-first, same star). The resolution
+  // is not an order model here but the graze REPLAY carrying the gate's
+  // input: each grazelog row logs the game's global.inv at that event, with
+  // the frame's ordering already resolved, and stepGraze gates replayed
+  // rows on the row's inv rather than the sim's phase-local clock. This
+  // phase stays graze-first for the sim's own (free-play) semantics.
   const bornNow = (b) => b.bornFrame === state.frame;
   stepGraze(state, grazes, (b) => !bornNow(b));
 
@@ -282,7 +303,13 @@ function runCollisions(state) {
           + ` a=${b.image_angle} xs=${b.image_xscale} ys=${b.image_yscale}`
           + ` inv=${state.invTimer} soul=(${heart.x}, ${heart.y})`);
       }
+      // In the GAME this dispatch may come from the bullet's own STEP (the
+      // tunnel sword's swept event_user(5)) rather than the collision phase;
+      // dmg writers born under a step dispatch tick their delay clock on the
+      // birth frame. See skipBirthTick in sim/dmgnumbers.js.
+      state.damageFromStep = !!b.type.stepDamage;
       b.type.other15(b, state);
+      state.damageFromStep = false;
     }
     }
   }

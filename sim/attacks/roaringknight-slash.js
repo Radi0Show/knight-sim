@@ -170,7 +170,23 @@ export const roaringknightSlash = {
         gt.x = gt.xstart + chooseReplay(state, [-2, -1, 0, 1, 2]); // choose(-2,-1,0,1,2)
         gt.y = gt.ystart + chooseReplay(state, [-2, -1, 0, 1, 2]);
       }
+      if (globalThis.process?.env?.KNIGHT_JITTER_DEBUG) {
+        const f = globalThis.__simFrame;
+        const [a, b] = globalThis.process.env.KNIGHT_JITTER_DEBUG.split('-').map(Number);
+        if (f >= a && f <= (b ?? a)) {
+          console.error(`[jit] f=${f} slash seq=${e.seq} w=${e.width.toFixed(2)}`
+            + ` gt=(${gt?.x},${gt?.y}) xstart=${gt?.xstart}`
+            + ` soul_pre=${state.soul ? `${state.soul.x},${state.soul.y}` : 'NONE'}`);
+        }
+      }
       scrHeartclamp(state);
+      if (globalThis.process?.env?.KNIGHT_JITTER_DEBUG) {
+        const f = globalThis.__simFrame;
+        const [a, b] = globalThis.process.env.KNIGHT_JITTER_DEBUG.split('-').map(Number);
+        if (f >= a && f <= (b ?? a)) {
+          console.error(`[jit]   post-clamp soul=${state.soul ? `${state.soul.x},${state.soul.y}` : 'NONE'}`);
+        }
+      }
     }
   },
 };

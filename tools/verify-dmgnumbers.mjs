@@ -59,6 +59,13 @@ function st() {
   const s = st();
   spawnDmgNumber(s, 400, 100, 50, 0, 8);
   const n = s.dmg.list[0];
+  // THE BIRTH FRAME HAS NO DRAW. The runner's draw pass on the creation
+  // frame iterates a list that does not yet hold the new writer, so its
+  // delay clock starts one frame later — measured at verify21j f1720-1722,
+  // where the three writers' throw rolls landed at spawn+2 (delay 2) in the
+  // oracle stream, bracketed by the slash jitter pairs. This call is that
+  // tickless birth frame; the seven below are real draw frames.
+  stepDmgNumbers(s, half);
   for (let i = 0; i < 7; i++) stepDmgNumbers(s, half);
   if (n.y !== n.ystart || n.vspeed !== 0) failures.push('the number moved during its delay');
   stepDmgNumbers(s, half);

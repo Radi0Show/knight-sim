@@ -146,7 +146,11 @@ if (gzIdx >= 0) {
     const fight = Number(r[0]) + 1;
     if (!Number.isFinite(fight)) continue;
     if (!byFrame.has(fight)) byFrame.set(fight, []);
-    byFrame.get(fight).push({ type: r[2], x: Number(r[4]), y: Number(r[5]), used: false });
+    // `inv` is the game's global.inv AT the event — the graze gate's input
+    // with the frame's hit ordering already resolved (see stepGraze).
+    byFrame.get(fight).push({
+      type: r[2], x: Number(r[4]), y: Number(r[5]), inv: Number(r[10]), used: false,
+    });
     n++;
   }
   state.grazeReplay = byFrame;
@@ -224,7 +228,11 @@ for (let f = 0; f < replay.frames; f++) {
   stepFrame(state, replay.inputAt(f));
   if (ttRanges.some(([a, b]) => f >= a && f <= (b ?? a))) {
     const cone = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_pointing_cone');
+    const dir = state.entities.find((e) => e.alive && e.type.name === 'fight_director');
     console.error(`[tt] f=${f} tt=${state.turntimer}`
+      + ` menu=${state.menu?.open ? (state.menu.submenu ?? 'buttons') : '-'}`
+      + ` bar=${dir?.bar ? `x${dir.bar.boltx}${dir.bar.done ? 'D' : ''}` : '-'}`
+      + ` talked=${dir?.talked ?? '-'} started=${dir?.started ?? '-'}`
       + (cone ? ` cone con=${cone.con} end=${cone.endtimer}` : ''));
   }
 }

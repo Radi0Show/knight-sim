@@ -26,6 +26,7 @@ import {
   FACE_IDLE, FACE_ATTACK, FACE_SPELL, FACE_ITEM, FACE_DEFEND, FACE_ACT,
   HERO_SPELL, HERO_ITEM, HERO_ACT, heroAct,
 } from './heroes.js';
+import { ACT_PAGES } from './dialogue.js';
 
 /**
  * `global.charaction[c] = 2` — CHOSE A SPELL. The cast itself happens later,
@@ -357,7 +358,7 @@ export function listRows(state) {
       usable: canAfford(state, id, c),
     }));
   }
-  if (menu.submenu === 'act') {
+  if (menu.submenu === 'actgrid') {
     return (ACTS[c] ?? []).map((a, i) => ({
       label: a.name, descb: a.descb, id: i, usable: true,
     }));
@@ -572,12 +573,34 @@ export function stepMenu(state, input) {
     return false;
   }
 
+  // ---- KRIS'S ACT PICKER (`bmenuno == 11`) --------------------------------
+  //
+  // The stage between the ACT button and the option grid: pick which enemy
+  // to act on. One enemy in this fight, so it is a single confirm — but the
+  // stage still owns its press and its frames (traced as "act", same as the
+  // grid's parent state, in the oracle's coarse vocabulary).
+  if (menu.submenu === 'actpick') {
+    if (pressed('cancel')) {
+      menu.submenu = null;
+      setFace(state, c, FACE_IDLE);
+      moveNoise = true;
+    } else if (pressed('confirm')) {
+      // `global.bmenuno = 9` — into the option grid.
+      menu.submenu = 'actgrid';
+      menu.gridIndex = 0;
+      menu.itemIndex = 0;
+      cue(state, 'snd_select');
+    }
+    if (moveNoise) cue(state, 'snd_menumove');
+    return false;
+  }
+
   // ---- THE LISTS: bag, MAGIC, ACT -----------------------------------------
   //
   // One handler for all three. They are the same 2x6 grid at the same
   // coordinates and the same `global.bmenucoord` cursor; only the contents
   // differ, which is why the original draws them with near-identical blocks.
-  if (menu.submenu === 'item' || menu.submenu === 'magic' || menu.submenu === 'act') {
+  if (menu.submenu === 'item' || menu.submenu === 'magic' || menu.submenu === 'actgrid') {
     const rows = listRows(state);
     const n = rows.length;
     if (n === 0) {
@@ -627,11 +650,29 @@ export function stepMenu(state, input) {
         const row = rows[menu.gridIndex];
         if (!row || !row.usable) {
           cue(state, 'snd_error');
-        } else if (menu.submenu === 'act') {
+        } else if (menu.submenu === 'actgrid') {
           const line = row.id === 1 && c === 0
             ? holdBreath(state)
             : `* ${PARTY[c].name} used ${row.label}.`;
           menu.lastItem = line;
+          // THE ACT'S CHATBOX MESSAGE HOLDS THE ATTACK BAR. The knight's
+          // acting block picks the page set (checkcount/holdbreathcount pick
+          // the first-time or repeat variant) and the bar is only created
+          // once that writer dies — the director's act interlude runs it.
+          if (c === 0) {
+            state.actCounts = state.actCounts ?? { check: 0, breath: 0 };
+            let key;
+            if (row.id === 1) {
+              state.actCounts.breath += 1;
+              key = state.actCounts.breath <= 1 ? 'holdbreath_first' : 'holdbreath_again';
+            } else {
+              state.actCounts.check += 1;
+              key = state.actCounts.check === 1 ? 'check' : 'point';
+            }
+            state.pendingAct = { pages: ACT_PAGES[key] };
+          } else {
+            state.pendingAct = { pages: ACT_PAGES[c === 1 ? 'susie' : 'ralsei'] };
+          }
           menu.submenu = null;
           // `state = 6` — the ACT swing plays NOW, and it outlasts the menu:
           // the character is still mid-animation when the next one is choosing.
@@ -751,15 +792,23 @@ export function stepMenu(state, input) {
     // reads ACT where the others read MAGIC because it is one menu slot with
     // different contents, not a different button.
     if (chosen === 'MAGIC' || chosen === 'ACT') {
-      const which = chosen === 'ACT' || (chosen === 'MAGIC' && c === 0) ? 'act' : 'magic';
-      if (listRows({ ...state, menu: { ...menu, submenu: which } }).length === 0) {
+      const isAct = chosen === 'ACT' || (chosen === 'MAGIC' && c === 0);
+      const listName = isAct ? 'actgrid' : 'magic';
+      if (listRows({ ...state, menu: { ...menu, submenu: listName } }).length === 0) {
         cue(state, 'snd_error');
         return false;
       }
-      menu.submenu = which;
+      // KRIS'S ACT IS TWO STAGES. The button opens `bmenuno = 11` — the
+      // ENEMY PICKER for the act — and only its confirm reaches `bmenuno =
+      // 9`, the 2x6 option grid. The sim used to jump straight to the grid,
+      // which spent the token's picker press on the grid instead: verify21j
+      // f2322 shows the oracle in state 9 for the press the sim had already
+      // used to leave the menu. One enemy makes the picker look redundant;
+      // its frames are not.
+      menu.submenu = isAct ? 'actpick' : 'magic';
       menu.gridIndex = 0;
       menu.itemIndex = 0;
-      setFace(state, c, which === 'act' ? FACE_ACT : FACE_SPELL);
+      setFace(state, c, isAct ? FACE_ACT : FACE_SPELL);
       cue(state, 'snd_select');
       return false;
     }

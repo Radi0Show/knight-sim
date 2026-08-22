@@ -122,8 +122,12 @@ function balloonRun(speaker, text) {
   return got;
 }
 
+// ONE CRAWL, not many: under the writer machine (obj_writer's measured
+// lifecycle) the balloon types once and halts — the harness's timer reset
+// no longer restarts it. "Heheh..." voices its five letters minus the
+// birth-frame char (pos opens at 2), so a single crawl blips four times.
 const susie = balloonRun('susie', 'Heheh...');
-check(susie.total > 5, `Susie's balloon should blip, heard ${susie.total}`);
+check(susie.total >= 4, `Susie's balloon should blip, heard ${susie.total}`);
 check(susie.names.size === 1 && susie.names.has('snd_txtsus'),
   `Susie's voice is snd_txtsus, got ${[...susie.names].join(',')}`);
 

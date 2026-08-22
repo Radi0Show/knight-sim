@@ -138,6 +138,17 @@ const POSITION_TOL = 0.02;
 // and a real angle bug still fails.
 const ANGLE_COL = /^b\d+_a$/;
 const ANGLE_TOL = 0.001;
+// SCALE columns pick up the same drift one derivation later: the tunnel
+// sword's `image_yscale = lerp(image_yscale, _speed / 20, 0.1)` runs the
+// trig-derived speed through an f32 lerp chain, and near the sine's zero
+// crossing the runner's proprietary trig lands 1-2 ULP from V8's —
+// verify21j f2950 reads -0.0128315520 vs -0.0128315529, re-syncing exactly
+// two frames later, and f3140-3142 drifts ~9e-8 at ys 0.5 (1-2 f32 ULP at
+// that magnitude) before re-syncing at 3143. 1e-6 is still five orders
+// below one source pixel at any scale this fight draws; a real scale bug
+// still fails.
+const SCALE_COL = /^b\d+_[xy]s$/;
+const SCALE_TOL = 1e-6;
 
 function cellsEqual(av, bv, colName) {
   if (av === bv) return true;
@@ -153,6 +164,13 @@ function cellsEqual(av, bv, colName) {
     const bn = parseFloat(bv);
     if (Number.isFinite(an) && Number.isFinite(bn)) {
       return Math.abs(an - bn) <= ANGLE_TOL;
+    }
+  }
+  if (SCALE_COL.test(colName)) {
+    const an = parseFloat(av);
+    const bn = parseFloat(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      return Math.abs(an - bn) <= SCALE_TOL;
     }
   }
   return false;

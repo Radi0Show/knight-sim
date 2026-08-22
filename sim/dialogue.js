@@ -34,7 +34,23 @@ export const KNIGHT_LINES = {
   14: "... heh... heheheh...",
 };
 
-/** `ballooncon == N` — Susie's reply, N = balloonturn - 5. */
+/**
+ * `balloonturn -> ballooncon` — measured from the dump's per-turn branches,
+ * NOT `n - 5`: that formula fit 6-9 and then silently broke. Balloonturns
+ * 11 and 12 are SINGLE balloons (ballooncon 0, balloonend 1 — no reply),
+ * 10 jumps to con 6, and 13/14 sit at 7/8. Balloonturn 9's all-down
+ * variant uses con 5 (its reply speaks of Kris and Ralsei being down).
+ */
+export const BALLOONCON = { 6: 1, 7: 2, 8: 3, 9: 4, 10: 6, 11: 0, 12: 0, 13: 7, 14: 8 };
+
+/**
+ * `ballooncon == 8` does not end the exchange: its dismissal queues the
+ * con-9 line with `balloonend = 0`, so Alarm 6 re-enters `talked = 0.6` and
+ * a THIRD balloon plays before the phase gate arms. The only chain link.
+ */
+export const BALLOON_CHAIN = { 8: 9 };
+
+/** `ballooncon == N` — Susie's reply. */
 export const SUSIE_LINES = {
   1: "Didn't... think&we'd still be&standing, did you?",
   2: "You actually messed up,&picking a fight with US!",
@@ -57,6 +73,28 @@ export const SUSIE_LINES = {
 export const KNIGHT_ALONE = {
   9: "Even... even if&you knock them down...",
   10: "As long as I'm here to&lift them back up...",
+};
+
+/**
+ * ACT results as the game actually pages them: `msgsetloc` opens the message
+ * and each `msgnextloc` is a SEPARATE PAGE — the writer halts at the page's
+ * `/`, a confirm advances it (scr_nextmsg re-types in the same writer), and
+ * only the final `/%` halt lets a confirm destroy it. Check is two pages;
+ * both HoldBreath variants are one page of `&` line breaks. The bar waits on
+ * the whole lifecycle (`actcon == 1 && !instance_exists(obj_writer)` is what
+ * calls scr_nextact -> scr_attackphase) — measured at verify21j turn 7:
+ * menu closed f2331, writer born 2332, first page automash-skipped 2333,
+ * page-advance 2336, second page skipped 2341, killed 2344, bar at 2345.
+ */
+export const ACT_PAGES = {
+  check: ['* Kris analyzed the enemy!', "* But Kris&couldn't learn anything."],
+  point: ['* Kris points into the distance.', '* Nothing happened.'],
+  holdbreath_first: ['* Kris held their breath.&* Their heartbeat quickened.'
+    + '&* The SOUL now moves faster.'],
+  holdbreath_again: ['* Kris held their breath...&* Kris smiled.&* Nothing happened.'],
+  susie: ['* Susie talked to the Knight!'],
+  susie_done: ['* (Susie will not ACT any more.)'],
+  ralsei: ['* Ralsei tried talking...', '* ... but nothing happened.'],
 };
 
 /** ACT results, which go to the CHATBOX rather than a balloon. */
@@ -162,20 +200,29 @@ export function advanceBalloon(dlg, state) {
   if (KNIGHT_ALONE[n] && state.partyHp[0] < 1 && state.partyHp[2] < 1) {
     line = KNIGHT_ALONE[n];
   }
-  dlg.ballooncon = n - 5;
+  // The all-down variant of balloonturn 9 also swaps the reply chain: the
+  // dump's branch assigns ballooncon 5 there, 4 on the normal line.
+  const allDown = KNIGHT_ALONE[n] && state.partyHp[0] < 1 && state.partyHp[2] < 1;
+  dlg.ballooncon = n === 9 && allDown ? 5 : (BALLOONCON[n] ?? 0);
   dlg.text = line;
   dlg.speaker = 'knight';
   dlg.timer = 0;
   return line;
 }
 
-/** The second beat: C, or the writer running out. */
+/** The next balloon of the exchange, run from the previous one's dismissal. */
 export function advanceReply(dlg) {
   if (!dlg.ballooncon) return null;
-  const line = SUSIE_LINES[dlg.ballooncon] ?? null;
-  dlg.ballooncon = 0;
+  const con = dlg.ballooncon;
+  const line = SUSIE_LINES[con] ?? null;
+  // The con-8 link queues con 9 with `balloonend = 0`, so the middle balloon
+  // is dismissed like a knight balloon (the C-arm applies, and its death
+  // queues the next line) rather than ending the talk. Speaker doubles as
+  // the balloonend flag in this model: 'knight' = more queued, 'susie' =
+  // final, gate on the writer's death alone.
+  dlg.ballooncon = BALLOON_CHAIN[con] ?? 0;
   dlg.text = line;
-  dlg.speaker = 'susie';
+  dlg.speaker = dlg.ballooncon ? 'knight' : 'susie';
   dlg.timer = 0;
   return line;
 }

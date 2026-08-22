@@ -28,7 +28,7 @@ import { endTurnItems } from '../menu.js';
 import { applyItem } from '../items.js';
 import { createHeroes, stepHeroes, heroAct, HERO_ATTACK, HERO_IDLE, HERO_ITEM, HERO_SPELL } from '../heroes.js';
 import {
-  advanceBalloon, advanceReply, clearDialogue, dialogueDone, dialogueSkipTimer,
+  advanceBalloon, advanceReply, clearDialogue, msgLines,
   textSoundChar,
 } from '../dialogue.js';
 import {
@@ -599,19 +599,112 @@ const director = {
     // party members picks from their button row, and only when the last one
     // confirms does the enemy attack. The gap above is the beat before the
     // panels rise.
-    if (state.dialogue.text) {
-      // X HELD JUMPS THE TYPING TO THE END. obj_writer's Draw:
+    // THE WRITER MACHINE is shared by two call sites: the per-frame talk
+    // block below it, and the balloon's BIRTH frame at the advanceBalloon
+    // site — step-created writers run their draw the same frame, so a b3
+    // pulse landing on the birth frame skips the balloon right then
+    // (measured at verify21j f2413: the game's turn-7 exchange skipped at
+    // birth and its selector ran at f2421; the sim without the birth pass
+    // typed to f2417 and landed four frames late).
+    const stepTalkWriter = () => {
+      // THE WRITER MACHINE — obj_writer's real per-frame lifecycle, measured
+      // whole (verify21k's writer sidecar, frames 2022-2033) after the
+      // previous timer model ran the balloonturn-6 exchange 17 frames long
+      // and pushed every later turn off by that much.
       //
-      //     if (halt == 0 && button2 == 1 && pos < length && skippable == 1)
-      //         skipme = 1;
-      //     if (skipme == 1) { pos = string_length(mystring) + 1; ... }
+      // What the recording settled that reading the dump could not:
       //
-      // so it is not a faster crawl, it is the whole line at once.
-      if (state.input?.focus) {
-        state.dialogue.timer = Math.max(
-          state.dialogue.timer, dialogueSkipTimer(state.dialogue.text));
+      //   * `global.flag[10]` — the text auto-advance setting — is ON in the
+      //     reference save. With it, EVERY b3 press (`button3_h()`, raw hold,
+      //     no edge or buffer gate) runs the writer's automash: it sets the
+      //     writer's own `prevent_mash_buffer = 3`, toggles its own
+      //     `automash_timer`, and presses button2 (SKIP the typing to the
+      //     end) on the first toggle, button1 (DISMISS) on the next.
+      //   * button1 (confirm, EDGE) and button2 (focus, HELD) are gated on
+      //     `prevent_mash_buffer <= 0`; the automash branch is not.
+      //   * `pos` starts at 1 and ticks +1 per frame INCLUDING the creation
+      //     frame (writers created in a step run their draw that same frame
+      //     — pos reads 2 at the birth frame's end). The '/%' terminator
+      //     halts the crawl at visible-length + 1.
+      //   * a halted writer dies to button1; the death is what the knight's
+      //     `!i_ex(obj_writer)` arms see ON THE NEXT STEP.
+      //
+      // Measured sequence, balloonturn 6 ("Heheh..." + the standing reply):
+      // born 2022 (pos 2), b3 automash SKIP 2025 (pos 11, pmb 3), confirm
+      // kill 2028, knight step 2029 queues the reply + creates its writer,
+      // which the SAME frame's b3 skips (pos 51); alarm[6] -> talked 1 at
+      // 2030; pmb blocks the 2030 confirm, the 2032 confirm kills; the
+      // `talked == 1 && !i_ex(obj_writer)` gate passes at 2033 and the
+      // selector runs that same step (oracle turntimer 89 on row 2033).
+      const dlg = state.dialogue;
+      const flag10 = state.textAutoMash !== false; // the reference save's setting
+
+      // Writer created outside this block (advanceBalloon) arrives with its
+      // birth tick applied; one created below runs its birth frame here.
+      if (!e.talkWriter) {
+        e.talkWriter = { pos: 2, halted: false, pmb: 0, automash: 0, dead: false };
       }
-      state.dialogue.timer += 1;
+
+      // ---- the KNIGHT'S STEP half ------------------------------------------
+      // b3 edge for the `(button3_p() && talktimer > 15)` arm — the knight's
+      // own read, not buffered by the writer's prevent_mash_buffer.
+      const b3Held = !!state.input?.button3;
+      const cPress = b3Held && !e.talkHeld;
+      e.talkHeld = b3Held;
+      e.talkTimer = (e.talkTimer ?? 0) + 1;
+
+      // A death last frame (or the C-arm this frame) is the dismissal.
+      let dismissed = e.talkWriter.dead;
+      if (!dismissed && dlg.speaker === 'knight' && cPress && e.talkTimer > 15) {
+        // `with (obj_writer) instance_destroy()` — the arm kills it directly.
+        dismissed = true;
+      }
+      if (dismissed) {
+        if (dlg.speaker === 'knight' && dlg.ballooncon) {
+          // The 0.6 dismissal: queue the reply, create its writer in this
+          // same step — its machine below runs this frame (that is how the
+          // recording's reply skipped on its own birth frame) — and arm
+          // alarm[6]; balloonend is 1 so `talked` is 1 from the next frame,
+          // and the reply gates the phase on nothing but its writer's death.
+          advanceReply(dlg);
+          e.talkWriter = { pos: 1, halted: false, pmb: 0, automash: 0, dead: false };
+          e.talkTimer = 0;
+        } else if (dlg.speaker === 'knight') {
+          // SINGLE balloon (the 0.5 path): the knight step that sees the
+          // death arms alarm[6]; talked reads 1 one frame later and the gate
+          // passes then — one linger frame between death and the selector.
+          e.talkWriter = null;
+          clearDialogue(dlg);
+          e.talkTimer = 0;
+          return;
+        } else {
+          // The reply (talked already 1): the gate `talked == 1 &&
+          // !i_ex(obj_writer)` passes on the step AFTER the death — clearing
+          // here on the death frame puts the selector (the spawnDelay block
+          // below, reached once `state.dialogue.text` is null) exactly one
+          // frame later, where the oracle runs it.
+          e.talkWriter = null;
+          clearDialogue(dlg);
+          e.talkTimer = 0;
+          return;
+        }
+      }
+
+      // ---- the WRITER'S DRAW half ------------------------------------------
+      const w = e.talkWriter;
+      const visible = msgLines(dlg.text).join('').length;
+      let b1 = false;
+      let b2 = false;
+      const zPress = !!state.input?.confirm && !e.talkConfirmHeld;
+      e.talkConfirmHeld = !!state.input?.confirm;
+      if (zPress && w.pmb <= 0) b1 = true;
+      if (state.input?.focus && w.pmb <= 0) b2 = true;
+      if (flag10 && b3Held) {
+        w.pmb = 3;
+        w.automash = w.automash === 0 ? 1 : 0;
+        if (w.automash === 0) b1 = true;
+        if (w.automash === 1) b2 = true;
+      }
       // THE BALLOON'S VOICE IS snd_txtsus FOR BOTH SPEAKERS, and the previous
       // reading of this was wrong in a way that is audible.
       //
@@ -634,45 +727,51 @@ const director = {
       // SUSIE's head (`obj_herosusie.x + 92`), so to anyone watching it read
       // as Susie occasionally speaking in someone else's voice — which is
       // exactly how it was reported.
-      if (!state.input?.focus
-        && textSoundChar(state.dialogue.text, state.dialogue.timer)) {
-        cue(state, 'snd_txtsus', 1, 1);
+      // The typing tick — the writer's Alarm 0, `pos += 1` at rate 1, which
+      // ran BEFORE the draw's button handling in the frame. The '/%'
+      // terminator halts the crawl one past the visible text.
+      if (!w.halted) {
+        w.pos += 1;
+        // The voice blip rides the crawl (snd_txtsus for BOTH speakers —
+        // both balloon creations set typer 75 before scr_enemyblcon; the
+        // block's opening typer 81 is a dead assignment, another `linex`).
+        if (textSoundChar(dlg.text, w.pos - 1)) cue(state, 'snd_txtsus', 1, 1);
+        if (w.pos > visible) w.halted = true;
       }
-      const done = dialogueDone(state.dialogue.text, state.dialogue.timer);
-
-      // TWO BUTTONS ADVANCE THIS, and only one of them was wired up.
-      //
-      // The knight's own Step takes C: `(button3_p() && talktimer > 15)`.
-      // But the SAME condition's other arm is `|| !i_ex(obj_writer)`, and
-      // the writer dismisses ITSELF on Z once the line has finished typing:
-      //
-      //     if (halt != 0 && button1 == 1 && siner > 0) { ... instance_destroy(); }
-      //
-      // (`button1_p()` is Z or Enter; `button3_p()` is C or Ctrl — the
-      // default control map, input_k[4] and input_k[6].) So Z really does
-      // advance the exchange in the real game, one indirection away, and
-      // modelling only the C arm left the tool's own confirm key dead here —
-      // reported from play as the dialogue not being skippable with Z.
-      const cPress = !!state.input?.button3 && !e.talkHeld;
-      e.talkHeld = !!state.input?.button3;
-      const zPress = !!state.input?.confirm && !e.talkConfirmHeld;
-      e.talkConfirmHeld = !!state.input?.confirm;
+      // button2 — the skip. Whole line at once, never a faster crawl:
+      // `pos = string_length(mystring) + 1`, and the draw's own scan of the
+      // now-complete text is what sets halt.
+      if (b2 && !w.halted) {
+        w.pos = visible + 3;
+        w.halted = true;
+      }
+      // button1 on a halted writer destroys it; the knight's step sees the
+      // death next frame. The FINAL balloon short-circuits: `talked` is
+      // already 1, so the death frame is the last with a live talk — the
+      // gate passes on the very next knight step and the selector runs that
+      // same step, which in this endStep's ordering means the talk must be
+      // gone before the next frame's pass (measured: reply dead during
+      // frame 2032, oracle selector and turn clock at 2033).
+      if (b1 && w.halted) {
+        if (dlg.speaker === 'susie') {
+          e.talkWriter = null;
+          clearDialogue(dlg);
+          e.talkTimer = 0;
+          return;
+        }
+        w.dead = true;
+      }
+      w.pmb -= 1;
 
       if (globalThis.process?.env?.KNIGHT_TALK_DEBUG) {
-        console.error(`[talk] f=${globalThis.__simFrame} spk=${state.dialogue.speaker}`
-          + ` timer=${state.dialogue.timer} done=${done} c=${cPress ? 1 : 0} z=${zPress ? 1 : 0}`);
+        console.error(`[talk] f=${globalThis.__simFrame} spk=${dlg.speaker}`
+          + ` pos=${w.pos}/${visible} halt=${w.halted ? 1 : 0} pmb=${w.pmb}`
+          + ` dead=${w.dead ? 1 : 0} b1=${b1 ? 1 : 0} b2=${b2 ? 1 : 0} tt=${e.talkTimer}`);
       }
-      if ((cPress && state.dialogue.timer > 15)
-        || (zPress && done)
-        || (done && state.dialogue.timer > 90)) {
-        if (state.dialogue.speaker === 'knight') advanceReply(state.dialogue);
-        else clearDialogue(state.dialogue);
-        // The press that dismissed this line must not also eat the next one
-        // (the writer's `prevent_mash_buffer`, and the held-across-a-
-        // transition rule this project keeps relearning).
-        e.talkConfirmHeld = true;
-        e.talkHeld = true;
-      }
+    };
+
+    if (state.dialogue.text) {
+      stepTalkWriter();
       return;
     }
 
@@ -724,6 +823,58 @@ const director = {
     // So the bar EXISTS from the moment the menu closes but sits inactive
     // while the spells and items play out. Rude Buster happens first, the
     // bolts come after — which is the order you actually see.
+    // ---- THE ACT RESOLUTION, before the bar --------------------------------
+    //
+    // `if (actcon == 1 && !instance_exists(obj_writer)) scr_nextact()` — the
+    // knight waits for the ACT's chatbox writer to die before the phase can
+    // reach scr_attackphase, so an ACTing turn's bar starts late by exactly
+    // the message's writer lifecycle. Same machine as the balloons (automash
+    // on b3, pmb 3, confirm kills a halted page), plus the page chain: a
+    // mid-message `/` halt takes a confirm to ADVANCE (scr_nextmsg in the
+    // same writer), only the final `/%` halt lets one destroy it.
+    if (state.pendingAct) {
+      const a = state.pendingAct;
+      if (!a.w) a.w = { pos: 1, page: 0, halted: false, pmb: 0, automash: 0 };
+      const w = a.w;
+      const visible = msgLines(a.pages[w.page]).join('').length;
+      let b1 = false;
+      let b2 = false;
+      const zP = !!state.input?.confirm && !e.actConfirmHeld;
+      e.actConfirmHeld = !!state.input?.confirm;
+      if (zP && w.pmb <= 0) b1 = true;
+      if (state.input?.focus && w.pmb <= 0) b2 = true;
+      if (state.textAutoMash !== false && state.input?.button3) {
+        w.pmb = 3;
+        w.automash = w.automash === 0 ? 1 : 0;
+        if (w.automash === 0) b1 = true;
+        if (w.automash === 1) b2 = true;
+      }
+      if (!w.halted) {
+        w.pos += 1;
+        if (textSoundChar(a.pages[w.page], w.pos - 1)) cue(state, 'snd_text', 1, 1);
+        if (w.pos > visible) w.halted = true;
+      }
+      if (b2 && !w.halted) {
+        w.pos = visible + 3;
+        w.halted = true;
+      }
+      if (b1 && w.halted) {
+        if (w.page < a.pages.length - 1) {
+          w.page += 1;
+          w.pos = 1;
+          w.halted = false;
+        } else {
+          // The writer dies; the knight's gate fires on the next step and
+          // scr_attackphase creates the bar that frame — which is the next
+          // pass through the block below.
+          state.pendingAct = null;
+        }
+      }
+      w.pmb -= 1;
+      state.battlemsg = a.pages[Math.min(w.page, a.pages.length - 1)];
+      return;
+    }
+
     if (state.menu.fight.some(Boolean) && !e.bar) {
       const order = [0, 1, 2].filter((c) => state.menu.fight[c] && isUp(state, c));
       // The schedule is RANDOM, so the bar draws from the sim's generator —
@@ -975,6 +1126,16 @@ const director = {
         }
       }
       advanceBalloon(state.dialogue, state);
+      // The balloon's writer is born in this same step, and step-created
+      // writers run their whole draw the same frame — the birth tick AND the
+      // buttons (a b3 pulse on the birth frame skips the line immediately,
+      // verify21j f2413). This site sits AFTER the talk block's slot in the
+      // endStep, so the machine's birth pass runs from here.
+      if (state.dialogue.text) {
+        e.talkWriter = { pos: 1, halted: false, pmb: 0, automash: 0, dead: false };
+        e.talkTimer = 0;
+        stepTalkWriter();
+      }
     }
     if (state.dialogue.text) return;
 

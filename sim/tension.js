@@ -93,11 +93,22 @@ export function stepGraze(state, grazes, only = null) {
     // (trig-ulp drift), each recorded row consumed once. Without the table
     // (free play, every other scene) the geometric test stands.
     let paired;
+    let rowInv = null;
     if (state.grazeReplay) {
       const rows = state.grazeReplay.get(state.frame);
       const match = rows?.find((r) => !r.used && r.type === e.type.name
         && Math.abs(r.x - e.x) <= 0.05 && Math.abs(r.y - e.y) <= 0.05);
-      if (match) match.used = true;
+      if (match) {
+        match.used = true;
+        // THE GATE'S INPUT RIDES THE ROW. On a hit frame the runner's
+        // dispatch order between this bullet's graze event and the frame's
+        // inv reset is per-slot-reuse state the sim cannot derive — measured
+        // both ways (f217: trickle paid at inv -133, the hit after; f2166:
+        // hit first, the graze blocked at inv 30; both colseq-pinned). The
+        // grazelog's own inv column IS that ordering resolved, so replayed
+        // rows gate on it rather than on the sim's phase-local clock.
+        rowInv = Number.isFinite(match.inv) ? match.inv : null;
+      }
       paired = Boolean(match);
     } else {
       paired = grazes(e, cx, cy, grazeSize);
@@ -126,7 +137,7 @@ export function stepGraze(state, grazes, only = null) {
     // `if (!other.active && other.object_index != obj_sword_tunnel_sword) exit;`
     if (!active && e.type.name !== 'obj_sword_tunnel_sword') continue;
 
-    if (state.invTimer >= 0) continue;
+    if ((rowInv ?? state.invTimer) >= 0) continue;
 
     // `grazetpfactor` / `grazetimefactor` from obj_grazebox's Create. These
     // were both hardcoded to 1 on the note that this fight's loadout does not

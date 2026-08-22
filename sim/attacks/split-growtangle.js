@@ -93,6 +93,20 @@ function eventUser0(e) {
 export const splitGrowtangle = {
   name: 'obj_knight_split_growtangle',
 
+  // BEFORE THE SOUL. The runner steps newest-first and the splitter organism
+  // is born mid-turn, so in the game its Step — the distance easing, the
+  // con-2 heart drag, and above all the main box's park/return at the tail —
+  // runs before obj_heart's. The one frame that order is observable is the
+  // cut's CLOSE: the box returns to xstart in the half's step, and the
+  // heart's own step then resolves its movement against the ring while the
+  // envelope clamp has not yet pulled the soul out of the border — the
+  // game's soul loses its input move that frame (verify21j f2500: oracle x
+  // stalls at 346 with right held; the sim, stepping the soul first against
+  // a still-parked box, walked on). During an open cut the box is at -9999
+  // and nothing the order touches can collide, which is why every earlier
+  // split verified row-exact with the wrong order.
+  stepOrder: -0.5,
+
   create(e, state) {
     const gt = box(state);
     e.image_xscale = gt ? gt.xscale : 2;

@@ -61,7 +61,11 @@ const idle = { left: false, right: false, up: false, down: false, focus: false }
  */
 let confirmPulse = false;
 function menuInput(state) {
-  if (!state.menu?.open) return idle;
+  // The talk and the ACT text take the pulse too: a halted balloon writer
+  // waits for a real confirm press (the writer machine), so idle input
+  // parks the fight at balloonturn 6 — a player who walked away, not a
+  // turn-order fault.
+  if (!state.menu?.open && !state.dialogue?.text && !state.pendingAct) return idle;
   confirmPulse = !confirmPulse;
   return { ...idle, confirm: confirmPulse };
 }
@@ -333,7 +337,14 @@ console.log('→ the flawless run earns "Kris coughed." on the guard drop, and i
     let pulse = false;
     for (let f = 0; f < MAX_FRAMES && order.length < EXPECTED.length; f++) {
       let input = idle;
-      if (st.menu?.open) { pulse = !pulse; input = { ...idle, confirm: pulse }; }
+      // The TALK and the ACT text need the pulse too: under the writer
+      // machine a halted balloon waits for a real confirm press, exactly as
+      // the game's does — idle input parks the fight at balloonturn 6
+      // forever, which is a player who walked away, not a turn-order bug.
+      if (st.menu?.open || st.dialogue?.text || st.pendingAct) {
+        pulse = !pulse;
+        input = { ...idle, confirm: pulse };
+      }
       stepFrame(st, input);
       st.partyHp = freshParty();
       st.gameOver = false;

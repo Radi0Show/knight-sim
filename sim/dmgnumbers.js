@@ -151,6 +151,27 @@ export function spawnDmgNumber(state, x, y, damage, type, delay = 8, opts = {}) 
     special,
     delay,
     delaytimer: 0,
+    // NO TICK ON THE BIRTH FRAME. Writers are created during the collision
+    // phase, and the runner's draw pass that frame iterates a list that does
+    // not yet contain them — measured at verify21j f1720-1722: the writers'
+    // one-shot `vspeed = -5 - random(2)` landed at spawn+2 (stream positions
+    // 100-102, seed 4021), bracketed by the slash jitter pairs at 98-99 and
+    // 103-104. delay=2 with a first tick at spawn+1 puts it exactly there; a
+    // first tick at spawn (the old behaviour) put it one frame early. Turns
+    // 1-4 never noticed because nothing else consumed in that window — the
+    // ORDER only became observable when the jitter interleaved with it.
+    // A consumed-once flag, not a frame compare: harnesses that step without
+    // advancing state.frame (verify-dmgnumbers) must skip exactly one tick.
+    //
+    // ...EXCEPT for STEP-DISPATCHED damage. The tunnel sword deals its hit
+    // from its own Step (the swept `event_user(5)` at
+    // obj_sword_tunnel_sword's line 91), and a writer created during a step
+    // phase runs its draw the same frame — the balloon writer measurement
+    // (pos 2 at birth) and the turn-8 boundary ledger agree: the sweep-hit
+    // writers' throws land at birth+1 (verify21j f2970/f2975), where the
+    // collision-born ones land at birth+2 (f1722). One stream position at
+    // the 2976 boundary was the whole fingerprint.
+    skipBirthTick: !state.damageFromStep,
     hspeed: 0,
     vspeed: 0,
     vstart: 0,
@@ -259,6 +280,12 @@ export function stepDmgNumbers(state, rng) {
   const d = state.dmg;
   if (!d) return;
   for (const n of d.list) {
+    // See `skipBirthTick` at the spawn site: the runner never draws an
+    // instance on its creation frame, so the delay clock starts a tick late.
+    if (n.skipBirthTick) {
+      n.skipBirthTick = false;
+      continue;
+    }
     // NOTHING HAPPENS UNTIL THE DELAY ELAPSES. With `delay = 8` the number
     // appears eight frames after the hit registers — after the character's
     // swing has connected, which is why it reads as a consequence.

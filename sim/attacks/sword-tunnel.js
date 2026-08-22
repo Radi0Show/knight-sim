@@ -99,6 +99,11 @@ export const swordTunnelHitbox = {
 export const swordTunnelSword = {
   name: 'obj_sword_tunnel_sword',
 
+  // The game's damage dispatch is the sword's OWN Step (the swept
+  // event_user(5)), not the collision phase — its dmg writers tick their
+  // delay clock on the birth frame. See skipBirthTick in sim/dmgnumbers.js.
+  stepDamage: true,
+
   create(e, state) {
     scrBulletInit(e);
     e.grazepoints = 0.8;
@@ -281,7 +286,13 @@ export const swordTunnelSword = {
             // count, it deals the damage. This is the corridor's PRIMARY
             // contact path (32 of its 48 recorded hits), and it was tallying
             // and returning: 44 hits a turn and not one point of HP lost.
+            //
+            // A STEP dispatch, so its dmg writers tick on the birth frame —
+            // see skipBirthTick in sim/dmgnumbers.js. This self-dispatch
+            // bypasses runCollisions' flag site, so the flag is set here.
+            state.damageFromStep = true;
             swordTunnelSword.other15(e, state);
+            state.damageFromStep = false;
           }
         }
         e.active = 0;
@@ -570,6 +581,11 @@ export const swordTunnelManager = {
         lower.damage = e.damage;
       }
 
+      if (globalThis.process?.env?.KNIGHT_TUNNEL_DEBUG) {
+        console.error(`[tun] f=${globalThis.__simFrame} toby=${e.tobytimer}`
+          + ` dir=${e.movedirection} sy=${e.swordy} sc=${e.swordcount}`
+          + ` set=${e.setcount} wait=${e.waitsetcount} vc=${e.verticalchange}`);
+      }
       if (e.movedirection === 'up') e.swordy -= e.verticalchange;
       if (e.movedirection === 'down') e.swordy += e.verticalchange;
 

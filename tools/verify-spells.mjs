@@ -77,11 +77,16 @@ for (const [id, cost] of [[2, 80], [3, 40], [4, 125], [11, 225]]) {
 }
 if (ACTS[0][1].name !== 'HoldBreath') failures.push("Kris's ACT 1 is not HoldBreath");
 
-// Pressing button 1 as Kris opens the ACT list; as Susie, the spell list.
+// Pressing button 1 as Kris opens the ACT flow; as Susie, the spell list.
+// KRIS'S ACT IS TWO STAGES (measured at verify21j f2320-2323): the button
+// opens bmenuno 11 — the enemy picker ('actpick') — and its confirm reaches
+// bmenuno 9, the option grid ('actgrid').
 let st = fresh(0);
 st.menu.selected[0] = 1;
 tap(st, 'confirm');
-if (st.menu.submenu !== 'act') failures.push(`Kris's button 1 opened ${st.menu.submenu}, expected act`);
+if (st.menu.submenu !== 'actpick') failures.push(`Kris's button 1 opened ${st.menu.submenu}, expected actpick`);
+tap(st, 'confirm');
+if (st.menu.submenu !== 'actgrid') failures.push(`the act picker's confirm opened ${st.menu.submenu}, expected actgrid`);
 if (listRows(st).length !== 2) failures.push(`Kris has ${listRows(st).length} ACTs, expected 2`);
 
 st = fresh(1);
@@ -250,7 +255,7 @@ if (soulSpeed(st) !== 6) failures.push(`during Roaring the soul should move 6, g
 
 // Choosing it through the menu advances the turn.
 st = fresh(0);
-st.menu.submenu = 'act';
+st.menu.submenu = 'actgrid';
 st.menu.gridIndex = 1;
 tap(st, 'confirm');
 if (st.menu.charturn !== 1) failures.push('HoldBreath did not advance the turn');
