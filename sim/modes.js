@@ -100,7 +100,7 @@ export const TITLE_EXTRAS = [
  * `creditLink` turns it into the href.
  */
 export const CREDITS = [
-  { role: 'Developer', who: 'Radi0', link: null },
+  { role: 'Developer', who: 'Radi0', link: 'radi0.dev' },
   { role: 'Bug fixing and Playtesting', who: 'WandeR', link: 'wander22lstr.carrd.co' },
   { role: 'SUPPORT', who: '', link: 'ko-fi.com/shadowcrystaldev' },
 ];

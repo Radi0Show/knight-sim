@@ -190,16 +190,30 @@ function atRoster() {
     'and a fresh press after releasing should open it again');
 
   // A row with no link is a NO-OP: no href, and no error buzz either, because
-  // nothing is broken.
-  // Developer is the row with no link now that SUPPORT has one.
+  // nothing is broken. EVERY credits row happens to carry a link now (the
+  // Developer row gained radi0.dev), so the no-op path is asserted on the
+  // pure function rather than by navigating to a row that may not exist —
+  // `findIndex` returned -1 when the last linkless row went away, which
+  // silently re-pointed this check at row 0 and failed there instead.
+  check(creditLink({ role: 'x', who: 'y', link: null }) === null,
+    'a row with no link should return no href');
   const noLink = CREDITS.findIndex((c) => !c.link);
-  const t2 = createTitle();
-  for (let i = 0; i < MODES.length + 1; i++) tap(t2, 'down');
-  tap(t2, 'confirm');
-  for (let i = 0; i < noLink; i++) tap(t2, 'down');
-  const miss = tap(t2, 'confirm');
-  check(!miss.link, `a row with no link should return none, got ${miss.link}`);
-  check(!miss.error, 'and it should not buzz — there is just nothing there');
+  if (noLink >= 0) {
+    const t2 = createTitle();
+    for (let i = 0; i < MODES.length + 1; i++) tap(t2, 'down');
+    tap(t2, 'confirm');
+    for (let i = 0; i < noLink; i++) tap(t2, 'down');
+    const miss = tap(t2, 'confirm');
+    check(!miss.link, `a row with no link should return none, got ${miss.link}`);
+    check(!miss.error, 'and it should not buzz — there is just nothing there');
+  }
+
+  // ...and every row that DOES carry one resolves to a scheme-prefixed href.
+  for (const row of CREDITS) {
+    if (!row.link) continue;
+    check(creditLink(row) === `https://${row.link}`,
+      `${row.who || row.role}: href should be https://${row.link}, got ${creditLink(row)}`);
+  }
 }
 {
   const t = atRoster();
