@@ -277,7 +277,11 @@ export function tickChargeup(state) {
   // the launch, so it lands after. Unobservable in the current data -- the
   // condition is false on both tokens' ROARING launch frames (timer 185 and
   // 190) -- but it is why f11269's missing draw has nowhere to sit.
-  if (k.chargeuptimer % 4 === 0 && k.chargeuptimer > 10 && state.gmlRng) {
+  // A launch frame already took this draw inside launchAttack, at the point
+  // the knight's Step reaches it -- between basedir and the attack's Create.
+  if (state.chargeupDrawTaken) {
+    state.chargeupDrawTaken = false;
+  } else if (k.chargeuptimer % 4 === 0 && k.chargeuptimer > 10 && state.gmlRng) {
     gmlRandom(state.gmlRng, 360);
   }
 

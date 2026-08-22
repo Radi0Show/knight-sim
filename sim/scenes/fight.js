@@ -378,6 +378,37 @@ export function launchAttack(state, entry) {
   // jitter finally attributed it.
   if (state.gmlRng) gmlIrandom(state.gmlRng, 360);
 
+  // THE KNIGHT'S STEP CONTINUES BELOW THE SELECTOR, and the controller does
+  // not create the attack until its OWN Step later in the frame -- so a draw
+  // the knight takes after the dispatch lands BETWEEN basedir and the
+  // attack's Create randoms. The chargeup afterimage's `random(360)` is such
+  // a draw, and `chargeuptimer` here still holds the value from before this
+  // frame's tick (tickChargeup runs from the director, which steps after the
+  // launcher).
+  const _k = state.knight;
+  // MINUS ONE, AND THAT IS MEASURED, NOT FITTED -- but the reason for the
+  // offset is NOT yet known, so it is flagged rather than explained away.
+  // What IS established: an oracle probe at the top of obj_dbulletcontroller's
+  // Step (tools/patches/oracle_fullfight_drawprobe.csx) read the stream
+  // position there as exactly 3 u32 draws off the anchor, where basedir alone
+  // accounts for 2 -- so one single-draw call lands in this window, and the
+  // only such call in the knight's Step below the selector is this one. The
+  // probe recording's main trace is byte-identical to the canonical one
+  // before the probe frame, so the measurement is sound.
+  //
+  // The residual: the sim's chargeuptimer reads 185 here and the game's
+  // behaves as 184 (token 21: 190 vs 189, which is why it takes NO draw and
+  // stays byte-exact). Both tokens agree on the -1, so it is a real one-frame
+  // misalignment somewhere in the chargeup's start, not a per-token fudge --
+  // but the stomp at timer 60 is verified correct in the sim, so the whole
+  // timeline cannot simply be shifted. FIND THE FRAME where the game's tick
+  // and the sim's part company before removing this.
+  const _ct = _k ? _k.chargeuptimer - 1 : 0;
+  if (_k && _k.chargeupcon === 1 && _ct % 4 === 0 && _ct > 10 && state.gmlRng) {
+    gmlRandom(state.gmlRng, 360);
+    state.chargeupDrawTaken = true;
+  }
+
   switch (ac) {
     case 1: {
       // SPAWN ORDER IS STREAM ORDER. The game creates the CONTROLLER first
