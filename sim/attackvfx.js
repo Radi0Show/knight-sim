@@ -37,6 +37,7 @@
 // impacts asked for it.
 
 import { cue } from './audio.js';
+import { scrShakescreen } from './shake.js';
 
 /**
  * Kris's impact is `obj_basicattack`'s OWN sprite — **`spr_attack_cut1`**.
@@ -90,9 +91,29 @@ export function spawnImpact(state, x, y, slot, critical, rng) {
   // asked into ONE sound.
   cue(state, 'snd_damage');
   // Susie's branch alone plays snd_impact and creates obj_shake.
+  //
+  // scrShakescreen, NOT a `state.shakeRequest` flag. That flag was written
+  // here and READ BY NOTHING -- the same dead-write failure this project
+  // already recorded for `state.pinnedShuffle`, and invisible for the same
+  // reason: no suite asserts on the camera, so a shake that never exists
+  // costs nothing anyone was checking.
+  //
+  // It is gameplay, not decoration. Every wall cull compares against
+  // camerax() (obj_regularbullet destroys on `x < view.x - 80`), so four
+  // pixels of shake move every despawn boundary by four pixels. Missing this
+  // one dropped a shake per party turn: measured against the oracle's new
+  // camera sidecar, 40 bursts of the fight's ~256 were absent, and the one at
+  // f6830 is exactly why verify37 diverged at f6832 -- the bound sat at -77
+  // in the game and -80 in the sim, and a Flurry tooth at -78.9147 fell
+  // between them.
+  //
+  // UNGUARDED, matching the original: heroparent calls
+  // `instance_create(0, 0, obj_shake)` with no exists-test, unlike
+  // scr_damage's guarded call. obj_shake's own Create handles the collision
+  // by setting `active = -1` on any second instance.
   if (spec.shake) {
     cue(state, 'snd_impact');
-    state.shakeRequest = 4;
+    scrShakescreen(state);
   }
 }
 

@@ -539,6 +539,23 @@ export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell
     // documents the spare ("displays as MISS"); the dump's clamp confirms it.
     t = Math.min(Math.max(t, 1), hp[target] - 1);
   }
+  // `if (!instance_exists(obj_shake)) instance_create(0, 0, obj_shake);`
+  // sits HERE in scr_damage_maxhp, right after the cannotFell clamp — this
+  // script shakes on its own account, it does not route through scr_damage.
+  // The sim's copy had no shake at all, so Flurry's slash (the only caller:
+  // 66% of max HP, ignoring DF, clamped so it cannot fell you) hurt you in
+  // total silence from the camera's point of view.
+  //
+  // That is gameplay, not decoration, for the reason scr_damage's own copy
+  // documents above: every wall cull compares against camerax(). Missing this
+  // is verify37's f6832 -- the shake it should have made at f6829 would have
+  // put the camera at +3 by f6832, moving obj_regularbullet's `x < view.x -
+  // 80` boundary to -77, which is what culls the Flurry tooth sitting at
+  // -78.9147. The sim kept the tooth and the live bullet count diverged.
+  if (!state.entities?.some((sh) => sh.alive && sh.type?.name === 'obj_shake')) {
+    scrShakescreen(state);
+  }
+
   // NO EARLY RETURN AT ZERO. The original carries on: `hurt = 1`, the
   // dmgwriter (a 0 draws MISS) and the invulnerability all still happen —
   // the slash connects and whiffs visibly, it does not silently not-happen.
