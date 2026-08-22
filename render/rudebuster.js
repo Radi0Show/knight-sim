@@ -51,8 +51,17 @@ export function drawRudeBuster(ctx, state, sprites) {
   } else {
     for (const s of b.bursts ?? []) {
       if (s.scale <= 0.05) continue;
+      // X ONLY. The Step decays the bursts with
+      //
+      //     with (burst[i]) { speed *= 0.75; image_xscale *= 0.8; }
+      //
+      // and never touches image_yscale, which stays at the 2 they inherit
+      // from the bolt. Since each burst is rotated to its own 45 + i*90, the
+      // shrinking axis is the beam's LENGTH: they retract as streaks at full
+      // thickness. Scaling both axes (what this used to do) shrank them into
+      // uniform blobs and lost the shape of the explosion.
       drawSpriteExt(ctx, beam, Math.min(4, beam.frames.length - 1),
-        s.x, s.y, s.scale * 2, s.scale * 2, s.angle, c_white, 1);
+        s.x, s.y, s.scale * 2, 2, s.angle, c_white, 1);
     }
   }
   ctx.restore();

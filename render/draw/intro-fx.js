@@ -129,7 +129,7 @@ export function drawIntroFx(ctx, e, sprites) {
   // The in-rush while the whiteout holds: 2 + irandom(2) particles a frame,
   // born 40..240 out, pulled toward the centre. Each is drawn for a few
   // frames along its inward path, seeded by its birth frame.
-  if (e.whiteout && e.fxState === 'intro') {
+  if (e.inrushLast != null) {
     // THE IMPLOSION. Each particle's whole life, from the Step:
     //
     //     scr_lerpvar("speed", 4, 16 + irandom(8), 32, 1, "in");
@@ -150,6 +150,9 @@ export function drawIntroFx(ctx, e, sprites) {
     const easeIn = (t) => 1 - Math.cos(t * 1.5707963267948966);
     for (let back = 0; back < LIFE; back++) {
       const bf = e.frame - back;
+      // Births only while the Step was still spawning; the ones already born
+      // finish their flight regardless of the state now.
+      if (bf > e.inrushLast) continue;
       const n = 2 + Math.floor(frand(bf, 1) * 3);
       for (let i = 0; i < n; i++) {
         const dir = frand(bf, 2 + i) * Math.PI * 2;
@@ -167,7 +170,12 @@ export function drawIntroFx(ctx, e, sprites) {
         const len = 3 * size * (1 + 15 * easeIn(t));
         const thick = Math.max(1, 3 * (size + (size * 0.5 - size) * easeIn(t)));
         ctx.save();
-        ctx.globalAlpha = 0.6;
+        // FULL ALPHA. obj_particle_generic (spr_pixel_white, confirmed via
+        // the object-definition dump — its Create sets no sprite, so no grep
+        // could find it) is created with the default image_alpha of 1 and
+        // nothing fades it; it is destroyed outright inside 32px. The 0.6
+        // here was invented and is most of why the implosion read as faint.
+        ctx.globalAlpha = 1;
         ctx.fillStyle = '#ffffff';
         ctx.translate(sx, sy);
         ctx.rotate(dir + Math.PI); // image_angle = direction, toward centre
