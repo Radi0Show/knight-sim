@@ -33,7 +33,7 @@
 import { spawn, destroy } from '../entity.js';
 import { viewFor } from '../shake.js';
 import { afterimage, afterimageGrow } from '../fx.js';
-import { lerp, lengthdirX, lengthdirY, mergeColor, pointDirection, scrAnglechange, WHITE, RED } from '../gml.js';
+import { lerp, lengthdirX, lengthdirY, mergeColor, pointDirection, scrAnglechange, WHITE, RED} from '../gml.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
 import {
   collisionLineRect, heartBBox, DIAMOND_MASK, HEART_MASK, HEART_SMALL_MASK,
@@ -548,6 +548,12 @@ export const swordTunnelManager = {
         // downstream drifts. Preserved as written.
         e.tobytimer += 1;
         if (!e.tobyvolleymode) {
+          // PLAIN Math.sin, and that is MEASURED, not an oversight. The f32
+          // runner-trig family (fround(sin(fround(rad)))) was tried here on
+          // the theory that it would close verify37's f3190 drift; it did not
+          // move that front and it BROKE verify-tunnel-difficulty, which is
+          // oracle-verified for difficulties 3 and 4. Whatever the f3190
+          // offset is, it is not this call's rounding.
           e.verticalchange = Math.abs(Math.sin(e.tobytimer / 8)) * 5;
           e.gapsize = 34 + e.verticalchange * 1.4;
         }
