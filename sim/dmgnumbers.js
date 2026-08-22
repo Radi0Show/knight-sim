@@ -226,6 +226,29 @@ export function spawnSelfHealNumber(state, target, amount, maxed) {
  * the reported case: a ReviveMint goes through scr_itemuse case 2 into
  * scr_healitem, so what you see is the revive amount it tried to give.
  */
+/**
+ * CENTRE-TOP OF EACH BATTLE SPRITE, which is not PARTY_POS.
+ *
+ * PARTY_POS is the sprite's DRAW ORIGIN — the point passed to draw_sprite_ext
+ * — and every one of these sprites has a non-zero `ox` and is drawn at scale
+ * 2, so the origin sits at the sprite's left edge (Ralsei's a full 138px left
+ * of his right edge). Spawning a heal number there put it beside the
+ * character's foot, not over their head. Damage numbers dodge this with a
+ * hardcoded `+30` at draw time; this table does it properly.
+ *
+ * Derived from the sprite pack's own metadata, at the scale 2 they draw with:
+ *
+ *   slot  origin      sprite            w x h   ox   left = x - ox*2   centre   top
+ *   Kris  (126, 104)  spr_krisb_idle    36x38    3   120               156      104
+ *   Susie ( 80, 142)  spr_susieb_idle   54x45   19    42                96      142
+ *   Rals  ( 58, 190)  spr_ralsei_idle   69x47    0    58               127      190
+ */
+const HEAL_ANCHOR = [
+  { x: 156, y: 104 },
+  { x: 96, y: 142 },
+  { x: 127, y: 190 },
+];
+
 export function spawnHealWriter(state, target, amount) {
   const d = state.dmg;
   if (!d) return;
@@ -237,12 +260,13 @@ export function spawnHealWriter(state, target, amount) {
   // point damage taken already appears, because that is where it is wanted.
   // The MAX read below is the same deviation: obj_healwriter has no message
   // sprite at all, so in the game a Spincake on a full bar reads +150.
-  const pos = PARTY_POS[target];
   const hp = state.partyHp?.[target] ?? 0;
   const max = PARTY[target]?.maxhp ?? 0;
+  const pos = HEAL_ANCHOR[target] ?? PARTY_POS[target];
   d.heals.push({
+    // Just clear of the head, then it rises.
     x: pos.x,
-    y: pos.y,
+    y: pos.y - 6,
     maxed: max > 0 && hp >= max,
     healamt: amount,
     // GML `friction` reduces the SPEED MAGNITUDE and clamps at zero on

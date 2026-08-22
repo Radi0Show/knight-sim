@@ -98,7 +98,8 @@ export function stepIntroFx(e, cues, sc) {
   if (e.done) return;
   e.frame += 1;
   if (e.shudder) e.shudder -= 1;
-  if (e.crushTimer >= 0 && e.crushTimer < 48) e.crushTimer += 1;
+  // 24 frames of wind-up plus the alarm's 64-frame bright collapse.
+  if (e.crushTimer >= 0 && e.crushTimer < 96) e.crushTimer += 1;
   if (e.circleFlash > 0) e.circleFlash += 1;
 
   if (e.whiteout) {

@@ -326,8 +326,11 @@ if (!IMPACT[1].shake) failures.push('Susie does not shake the screen');
   if (s.dmg.heals.length !== 3) failures.push('scr_healitem_all writes one per character');
   const xs = s.dmg.heals.map((h) => h.x);
   if (new Set(xs).size !== 3) failures.push(`three characters, ${new Set(xs).size} positions`);
-  if (xs[0] !== PARTY_POS[0].x) {
-    failures.push(`heal 0 sits over the character (${PARTY_POS[0].x}), got ${xs[0]}`);
+  // Over the sprite's CENTRE, not its draw origin: PARTY_POS is the point
+  // draw_sprite_ext is given and every party sprite has a non-zero ox at
+  // scale 2, so the origin is the left edge. See HEAL_ANCHOR.
+  if (xs[0] <= PARTY_POS[0].x) {
+    failures.push(`heal 0 sits over the sprite centre, right of the origin ${PARTY_POS[0].x}, got ${xs[0]}`);
   }
 }
 
