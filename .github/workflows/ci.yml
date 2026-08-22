@@ -1,0 +1,27 @@
+# Run the suites on every push. THERE IS NO DEPLOY JOB, deliberately: this
+# project is not published to GitHub Pages any more, and the pages.yml that
+# used to build and deploy `_site` here was DELETED rather than disabled, so
+# nothing can quietly start publishing again by having a branch filter edited.
+#
+# The suite gate is kept. It is the only thing standing between a bad push and
+# a broken build, it runs headless in a few seconds, and it is independent of
+# where -- or whether -- the result is ever hosted.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run verify
