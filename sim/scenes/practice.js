@@ -33,7 +33,7 @@ import {
   textSoundChar,
 } from '../dialogue.js';
 import {
-  spawnDmgNumber, stepDmgNumbers, stepHealWriters, resetDmgStack,
+  spawnDmgNumber, stepDmgNumbers, resetDmgStack,
 } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
@@ -291,8 +291,10 @@ const director = {
     // pin the ordering; calling it from this endStep put the rolls before
     // the slash jitter and the tunnel boundary rolls, which only balanced
     // out under the old skip-a-tick model by call-site accident.
-    // obj_healwriter has no delay and no RNG — it rises and fades on its own.
-    stepHealWriters(state);
+    // obj_healwriter is stepped from sim/index.js's frame end instead: it is
+    // its own instance in the game and rises whether or not this scene's
+    // entity is stepping, and being tied here froze it whenever the menu was
+    // up — which is exactly when items are used.
     stepAttackVfx(state);
     // obj_rudebuster_anim + obj_rudebuster_bolt. The press is an EDGE, and it
     // is the same button that confirms in the menu — but the menu is closed

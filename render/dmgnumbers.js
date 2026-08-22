@@ -54,7 +54,13 @@ export function drawAttackVfx(ctx, state, sprites) {
 
 export function drawDmgNumbers(ctx, state, sprites) {
   const d = state.dmg;
-  if (!d || !d.list.length) return;
+  if (!d) return;
+  // obj_dmgwriter only. obj_healwriter is a SEPARATE object with its own
+  // lifetime and its own depth, so it is drawn by drawHealWriters from the
+  // canvas's own order — over the charbox band, not under it. It used to be
+  // called from the bottom of this function, which meant the early return
+  // below swallowed it whenever no damage number happened to be on screen.
+  if (!d.list.length) return;
   const msg = sprites.get('spr_battlemsg');
 
   ctx.save();
@@ -109,8 +115,6 @@ export function drawDmgNumbers(ctx, state, sprites) {
     }
   }
   ctx.restore();
-
-  drawHealWriters(ctx, state);
 }
 
 /**
@@ -126,7 +130,7 @@ export function drawDmgNumbers(ctx, state, sprites) {
  * object's. And `image_alpha` starts at 1.5 against a draw_set_alpha that
  * CLAMPS at 1, so it holds solid for five frames before the ten-frame fade.
  */
-function drawHealWriters(ctx, state) {
+export function drawHealWriters(ctx, state) {
   const heals = state.dmg?.heals;
   if (!heals || !heals.length) return;
   const font = loadFont();

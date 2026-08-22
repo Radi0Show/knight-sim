@@ -32,7 +32,7 @@ import { drawFightBar } from './fightbar.js';
 import { drawBackground } from './background.js';
 import { drawSnowBackdrop } from './draw/intro-fx.js';
 import { CAM_X } from '../sim/intro.js';
-import { drawDmgNumbers, drawAttackVfx } from './dmgnumbers.js';
+import { drawDmgNumbers, drawAttackVfx, drawHealWriters } from './dmgnumbers.js';
 import { drawRudeBuster } from './rudebuster.js';
 import { drawDialogue } from './dialogue.js';
 import {
@@ -844,6 +844,11 @@ export async function createRenderer(canvas) {
     // never up together — the exchange runs before the menu opens.
     drawDialogue(ctx, state, sprites);
     drawMenu(ctx, state, sprites);
+    // OVER THE BAND. obj_healwriter is created at `yy + 430` — inside the
+    // charbox strip it annotates — and rises out of it. Drawn with the damage
+    // numbers (under the band) the first frames of every heal were hidden
+    // behind the very box whose HP it is reporting.
+    drawHealWriters(ctx, state);
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.
     drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);
 

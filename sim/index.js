@@ -10,7 +10,7 @@ import { traceRow } from './trace.js';
 import { spriteMaskHit, SPRITE_MASKS, masksOverlap, GRAZE_MASK, grazeMaskAt } from './masks.js';
 import { stepGraze } from './tension.js';
 import { freshParty, scrRevive } from './damage.js';
-import { stepDmgNumbers } from './dmgnumbers.js';
+import { stepDmgNumbers, stepHealWriters} from './dmgnumbers.js';
 import { rngNext } from './rng.js';
 
 export { createState } from './state.js';
@@ -447,6 +447,10 @@ export function stepFrame(state, input) {
   // slash jitter, the tunnel boundary rolls, the star chain); see the
   // ledger header over stepDmgNumbers.
   stepDmgNumbers(state, state.rng ? () => rngNext(state.rng) : undefined);
+  // obj_healwriter: no delay, no RNG, rises and fades on its own. Frame-level
+  // like its owner instance in the game, so it keeps moving while the menu is
+  // open — which is when items are actually used.
+  stepHealWriters(state);
 
   // obj_grazebox's End Step: the box moves to the heart NOW, after this
   // frame's collisions already tested against where it was. See runCollisions.
