@@ -145,3 +145,35 @@ export function scrShakescreen(state, opts = null) {
   }
   return e;
 }
+
+/**
+ * THE VIEW AS INSTANCE `e` SEES IT THIS FRAME.
+ *
+ * obj_shake's FIRST offset is written in its own Step (every later one is in
+ * the alarm, and alarms run before all Steps, so only frame one is
+ * order-sensitive). The runner steps NEWEST-FIRST, so on that frame an
+ * instance OLDER than the shake steps after it and reads the SHAKEN camera,
+ * while a newer one reads the unshaken value.
+ *
+ * The sim steps oldest-first, which is exactly inverted — so a global
+ * stepOrder cannot express this (tried: putting the shake first fixes the
+ * tunnel swords and breaks verify21j at f547, because bullets NEWER than the
+ * shake must not see it). This resolves it per-reader instead: a shake that
+ * has not yet taken its first step (`active === 0`) and is NEWER than `e`
+ * contributes its incoming offset.
+ *
+ * It is gameplay. The tunnel swords cull against `cameray() - 250`, so four
+ * pixels of shake move the kill line: verify37 f3169 — a hit lands at f3168,
+ * the game's line moves to -246 and kills sword #8008 at y -247.56, and the
+ * sim kept it a frame longer.
+ */
+export function viewFor(state, e) {
+  const v = state.view;
+  for (const sh of state.entities) {
+    if (!sh.alive || sh.type.name !== 'obj_shake') continue;
+    if (sh.active !== 0) continue;
+    if (!(sh.seq > (e?.seq ?? Infinity))) continue;
+    return { x: v.x + sh.shakex, y: v.y + sh.shakey };
+  }
+  return v;
+}

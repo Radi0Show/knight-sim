@@ -318,6 +318,18 @@ for (let f = 0; f < replay.frames; f++) {
     }
   }
   stepFrame(state, replay.inputAt(f));
+  if (process.env.KNIGHT_DUMP_BULLETS) {
+    const [lo, hi] = process.env.KNIGHT_DUMP_BULLETS.split('-').map(Number);
+    if (f >= lo && f <= hi) {
+      const bs = state.entities.filter((e) => e.alive && e.isBullet)
+        .sort((a, b) => a.seq - b.seq)
+        .filter((e) => !process.env.KNIGHT_DUMP_SEQ || String(e.seq) === process.env.KNIGHT_DUMP_SEQ)
+        .map((e) => `${e.type.name}#${e.seq}(${e.x.toFixed(2)},${e.y.toFixed(2)})`
+          + ` con=${e.con} timer=${e.timer} spd=${e._speed?.toFixed(3)} ang=${e.image_angle}`
+          + ` ys=${e.image_yscale?.toFixed(4)}`);
+      console.error(`[dump] f=${f} n=${bs.length} ${bs.join(' ')}`);
+    }
+  }
   if (ttRanges.some(([a, b]) => f >= a && f <= (b ?? a))) {
     const cone = state.entities.find((e) => e.alive && e.type.name === 'obj_knight_pointing_cone');
     const dir = state.entities.find((e) => e.alive && e.type.name === 'fight_director');

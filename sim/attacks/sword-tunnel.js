@@ -31,6 +31,7 @@
 // per-frame afterimage objects the sword spawns.
 
 import { spawn, destroy } from '../entity.js';
+import { viewFor } from '../shake.js';
 import { afterimage, afterimageGrow } from '../fx.js';
 import { lerp, lengthdirX, lengthdirY, mergeColor, pointDirection, scrAnglechange, WHITE, RED } from '../gml.js';
 import { scrBulletInit, collidebulletOther15 } from '../bullets/regularbullet.js';
@@ -280,6 +281,21 @@ export const swordTunnelSword = {
         } else if (e.create_2nd_hitbox === false) {
           const tipx = e.x + lengthdirX(37, e.image_angle);
           const tipy = e.y + lengthdirY(37, e.image_angle);
+          // KNIGHT_SWEEP_ALL="lo-hi" logs EVERY probe evaluation — sample,
+          // tip and soul box — not just the ones that connect. Joined against
+          // the oracle's own firings (the tunnel sidecar's P rows) by
+          // tools/fit-lineprobe.mjs, that is how this model gets scored on
+          // real labels instead of a couple of hand-picked receipts.
+          if (globalThis.process?.env?.KNIGHT_SWEEP_ALL) {
+            const [lo, hi] = globalThis.process.env.KNIGHT_SWEEP_ALL.split('-').map(Number);
+            const fnow = globalThis.__simFrame;
+            if (fnow >= lo && fnow <= hi) {
+              console.error(`[all] f=${fnow} seq=${e.seq} spd=${e._speed} ang=${e.image_angle}`
+                + ` s=(${e.x.toFixed(2)},${e.y.toFixed(2)}) tip=(${tipx.toFixed(2)},${tipy.toFixed(2)})`
+                + ` box=[${bx0},${by0},${bx1},${by1}]`
+                + ` hit=${collisionLineRect(e.x, e.y, tipx, tipy, bx0, by0, bx1, by1)}`);
+            }
+          }
           if (collisionLineRect(e.x, e.y, tipx, tipy, bx0, by0, bx1, by1)) {
             if (globalThis.process?.env?.KNIGHT_SWEEP_DEBUG) {
               console.error(`[sweep] f=${globalThis.__simFrame} seq=${e.seq}`
@@ -321,10 +337,14 @@ export const swordTunnelSword = {
     ghost.image_alpha = 0.4;
     ghost.image_blend = e.con > 0 ? WHITE : e.image_blend;
 
-    if (e.x <= state.view.x - 100) return destroy(e);
-    if (e.x >= state.view.x + 740) return destroy(e);
-    if (e.y >= state.view.y + 600) return destroy(e);
-    if (e.y <= state.view.y - 250) return destroy(e);
+    // THE CULL RIDES THE SCREEN SHAKE — see viewFor. A hit landing this frame
+    // moves cameray() before these swords read it in the real game, which
+    // moves the kill line by four pixels.
+    const vw = viewFor(state, e);
+    if (e.x <= vw.x - 100) return destroy(e);
+    if (e.x >= vw.x + 740) return destroy(e);
+    if (e.y >= vw.y + 600) return destroy(e);
+    if (e.y <= vw.y - 250) return destroy(e);
 
     if (e.con === 0) {
       e.image_yscale = lerp(e.image_yscale, e._speed / 20, 0.1);
