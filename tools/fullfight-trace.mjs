@@ -163,9 +163,9 @@ if (gzIdx >= 0) {
 // the sim cannot derive (verify21j f4372) — so the recorded delay is matched
 // back at init by frame + position, the graze replay's arrangement. The
 // label lag is the same +1 (the shard's init logs in its step phase).
-const shIdx = argv.indexOf('--shards');
-if (shIdx >= 0 && existsSync(argv[shIdx + 1])) {
-  const text = readFileSync(argv[shIdx + 1], 'utf8').trim();
+const sdIdx = argv.indexOf('--shards');
+if (sdIdx >= 0 && existsSync(argv[sdIdx + 1])) {
+  const text = readFileSync(argv[sdIdx + 1], 'utf8').trim();
   const byFrame = new Map();
   let n = 0;
   for (const line of text ? text.split(/\r?\n/) : []) {

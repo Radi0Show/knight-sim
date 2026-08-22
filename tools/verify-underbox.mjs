@@ -172,6 +172,13 @@ if (bigSpeedStart !== null && bigSpeedLate !== null) {
 // must pay more than once, which only the `timer % 3` reset allows.
 const g = createState({ seed: 20260816, traceBulletSlots: 0 });
 buildSingleAttackScene(g, { seed: 20260816, attack: 'underbox', difficulty: 0 });
+// DAMAGE OFF for this scenario — the t6 recorder's arrangement. The drifting
+// soul takes an orb hit under the calibrated rotated-B routing, and the
+// `global.inv < 0` gate then eats the graze window this suite exists to
+// measure. ac 6 has no oracle to arbitrate the hit itself; the re-arm
+// machinery is the claim under test, and it needs the soul alive and
+// un-invulnerable to show a second graze.
+g.damageEnabled = false;
 //
 // The measurement has to be a 1 -> 0 TRANSITION on a bullet that has already
 // grazed. An earlier version counted frames where `grazed === 0` on a multiple
