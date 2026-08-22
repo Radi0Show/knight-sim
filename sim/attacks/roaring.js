@@ -550,7 +550,29 @@ export const roaring2 = {
       // 212.5120697 with +0.0209 in y — the direction from (222,139), the
       // frame-START position. Reading the live heart gave dir exactly 0.
       // Same compensation family as the heart follower and the bar.
-      const hp = state.soulPrev ?? heart;
+      const hp0 = state.soulPrev ?? heart;
+      // CLAMPED, because the Step's very first act is
+      //
+      //     with (obj_heart) { if (x < camerax()) x = camerax(); ... }
+      //
+      // and the tempdir read at line 100 sees the heart AFTER it. The sim
+      // applied that clamp to the LIVE soul but fed the pull the frame-start
+      // snapshot, which never saw it. Identical whenever the camera is
+      // steady and the soul is already inside — which is every frame the
+      // pull was verified on, f11271 included — and wrong on exactly the
+      // frames a SHAKE moves the boundary: at f11726 the camera is at (3, 3),
+      // so the game clamps the soul from x 0 to x 3 and aims from there,
+      // while the sim aimed from 0. Same asymmetry as the clamp above: left
+      // and top snap to the edge, right and bottom to 20 inside.
+      const cvx = state.view.x;
+      const cvy = state.view.y;
+      let hpx = hp0.x;
+      let hpy = hp0.y;
+      if (hpx < cvx) hpx = cvx;
+      if (hpx > cvx + 640 - 20) hpx = cvx + 640 - 20;
+      if (hpy < cvy) hpy = cvy;
+      if (hpy > cvy + 480) hpy = cvy + 480 - 20;
+      const hp = { x: hpx, y: hpy };
       // A --roar replay row's RESOLVED tempdir wins over the recomputation:
       // the runner's atan2 differs from JS's in the last bits, and those
       // bits reach the soul's f32-narrowed position (one ULP at f11288) and
