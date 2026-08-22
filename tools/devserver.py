@@ -117,6 +117,12 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # SERVE THE REPO, NOT THE CALLER'S CWD. The preview pane launches this
+    # with its own working directory (the home dir, when the config lives in
+    # ~/.claude/launch.json), which would otherwise serve the wrong tree
+    # entirely. Running it by hand from the repo root is unaffected.
+    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     # $PORT first so a launcher that assigns the port (Claude Code's preview
     # pane does) is obeyed; then an explicit argv port; then the default.
     port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8177))
