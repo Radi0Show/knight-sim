@@ -401,6 +401,71 @@ function newestSimMtime() {
  * `frame, x, y, live obj_shake count`; either being absent is not an error,
  * since recordings predating the sidecar are still perfectly good traces.
  */
+/**
+ * THE END CUTSCENE, which no recording used to contain. The oracle stopped
+ * the instant `end_cutscene_version` went positive — the exact frame the
+ * ending BEGINS — so everything after it was unverified by construction. The
+ * patch now keeps a 120-frame tail in oracle_end.csv and the sim writes the
+ * same columns to `<out>.end.csv`.
+ *
+ * Only the columns both sides carry are compared, matched BY NAME, so the
+ * oracle can log extra state (the fadeout's x and length, the attackpress and
+ * dmgwriter counts) without the sim having to mirror all of it.
+ *
+ * `tb_x` and `tb_hspeed` are compared with a tolerance and the reason is
+ * recorded rather than hidden: the tension bar's exit velocity is an f32
+ * built-in whose accumulation this sim reproduces for four frames and then
+ * differs from by about 2e-6. GameMaker stores speed/direction and DERIVES
+ * hspeed, and neither a pure-f32 nor a pure-f64 model of that reproduces the
+ * recorded series. It is left unsolved on purpose: obj_tensionbar's Draw
+ * exits on `end_cutscene_version > 0`, so the bar is off screen before any of
+ * this runs and the quantity is provably invisible.
+ */
+function reportEnd(oraPath, simPath) {
+  if (!existsSync(oraPath) || !existsSync(simPath)) return;
+  const load = (p) => {
+    const lines = readFileSync(p, 'utf8').trim().split('\n');
+    const head = lines[0].split(',');
+    const rows = new Map();
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(',');
+      if (!c[0] || Number.isNaN(Number(c[0]))) continue;
+      rows.set(Number(c[0]), c);
+    }
+    return { head, rows };
+  };
+  const O = load(oraPath);
+  const S = load(simPath);
+  if (!O.rows.size) return;
+  const TOL = { tb_x: 1e-4, tb_hspeed: 1e-4 };
+  const shared = O.head.filter((h) => S.head.includes(h) && h !== 'frame');
+  let compared = 0;
+  let first = null;
+  for (const f of [...O.rows.keys()].sort((a, b) => a - b)) {
+    const o = O.rows.get(f);
+    const sr = S.rows.get(f);
+    if (!sr) continue;
+    compared++;
+    for (const col of shared) {
+      const ov = o[O.head.indexOf(col)];
+      const sv = sr[S.head.indexOf(col)];
+      const a = parseFloat(ov);
+      const b = parseFloat(sv);
+      const same = Number.isNaN(a) || Number.isNaN(b)
+        ? ov === sv
+        : Math.abs(a - b) <= (TOL[col] ?? 0);
+      if (!same && first === null) first = { f, col, ov, sv };
+    }
+  }
+  if (!compared) return;
+  if (first === null) {
+    console.log(`  ending: ${compared} frames one-to-one across ${shared.length} columns`);
+  } else {
+    console.log(`  ending: DIFFERS at f${first.f}, column ${first.col} ` +
+      `(oracle ${first.ov}, sim ${first.sv})`);
+  }
+}
+
 function reportCamera(oraPath, simPath, rowFront) {
   if (!existsSync(oraPath) || !existsSync(simPath)) return;
   const load = (p) => {
@@ -515,6 +580,7 @@ function main() {
     const rowFront = res.findings?.length
       ? Number(res.oracle.rows[res.findings[0].row][0])
       : null;
+    reportEnd(join(TRACES, `${name}.end.csv`), simPath.replace(/\.csv$/, '') + '.end.csv');
     reportCamera(join(TRACES, `${name}.camera.csv`), simPath.replace(/\.csv$/, '') + '.view.csv',
       rowFront);
 

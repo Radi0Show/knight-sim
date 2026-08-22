@@ -157,10 +157,52 @@ for (const [hs, label] of [[HERO_ITEM, 'ITEM'], [HERO_SPELL, 'SPELL']]) {
   // It clears at hurttimer 15 — halfway through the 30-frame reaction.
   for (let i = 0; i < 15; i++) stepKnightAnim(s);
   if (s.knight.stronghurtanim) failures.push('stronghurtanim did not clear at hurttimer 15');
+  // IT RESTS AT -1, NOT 0, and the difference is measured rather than
+  // reasoned. scr_enemy_hurt is
+  //
+  //     hurttimer -= 1;
+  //     if (hurttimer < 0) state = 0;
+  //
+  // called from `if (state == 3)`, so the counter passes THROUGH zero and the
+  // hurt ends on the frame it goes negative -- one frame later than a model
+  // that stops at 0. This used to expect 0, which is what a floored
+  // `if (hurttimer > 0)` produces; the extended ending recording rules that
+  // out directly, because the ending pins state to 3 and oracle_end.csv shows
+  // hurttimer running on down to -1, -2, -3 ... which a floor cannot reach.
   for (let i = 0; i < 20; i++) stepKnightAnim(s);
-  if (s.knight.hurttimer !== 0) failures.push('hurttimer did not run out');
+  if (s.knight.hurttimer !== -1) {
+    failures.push(`hurttimer rests at ${s.knight.hurttimer}, expected -1`);
+  }
   if (s.knight.animState !== 0) failures.push('the Knight stayed in the hurt state');
   if (s.knight.shakex !== 0) failures.push(`shake settled at ${s.knight.shakex}, expected 0`);
+}
+// THE COUNTER MUST NOT FLOOR. Pin the exact frame the hurt ends: 30 steps
+// leave it at 0 and STILL hurt, the 31st takes it to -1 and ends it. A floored
+// decrement passes the resting-value check above by accident, so this is the
+// assertion that actually discriminates the two models.
+{
+  const s = st();
+  s.knight = createKnight();
+  damageKnight(s, 100);
+  for (let i = 0; i < 30; i++) stepKnightAnim(s);
+  if (s.knight.hurttimer !== 0) failures.push(`after 30 steps hurttimer is ${s.knight.hurttimer}, expected 0`);
+  if (s.knight.animState !== 3) failures.push('the hurt ended at 0 — it must run until the counter goes NEGATIVE');
+  stepKnightAnim(s);
+  if (s.knight.hurttimer !== -1) failures.push(`the 31st step gave ${s.knight.hurttimer}, expected -1`);
+  if (s.knight.animState !== 0) failures.push('the hurt did not end when the counter went negative');
+}
+// AND WHILE THE ENDING HOLDS state == 3, IT KEEPS FALLING. This is the shape
+// oracle_end.csv actually recorded: the ending forces the hurt state every
+// frame, so the counter runs far negative and the strobe's `hurttimer % 3`
+// keeps cycling instead of sticking on the idle frame.
+{
+  const s = st();
+  s.knight = createKnight();
+  damageKnight(s, 100);
+  for (let i = 0; i < 40; i++) { s.knight.animState = 3; stepKnightAnim(s); }
+  if (s.knight.hurttimer !== -10) {
+    failures.push(`held in state 3, hurttimer reached ${s.knight.hurttimer}, expected -10`);
+  }
 }
 // The shake must ALTERNATE SIGN as it decays — that is what makes it a shake
 // and not a slide. A monotonic decay looks like the Knight drifting.

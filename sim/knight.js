@@ -324,14 +324,34 @@ export function stepKnightAnim(state) {
     k.shakex = -(k.shakex - Math.sign(k.shakex) * 2);
     if (Math.abs(k.shakex) < 2) k.shakex = 0;
   }
-  if (k.hurttimer > 0) {
+  // `if (state == 3) scr_enemy_hurt();` — and scr_enemy_hurt is
+  //
+  //     hurttimer -= 1;
+  //     if (hurttimer < 0) state = 0;
+  //
+  // UNGUARDED, and it goes NEGATIVE. This used to be `if (hurttimer > 0)`
+  // with the state reset at exactly 0, which is wrong twice: the hurt ended a
+  // frame early, and the counter FROZE at 0 instead of running on. The freeze
+  // is the visible half -- the ending forces `state = 3` every frame, so in
+  // the game hurttimer keeps falling (oracle_end.csv reads -1, -2, -3 ...)
+  // and the strobe's `hurttimer % 3` keeps cycling for the whole cutscene,
+  // while the sim sat at 0, where `0 % 3 == 0` picks the idle frame forever
+  // and the Knight went STATIC exactly when he should be flickering hardest.
+  if (k.animState === 3) {
     k.hurttimer -= 1;
-    if (k.hurttimer === 29 && k.stronghurtanim) cue(state, 'snd_knight_hurtb');
-    if (k.hurttimer === 15) k.stronghurtanim = false;
-    if (k.hurttimer === 0) {
-      k.animState = 0;
-      k.stronghurtanim = false;
+    if (k.hurttimer < 0) k.animState = 0;
+  }
+  // Both of these are in the DRAW, inside `state == 3 && hurttimer >= 0`, so
+  // they see the value the Step just decremented.
+  if (k.animState === 3 && k.hurttimer >= 0) {
+    // `&& end_cutscene_version == 0` — the second hurt sound is SUPPRESSED
+    // during the ending. The ending's own trigger already plays three pitched
+    // copies of snd_knight_hurt as a chord; without this guard the sim added a
+    // fourth, unrelated hit sound one frame into the cutscene.
+    if (k.hurttimer === 29 && k.stronghurtanim && !k.endCutscene) {
+      cue(state, 'snd_knight_hurtb');
     }
+    if (k.hurttimer === 15) k.stronghurtanim = false;
   }
   // THE CHARGE-UP TURN'S OWN CLOCK — `obj_knight_enemy`'s Step:
   //
@@ -528,10 +548,20 @@ export function startEndCutscene(state) {
   if (k.endCutscene !== 0) return false;
   k.endCutscene = 1;
   k.endcon = 1;
-  k.endtimer = 0;
+  // MINUS ONE, so this frame ENDS at 0. The game sets end_cutscene_version in
+  // obj_knight_enemy's DRAW, and the `endtimer++` lives in its STEP -- which
+  // has already run by then, so the first increment lands on the FOLLOWING
+  // frame. The sim triggers and steps the cutscene in the same frame, so
+  // starting at 0 made every later endtimer one high and fired the teardown a
+  // frame early: measured against oracle_end.csv, which has endtimer 1 on
+  // f12007 where the trigger is f12006.
+  k.endtimer = -1;
   k.hurttimer = 999;
   k.stronghurtanim = true;
   k.animState = 3;
+  // obj_tensionbar is already on screen and stationary when the ending opens;
+  // the teardown 46 frames later is what launches it.
+  state.tensionbarFly = { x: 38, hspeed: 0, friction: -0.4, alarm: -1 };
   // The ending hit, exactly as the Draw's trigger block plays it:
   //
   //     inst = instance_create(x, y, obj_shake);
@@ -562,12 +592,20 @@ export function startEndCutscene(state) {
  *         every obj_dmgwriter; tension bar flies off (hspeed -10,
  *         friction -0.4); global.fighting = 0; endcon = 2; }
  *
- * `state.endFade` is the renderer's cue for the WHITE fadeout (0..1 over 30
+ * `state.endFade` is the renderer's cue for the WHITE fadeout (0..1 over 15
  * frames — scr_fadeout(15) with `length *= 2`), and `state.tensionbarFly`
  * carries the bar's exit motion. The room's story cutscene (Susie, Undyne,
  * the bird) picks up after this in the game; the tool hands off to its own
  * win screen instead — that seam is the deliberate cut, not a gap.
  */
+// `scr_fadeout(15)` -> `fadespeed = 1 / arg0`. f64, NOT f32: `fadespeed` is a
+// plain instance variable, and CLAUDE.md's rule is that only BUILT-INS narrow.
+// `image_alpha` is the built-in, so the narrowing belongs on the accumulator
+// and not on the step. The two models agree for the first two frames and part
+// on the third -- f32 fadespeed gives 0.2000000179 where the oracle reads
+// 0.2000000030 -- which is what pinned it.
+const FADESPEED = 1 / 15;
+
 export function stepEndCutscene(state) {
   const k = state.knight;
   if (!k || k.endCutscene !== 1) return;
@@ -586,20 +624,82 @@ export function stepEndCutscene(state) {
   k.shakex = 0;
   k.stronghurtanim = true;
   k.animState = 3;
+  // ...AND THEN CLEARED AGAIN on the single frame hurttimer hits 15. The Draw
+  // sets stronghurtanim true at the TOP for the whole ending and the
+  // `if (hurttimer == 15) stronghurtanim = false;` sits at the BOTTOM, below
+  // the strobe, so the flag is false for exactly one frame. oracle_end.csv
+  // shows it: 1 everywhere except f12022, where hurttimer is 15.
+  if (k.hurttimer === 15) k.stronghurtanim = false;
+  // ALARMS RUN BEFORE STEP (CLAUDE.md rule 5), so the alarm the teardown sets
+  // below does NOT tick on the frame it is set. Ticking it in the same pass
+  // destroyed the tension bar at f12066 where the oracle still has it and
+  // loses it at f12067 -- the classic one-frame alarm error this project
+  // already has a rule for.
+  if (state.tensionbarFly?.alarm > 0) {
+    state.tensionbarFly.alarm -= 1;
+    if (state.tensionbarFly.alarm === 0) state.tensionbarFly = null;
+  }
   k.endtimer = (k.endtimer ?? 0) + 1;
-  if (k.endtimer === 32) state.endFade = 0.0001;
-  if (state.endFade) state.endFade = Math.min(1, state.endFade + 1 / 30);
+  // THE WHITE FADEOUT, at the game's own rate. This ran at 1/30 -- HALF
+  // speed -- and the 0.0001 seed existed only so `if (state.endFade)` would
+  // not read a real 0 as absent.
+  //
+  //     scr_fadeout(15)  ->  __fadeouter.fadespeed = 1 / 15
+  //     obj_fadeout Draw ->  image_alpha += fadespeed;   // BEFORE drawing
+  //
+  // obj_fadeout's Create sets image_alpha = 0, the Step creates it on the
+  // endtimer == 32 frame, and its Draw runs later in that SAME frame -- so
+  // the first alpha ever drawn is 1/15 and it reaches 1 fifteen frames after
+  // creation, at endtimer 46. Deriving it from endtimer instead of
+  // accumulating removes the seed hack and cannot drift.
+  //
+  // The rate is not cosmetic: web/main.js hands off to the post-battle
+  // cutscene on `endFade >= 1`, so at 1/30 the whole ending sat on a white
+  // screen fifteen frames longer than the game does.
+  //
+  // ACCUMULATED IN f32 AND NEVER CLAMPED. `image_alpha` is a built-in, so
+  // every store narrows (CLAUDE.md's F32_BUILTINS rule) -- the oracle reads
+  // 0.0666666701, 0.1333333403, 0.2000000030, which is fround(1/15) summed,
+  // not the f64 series. And obj_fadeout's Draw has no ceiling: it keeps
+  // adding past 1.0 (the oracle is at 1.0666667223 two frames after full),
+  // so clamping the STATE here loses the match. The renderer clamps at draw
+  // time instead, which is what GameMaker does with an alpha above 1.
+  if (k.endtimer === 32) state.endFade = 0;
+  if (k.endtimer >= 32) state.endFade = Math.fround(state.endFade + FADESPEED);
   if (k.endcon === 1 && k.endtimer > 45) {
     k.endcon = 2;
     state.fightBar = null;
     if (state.dmg) state.dmg.list = [];
-    state.tensionbarFly = { hspeed: -10, friction: -0.4, x: 0 };
+    // The teardown's `with (obj_tensionbar) { alarm[5] = 15; hspeed = -10;
+    // friction = -0.4; }`. Alarm 5 is `instance_destroy()`, so the bar flies
+    // left for fifteen frames and then stops existing -- the oracle's tb_x
+    // reads -1 (no instance) from f12067, exactly 15 after the teardown at
+    // f12052.
+    //
+    // NOT DRAWN, and that is not a bug: obj_tensionbar's Draw exits on
+    // `chapter == 3 && obj_knight_enemy.end_cutscene_version > 0`, so the bar
+    // left the screen when the ending began and none of this is visible.
+    // Modelled anyway because the oracle now records it, and a measured
+    // column that quietly does not match is worse than one labelled invisible.
+    state.tensionbarFly.hspeed = -10;
+    state.tensionbarFly.alarm = 15;
     state.fighting = 0;
   }
   if (state.tensionbarFly) {
     const f = state.tensionbarFly;
-    // GML friction reduces speed magnitude; negative friction accelerates.
-    f.hspeed -= -f.friction * Math.sign(f.hspeed);
-    f.x += f.hspeed;
+    // x 38 is obj_tensionbar's resting position, measured off oracle_end.csv.
+    // It sits still for the first 46 frames of the ending; only the teardown
+    // gives it a speed.
+    if (!f.hspeed) return;
+    // GML friction reduces speed MAGNITUDE, so a negative friction grows it:
+    //     hspeed = sign(hspeed) * (|hspeed| - friction)
+    // The old line worked out to -10 + 0.4 = -9.6, decelerating, where the
+    // oracle reads -10.4 then -10.8 then -11.2. Friction is applied BEFORE
+    // the move: f12052 has hspeed -10.4 and x 27.6, i.e. 38 - 10.4.
+    // f32 on both, for the same reason: `x` and `hspeed` are built-ins. The
+    // oracle reads 27.6000003815 and -10.3999996185 where f64 gives 27.6 and
+    // -10.4 exactly.
+    f.hspeed = Math.fround(Math.sign(f.hspeed) * (Math.abs(f.hspeed) - f.friction));
+    f.x = Math.fround(f.x + f.hspeed);
   }
 }

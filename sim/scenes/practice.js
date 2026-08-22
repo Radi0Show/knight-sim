@@ -1013,6 +1013,25 @@ const director = {
     if (e.bar && (state.knight?.endCutscene ?? 0) > 0) {
       // The ending froze it — keep it visible at its last value and step
       // nothing. See the freeze note at the end-cutscene trigger above.
+      //
+      // ...UNTIL THE TEARDOWN DESTROYS IT. The endcon-2 block runs
+      // `with (obj_attackpress) instance_destroy();`, so the bar is frozen
+      // only for the first 46 frames of the ending and then GONE. The freeze
+      // used to run to the end of the recording because the recording ENDED
+      // at the ending's first frame -- there was no data past it, so "frozen
+      // forever" and "frozen then destroyed" looked identical. The extended
+      // recording separates them: oracle_end.csv has ap 1 through f12051 and
+      // 0 from f12052, and the main trace's `bar` column goes to '-' on that
+      // same frame.
+      //
+      // stepEndCutscene nulls state.fightBar at the teardown too, but this
+      // branch republished it from e.bar a few lines later and put it back --
+      // the null had to happen where the bar actually lives.
+      if ((state.knight?.endcon ?? 0) >= 2) {
+        e.bar = null;
+        state.fightBar = null;
+        return;
+      }
       state.fightBar = e.bar;
       return;
     }

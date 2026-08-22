@@ -274,6 +274,7 @@ if (keepAlive) console.log('keep-alive: party HP pinned — hp columns NOT verif
 // bar and everything downstream.
 const rows = [traceHeader(state)];
 const viewRows = [];
+const endRows = ['frame,ecv,endcon,endtimer,hurttimer,stronghurt,shakex,kstate,fade,fade_alpha,tb_x,tb_hspeed'];
 // The refill itself lives INSIDE stepFrame (state.keepAlive), before the
 // trace row is captured — the oracle recorder refills before composing its
 // row, so a refill done out here, after the row was already pushed, left
@@ -335,6 +336,30 @@ for (let f = 0; f < replay.frames; f++) {
     `${viewFrame},${real(state.view.x)},${real(state.view.y)},` +
       `${state.entities.filter((e) => e.alive && e.type.name === 'obj_shake').length}`,
   );
+  // THE ENDING, once it starts. The oracle used to stop recording at the very
+  // frame `end_cutscene_version` goes positive, so the whole end cutscene sat
+  // outside every trace and nothing about it was ever checked. The oracle
+  // patch now records a 120-frame tail into oracle_end.csv; this is the same
+  // columns from the sim so the two can be diffed directly.
+  {
+    const k = state.knight;
+    if (k && (k.endCutscene ?? 0) > 0) {
+      endRows.push([
+        viewFrame,
+        k.endCutscene ?? -1,
+        k.endcon ?? -1,
+        k.endtimer ?? -1,
+        k.hurttimer ?? -1,
+        k.stronghurtanim ? 1 : 0,
+        real(k.shakex ?? 0),
+        k.animState ?? -1,
+        (state.endFade ?? 0) > 0 ? 1 : 0,
+        real(state.endFade ?? -1),
+        state.tensionbarFly ? real(state.tensionbarFly.x) : -1,
+        state.tensionbarFly ? real(state.tensionbarFly.hspeed) : -1,
+      ].join(','));
+    }
+  }
   if (process.env.KNIGHT_DUMP_BULLETS) {
     const [lo, hi] = process.env.KNIGHT_DUMP_BULLETS.split('-').map(Number);
     if (f >= lo && f <= hi) {
@@ -364,6 +389,7 @@ writeFileSync(out, `${rows.join('\n')}\n`);
 // this for its stderr probes, and appending to that path is an EPERM.
 if (/\.csv$/.test(out)) {
   writeFileSync(out.replace(/\.csv$/, '') + '.view.csv', `${viewRows.join('\n')}\n`);
+  writeFileSync(out.replace(/\.csv$/, '') + '.end.csv', `${endRows.join('\n')}\n`);
 }
 
 console.log(`${replay.frames} frames -> ${out}`);
