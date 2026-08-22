@@ -190,6 +190,36 @@ if (sdIdx >= 0 && existsSync(argv[sdIdx + 1])) {
   console.log(`shards: replaying ${n} recorded homing delay(s)`);
 }
 
+// --roar <oracle_roar.csv>: ROARING's pull, one row per frame — fake_x,
+// fake_y, player_suck, intensity, roaring_timer, and the RESOLVED tempdir
+// (the runner's own atan2, captured by the sidecar's re-imported Step). The
+// pull replays tempdir instead of recomputing it: the atan2's last bits are
+// the one term the sim cannot land bit-exact, and they reach the soul (one
+// f32 ULP at f11288) and a homing child's discrete turn (f11809). Rows are
+// written in obj_time's Draw after the frame stamp, so labels align with the
+// main trace and no +1 shift applies.
+const roarIdx = argv.indexOf('--roar');
+if (roarIdx >= 0 && existsSync(argv[roarIdx + 1])) {
+  const text = readFileSync(argv[roarIdx + 1], 'utf8').trim();
+  const byFrame = new Map();
+  let n = 0;
+  for (const line of text ? text.split(/\r?\n/) : []) {
+    const r = line.split(',');
+    if (r.length < 7) continue;
+    const fight = Number(r[0]);
+    if (!Number.isFinite(fight)) continue;
+    const tempdir = Number(r[6]);
+    byFrame.set(fight, {
+      fakeX: Number(r[1]), fakeY: Number(r[2]), suck: Number(r[3]),
+      intensity: Number(r[4]), roaringTimer: Number(r[5]),
+      tempdir: Number.isFinite(tempdir) ? tempdir : null,
+    });
+    n++;
+  }
+  state.roarReplay = byFrame;
+  console.log(`roar: replaying ${n} recorded pull frame(s)`);
+}
+
 const boltIdx = argv.indexOf('--bolts');
 if (boltIdx >= 0) {
   const text = readFileSync(argv[boltIdx + 1], 'utf8').trim();

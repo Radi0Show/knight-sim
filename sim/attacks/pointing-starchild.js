@@ -224,6 +224,18 @@ export const pointingStarchild = {
     regularbulletStep(e, state);
     if (!e.alive) return;
 
+    // `if (!i_ex(obj_knight_roaring2))` WRAPS THE ENTIRE REST OF THE STEP —
+    // measured on the dump's brace balance: chars 446-3756 of 3758. While
+    // the roar lives, a starchild is an inert ballistic bullet: no
+    // deceleration, no delay clock, no homing, no cons — just the parent
+    // cull and its own friction. The recording's burst children accelerate
+    // 1.1, 1.2, 1.3, 1.4 in a clean line (oracle_roarchild.csv) while the
+    // ungated sim ran the minspeed deceleration once and froze them at 1.1
+    // (verify21j f11809, b15 0.1px short and compounding).
+    if (state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2')) {
+      return;
+    }
+
     const follower = state.entities.find(
       (x) => x.alive && x.type.name === 'obj_heart_follower',
     );

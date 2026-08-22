@@ -49,6 +49,8 @@ import { gmlChoose, gmlIrandom, gmlIrandomRange, gmlRandom } from '../rng.js';
 import { scrLerpvar } from '../lerpvar.js';
 import { cue, cueSustain, cueTune } from '../audio.js';
 import { roaringStar } from './roaring-star.js';
+import { roaringknightSlash } from './roaringknight-slash.js';
+import { scrBulletInherit } from '../bullets/regularbullet.js';
 import {
   screenPiece, scrAfterimage, knightCircle, particleGeneric, afterimageScreen,
 } from '../fx.js';
@@ -521,7 +523,14 @@ export const roaring2 = {
       // frame-START position. Reading the live heart gave dir exactly 0.
       // Same compensation family as the heart follower and the bar.
       const hp = state.soulPrev ?? heart;
-      const tempdir = pointDirection(hp.x + 10, hp.y + 10, tx, ty);
+      // A --roar replay row's RESOLVED tempdir wins over the recomputation:
+      // the runner's atan2 differs from JS's in the last bits, and those
+      // bits reach the soul's f32-narrowed position (one ULP at f11288) and
+      // from there a homing child's discrete turn decision (f11809). Same
+      // concession shape as --grazes: give up the term nobody can model,
+      // pin everything around it. Free play recomputes live.
+      const roarRow = state.roarReplay?.get(state.frame);
+      const tempdir = roarRow?.tempdir ?? pointDirection(hp.x + 10, hp.y + 10, tx, ty);
       heart.x += lengthdirX(e.player_suck, tempdir);
       heart.y += lengthdirY(e.player_suck, tempdir);
       // RE-CLAMP AFTER THE SHOVE, with the HEART'S OWN boundary geometry.
@@ -826,6 +835,27 @@ export const roaring2 = {
         scrLerpvar(state, spawn, e, 'image_index', 2, 5, 6);
         e.do_fake_screen = true;
         cue(state, 'snd_knight_cut', 1);
+
+        // THE CUT IS A REAL SLASH BULLET, not just the screen effect: the
+        // original spawns obj_roaringknight_slash across the screen centre
+        // at 117 degrees, xscale 4, width x4, slashdir forced -1, inherits
+        // the roar's bullet fields, and lets it live out its ordinary
+        // shrink-and-die — the recording's last bullet, parked at
+        // (247.36, 97.44) from f11881 while everything else is swept
+        // (`event_user(0)` on it is a no-op: the slash has no Other_10 and
+        // its parents are codeless). The soul is destroyed by the same
+        // frame's finale, so it can never connect.
+        const cut = spawn(state, roaringknightSlash, {
+          x: state.view.x + 320 - lengthdirX(-160, 117),
+          y: state.view.y + 240 - lengthdirY(-160, 117),
+        });
+        cut.direction = 117;
+        cut.image_xscale = 4;
+        cut.xscale = 4;
+        cut.image_angle = 117;
+        cut.width *= 4;
+        cut.slashdir = -1;
+        scrBulletInherit(e, cut);
 
         // AND HE LEAPS. The cut is a jump-through: he dips 40px over 16 frames
         // easing out, and then — delayed by exactly those 16 — is thrown 360px

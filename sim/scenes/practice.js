@@ -312,6 +312,36 @@ const director = {
       cueLoop(state, 'mus_knight');
     }
 
+    // SWING DAMAGE LANDS BEFORE THE END-CUTSCENE CHECK AND BEFORE THE BAR
+    // TICKS — the game's phase order: obj_heroparent's Other_10 resolves
+    // `finishattacktimer == 0` in the STEP phase, while boltx advances in
+    // obj_attackpress's DRAW, and the knight's own Draw fires the ending in
+    // between. On the fight's last frame (verify21j f12010) the ending hit
+    // lands, ecv flips, and the bar's draw exits with boltx still 28 — the
+    // sim used to resolve the swing after its bar tick and count 29. The
+    // swings were QUEUED by the bar's block below on earlier frames (+11
+    // delay), so resolving here needs nothing from this frame's bar step.
+    if (e.pendingSwing) {
+      for (const s of e.pendingSwing) {
+        if (s.done || state.frame < s.at) continue;
+        s.done = true;
+        if (s.points <= 0) {
+          // A missed bolt still writes a number — `scr_damage_enemy` creates
+          // the writer before the `arg1 > 0` test, and a zero draws MISS.
+          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, s.c);
+          continue;
+        }
+        const dealt = fightDamage(state, s.c, s.points);
+        if (dealt > 0) {
+          damageKnight(state, dealt);
+          scrTensionheal(state, fightTp(s.points));
+          spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, s.c, s.points === 150,
+            () => rngNext(state.rng));
+        }
+        spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, s.c);
+      }
+    }
+
     // ENDLESS never reaches the ending — that is the mode's entire promise.
     // The fight wraps back to phase 1 instead, and the Knight's HP resets so
     // the 5840 gate can be crossed again rather than sitting permanently open.
@@ -324,8 +354,11 @@ const director = {
     } else if (endCutsceneReached(state)) {
       startEndCutscene(state);
       state.menu.open = false;
-      state.fightBar = null;
-      e.bar = null;
+      // THE BAR IS FROZEN, NOT REMOVED. `end_cutscene_version > 0` makes
+      // obj_attackpress's Draw exit on its first line — the instance stays,
+      // boltx just stops. The recording's last row still reads the bar at
+      // 28 (verify21j f12010); nulling it here traced '-' and let the turn
+      // flow below mint a fresh bar on the ending frame.
     }
     // The ending's own clock: the white fadeout at 32, the UI teardown and
     // the tension bar's exit past 45. See stepEndCutscene.
@@ -952,6 +985,12 @@ const director = {
     if (state.pendingSpell) state.pendingSpell = [];
     if (state.pendingItem) state.pendingItem = [];
 
+    if (e.bar && (state.knight?.endCutscene ?? 0) > 0) {
+      // The ending froze it — keep it visible at its last value and step
+      // nothing. See the freeze note at the end-cutscene trigger above.
+      state.fightBar = e.bar;
+      return;
+    }
     if (e.bar) {
       // STEPPED EVERY FRAME THE OBJECT EXISTS, done or not. obj_attackpress
       // has no such gate: `boltx += 1`, the pressbuffer decrements, imagetimer
@@ -1015,25 +1054,6 @@ const director = {
         }
         e.pendingSwing.push({ at: state.frame + 11, c, points: acc, done: false });
       }
-      for (const s of e.pendingSwing) {
-        if (s.done || state.frame < s.at) continue;
-        s.done = true;
-        if (s.points <= 0) {
-          // A missed bolt still writes a number — `scr_damage_enemy` creates
-          // the writer before the `arg1 > 0` test, and a zero draws MISS.
-          spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, 0, s.c);
-          continue;
-        }
-        const dealt = fightDamage(state, s.c, s.points);
-        if (dealt > 0) {
-          damageKnight(state, dealt);
-          scrTensionheal(state, fightTp(s.points));
-          spawnImpact(state, KNIGHT.x, KNIGHT.ystart + 40, s.c, s.points === 150,
-            () => rngNext(state.rng));
-        }
-        spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, s.c);
-      }
-
       if (!e.bar.done) return;
 
       // `posttimer` runs to `timermax` and the black fade takes 13 more
