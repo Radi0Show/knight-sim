@@ -112,8 +112,24 @@ const TURN_GAP = 1;
 const moveheart = {
   name: 'obj_moveheart',
   create(e) {
+    // `image_alpha = 0` and the Step's `image_alpha += 0.334` — it FADES IN
+    // over three frames as it leaves Kris. spr_dodgeheart is its own sprite
+    // (object definition, like obj_returnheart's), which is why the alarm can
+    // hand it straight to the new heart: `heart.sprite_index = sprite_index`.
     e.image_alpha = 0;
     e.image_speed = 0;
+    e.flytime = 8;
+    e.sprite_index = 'spr_dodgeheart';
+  },
+  /**
+   * `image_alpha += 0.334` — the whole of obj_moveheart's Step. It fades in
+   * over three frames while it travels. The TRAVEL is not here: the spawn
+   * site already gives it builtinMotion with `speed = dist / 8` and the
+   * matching direction, which is `move_towards_point(distx, disty,
+   * dist / flytime)` exactly.
+   */
+  step(e) {
+    e.image_alpha = Math.min(1, (e.image_alpha ?? 0) + 0.334);
   },
   alarm: {
     0(e, state) {
@@ -1240,8 +1256,8 @@ const director = {
         // no board, no bullets, no soul. Independent confirmation of the
         // phase-4 charge-up finding, from a completely different line.
         //
-        // The flight itself is not modelled yet; the soul appears at its
-        // landing spot. That is a renderer gap, not a sim one.
+        // The flight IS modelled — builtinMotion at `dist / 8` from the spawn
+        // site below, fading in, with obj_heartburst at each end.
         advanceTurn(state);
         // The table row advances here; the knight's real SELECTOR — where
         // the phase variable flips — runs at the arena-open below, and
@@ -1341,6 +1357,10 @@ const director = {
           state.invTimer = 0;
           const kris = PARTY[0];
           const mh = spawn(state, moveheart, { x: kris.x + 10, y: kris.y + 40 });
+          // `instance_create(x, y, obj_heartburst)` — obj_moveheart's Create
+          // bursts at the LAUNCH point, the mirror of obj_returnheart's burst
+          // on arrival. Visual only, same plain-state object.
+          state.heartBurst = { x: kris.x + 10, y: kris.y + 40, burst: 0 };
           // No obj_heartmarker exists in this fight (only the watercooler
           // enemy ever creates one), so the destination is the moveheart
           // Create's growtangle branch: `(gt.x - 10, gt.y - 10)` — with the
