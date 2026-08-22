@@ -140,8 +140,10 @@ export function drawHealWriters(ctx, state) {
   for (const h of heals) {
     const alpha = Math.min(1, h.alpha);
     if (alpha <= 0) continue;
-    drawText(ctx, font, `+${h.healamt}`, h.x, h.y, {
-      color: 'rgb(0,255,0)', alpha,
+    // MAX when the bar is already full, otherwise +N. Both lime, both over
+    // the character — see the deviation note on spawnHealWriter.
+    drawText(ctx, font, h.maxed ? 'MAX' : `+${h.healamt}`, h.x, h.y, {
+      color: 'rgb(0,255,0)', alpha, halign: 'center',
     });
   }
   ctx.restore();

@@ -22,7 +22,7 @@ import {
   resetDmgStack, spawnSelfHealNumber, spawnHealWriter, DMG_COLORS,
   dmgColor, TYPE_PARTY, TYPE_DEAD, TYPE_HEAL, MSG_MAX,
 } from '../sim/dmgnumbers.js';
-import { PARTY } from '../sim/damage.js';
+import { PARTY, PARTY_POS} from '../sim/damage.js';
 import { scrHealitem, scrHealitemAll, applyHeal } from '../sim/items.js';
 import { knightTarget } from '../sim/damage.js';
 import { createKnight } from '../sim/knight.js';
@@ -312,15 +312,23 @@ if (!IMPACT[1].shake) failures.push('Susie does not shake the screen');
   while (s.dmg.heals.length && frames < 200) { stepHealWriters(s); frames += 1; }
   if (frames !== 15) failures.push(`the heal writer lives 15 frames, got ${frames}`);
 }
-// A party-wide item makes THREE of them, one per charbox, at three x's.
+// A party-wide item makes THREE of them, one per character, at three x's.
+//
+// DELIBERATE DEVIATION, guarded here so it cannot drift back by accident:
+// the dump places obj_healwriter over the CHARBOX (scr_charbox_x + 70,
+// yy + 430) and gives it no MAX graphic at all. These are shown over the
+// CHARACTER instead, at PARTY_POS — the point damage taken already uses —
+// and read MAX on a full bar. Asked for deliberately; see spawnHealWriter.
 {
   const s = st();
   s.partyHp = [10, 10, 10];
   scrHealitemAll(s, 100);
   if (s.dmg.heals.length !== 3) failures.push('scr_healitem_all writes one per character');
   const xs = s.dmg.heals.map((h) => h.x);
-  if (new Set(xs).size !== 3) failures.push(`three charboxes, ${new Set(xs).size} positions`);
-  if (xs[0] !== 70) failures.push(`charbox 0 is x 0 + 70, got ${xs[0]}`);
+  if (new Set(xs).size !== 3) failures.push(`three characters, ${new Set(xs).size} positions`);
+  if (xs[0] !== PARTY_POS[0].x) {
+    failures.push(`heal 0 sits over the character (${PARTY_POS[0].x}), got ${xs[0]}`);
+  }
 }
 
 console.log('stack 20px apart going up · squash 1.8x0.2 -> 1.0x1.0 · two bounces · fade at killtimer 35');

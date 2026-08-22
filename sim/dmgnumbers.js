@@ -41,7 +41,7 @@
 // And the fade reuses `kill` in BOTH the alpha and the Y SCALE: `stretch +
 // kill` means the number stretches vertically as it disappears.
 
-import { PARTY_POS } from './damage.js';
+import { PARTY_POS, PARTY } from './damage.js';
 import { gmlRandom } from './rng.js';
 
 // `type` is the writer's colour selector, and IT MEANS DIFFERENT THINGS in the
@@ -229,9 +229,21 @@ export function spawnSelfHealNumber(state, target, amount, maxed) {
 export function spawnHealWriter(state, target, amount) {
   const d = state.dmg;
   if (!d) return;
+  // DELIBERATE DEVIATION, asked for and labelled. The dump puts this one over
+  // the CHARBOX -- `instance_create(scr_charbox_x(t) + 70 + xx, yy + 430,
+  // obj_healwriter)` -- and only the SPELL path (scr_healitemspell, via
+  // scr_dmgwriter_selfchar) puts a heal number over the character with the
+  // MAX graphic. Items here are shown over the character instead, at the same
+  // point damage taken already appears, because that is where it is wanted.
+  // The MAX read below is the same deviation: obj_healwriter has no message
+  // sprite at all, so in the game a Spincake on a full bar reads +150.
+  const pos = PARTY_POS[target];
+  const hp = state.partyHp?.[target] ?? 0;
+  const max = PARTY[target]?.maxhp ?? 0;
   d.heals.push({
-    x: CHARBOX_X[target] + 70,
-    y: 430,
+    x: pos.x,
+    y: pos.y,
+    maxed: max > 0 && hp >= max,
     healamt: amount,
     // GML `friction` reduces the SPEED MAGNITUDE and clamps at zero on
     // crossing; the writer only ever moves up, so this is vspeed climbing
