@@ -74,11 +74,24 @@ export const DMG_COLORS = [LIGHTB, LIGHTF, LIGHTG];
 /** `doomtype`. -1 is an ordinary hit on the party; 4 is a death. */
 export const TYPE_PARTY = -1;
 export const TYPE_DEAD = 4;
+/**
+ * `doomtype 12` — SWOON, and it is a DIFFERENT WRITER FROM DOWN.
+ *
+ *     if (target == 0) { doomtype = 4;  hp = round(-maxhp / 2); }
+ *     else             { doomtype = 12; hp = -999; }
+ *
+ * and obj_dmgwriter's Draw maps them to different graphics entirely:
+ * `type == 4` -> message 2 -> spr_battlemsg FRAME 1 (DOWN), while
+ * `type == 12` -> message 10 -> FRAME 13 (SWOON). Both red. Using DEAD for
+ * everyone put the DOWN graphic over Susie and Ralsei, who never go down —
+ * they swoon, which is the whole reason they cannot be healed back.
+ */
+export const TYPE_SWOON = 12;
 /** `type = 3` — a HEAL, drawn in c_lime. Every heal writer in the dump uses it. */
 export const TYPE_HEAL = 3;
 const C_WHITE = [255, 255, 255];
 const C_RED = [255, 0, 0];
-const C_LIME = [0, 255, 0];
+export const C_LIME = [0, 255, 0];
 
 /**
  * `specialmessage`, which swaps the digits for a frame of `spr_battlemsg`:
@@ -102,6 +115,7 @@ export function dmgColor(type) {
   if (type === 2) return LIGHTG;
   if (type === TYPE_HEAL) return C_LIME;
   if (type === TYPE_DEAD) return C_RED;
+  if (type === TYPE_SWOON) return C_RED;
   return C_WHITE;
 }
 

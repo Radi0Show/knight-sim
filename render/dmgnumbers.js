@@ -27,7 +27,7 @@
 
 import { drawSpriteExt, rgb } from './draw/gm.js';
 import { drawSpriteText, measureText, FONTS } from './text.js';
-import { dmgColor, TYPE_DEAD, MSG_MAX } from '../sim/dmgnumbers.js';
+import { dmgColor, TYPE_DEAD, MSG_MAX, TYPE_SWOON, C_LIME } from '../sim/dmgnumbers.js';
 import { loadFont, drawText } from './font.js';
 
 /**
@@ -88,6 +88,9 @@ export function drawDmgNumbers(ctx, state, sprites) {
     if (n.special === MSG_MAX) frame = 2;
     if (n.damage === 0) frame = 0;
     if (n.type === TYPE_DEAD) frame = 1;
+    // AFTER type 4, as the Draw applies them: `if (type == 4) message = 2;`
+    // then `if (type == 12) message = 10;` -> FRAME 13, the SWOON graphic.
+    if (n.type === TYPE_SWOON) frame = 13;
     if (frame >= 0) {
       if (msg) drawSpriteExt(ctx, msg, frame, n.x + 30, n.y, xs, ys, 0, color, alpha);
       continue;
@@ -130,7 +133,7 @@ export function drawDmgNumbers(ctx, state, sprites) {
  * object's. And `image_alpha` starts at 1.5 against a draw_set_alpha that
  * CLAMPS at 1, so it holds solid for five frames before the ten-frame fade.
  */
-export function drawHealWriters(ctx, state) {
+export function drawHealWriters(ctx, state, sprites) {
   const heals = state.dmg?.heals;
   if (!heals || !heals.length) return;
   const font = loadFont();
@@ -140,9 +143,18 @@ export function drawHealWriters(ctx, state) {
   for (const h of heals) {
     const alpha = Math.min(1, h.alpha);
     if (alpha <= 0) continue;
-    // MAX when the bar is already full, otherwise +N. Both lime, both over
-    // the character — see the deviation note on spawnHealWriter.
-    drawText(ctx, font, h.maxed ? 'MAX' : `+${h.healamt}`, h.x, h.y, {
+    // MAX IS A SPRITE, NOT TEXT. obj_dmgwriter's specialmessage 3 draws
+    // `spr_battlemsg` FRAME 2 in c_lime — the game's own MAX graphic, the
+    // same one the spell heal path uses. Spelling it out in the battle font
+    // was close but not the game's lettering.
+    if (h.maxed) {
+      const msg = sprites?.get('spr_battlemsg');
+      if (msg) {
+        drawSpriteExt(ctx, msg, 2, h.x + 30, h.y, 2, 2, 0, C_LIME, alpha);
+        continue;
+      }
+    }
+    drawText(ctx, font, `+${h.healamt}`, h.x, h.y, {
       color: 'rgb(0,255,0)', alpha, halign: 'center',
     });
   }

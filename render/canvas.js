@@ -848,7 +848,7 @@ export async function createRenderer(canvas) {
     // charbox strip it annotates — and rises out of it. Drawn with the damage
     // numbers (under the band) the first frames of every heal were hidden
     // behind the very box whose HP it is reporting.
-    drawHealWriters(ctx, state);
+    drawHealWriters(ctx, state, sprites);
     // The FIGHT bar sits where the menu was — the menu is closed while it runs.
     drawFightBar(ctx, state.fightBar, sprites, undefined, undefined, state);
 

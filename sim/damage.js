@@ -31,7 +31,7 @@
 import { gmlRound } from './gml.js';
 import { heroHurt } from './heroes.js';
 import { statsOf } from './equipment.js';
-import { spawnDmgNumber, TYPE_PARTY, TYPE_DEAD } from './dmgnumbers.js';
+import { spawnDmgNumber, TYPE_PARTY, TYPE_DEAD, TYPE_SWOON} from './dmgnumbers.js';
 import { gmlChoose } from './rng.js';
 import { scrShakescreen } from './shake.js';
 
@@ -413,7 +413,12 @@ export function scrDamage(state, damage, target, opts = {}) {
   // `dmgwriter.type = doomtype` — **-1** for an ordinary hit, so the number is
   // WHITE, and 4 on death, which turns it red and swaps the digits for the
   // DOWN graphic. The per-character tints belong to damage you DEAL.
-  const doomtype = hp[target] <= 0 ? TYPE_DEAD : TYPE_PARTY;
+  // KRIS DOWNS, THE OTHERS SWOON — two doomtypes, two graphics. See
+  // TYPE_SWOON. This used TYPE_DEAD for anyone felled, which drew DOWN over
+  // Susie and Ralsei.
+  const doomtype = hp[target] > 0
+    ? TYPE_PARTY
+    : (target === 0 ? TYPE_DEAD : TYPE_SWOON);
   spawnDmgNumber(state, PARTY_POS[target].x, PARTY_POS[target].y, t, doomtype, 2);
   return t;
 }
