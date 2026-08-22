@@ -1553,14 +1553,26 @@ generalises that latch to every button, cleared per key on release.
 The Deltarune wiki's Chapter 3 tables were checked against the dump. It
 corroborates the whole 15-turn attack order, the phase structure, the
 damagereduction ramp, the invc values, and `monstertype 104` = 7300 HP / AT 40 /
-DF 0. **Three claims are wrong** and the sim already matched the dump on all
-three:
+DF 0.
 
-| wiki | dump |
+**TWO OF THE THREE "the wiki is wrong" ROWS WERE THEMSELVES WRONG — RETRACTED
+2026-08-22.** The wiki was right about both damage numbers and this table was
+the error:
+
+| claim | actually |
 |---|---|
-| Tracking Swords 206 | **200** — no override; inherits `monsterat * 5` |
-| Sword tunnel swords 62 | **200**; there is no `62` anywhere in the dump. 160 is the FINISHER only |
-| party damage halved/doubled by SWOON | **Kris only** — the block is inside `if (object_index == obj_herokris)`, which the wiki cites and misreads |
+| ~~Tracking Swords 206 -> **200**, no override~~ | **206 IS an override**, and it is on EVERY tracking-swords dispatch: `obj_knight_enemy` Step lines 465 (ac 11), 500 (ac 14), 505 (ac 15), 518 (ac 16), 527 (ac 17). The sim carried it on ac 11 and 15 and was left on `monsterat * 5` for ac 14. |
+| ~~Sword tunnel swords 62 -> **200**; there is no `62` anywhere in the dump~~ | **`dc.damage = 62` is at Step line 482**, on the ac 13 branch. The negative grep that produced "no 62 anywhere" was not a whole-dump grep — the exact failure this file warns about under "a grep that lied twice". |
+| party damage halved/doubled by SWOON | **Kris only** — the block is inside `if (object_index == obj_herokris)`, which the wiki cites and misreads. This row STANDS. |
+
+How both survived: `--keep-alive` pins party HP in every whole-fight recording,
+so the amount of damage TAKEN is not compared by the whole-fight diff at all —
+a wrong bullet damage is invisible there. `tools/verify-hp.mjs` (the
+no-keep-alive half) is what finally caught them, on its first run.
+
+**The lesson is the one already in this file, landing for the third time:**
+a negative grep is only trustworthy over the WHOLE dump, and "the sim already
+matched the dump" is a claim that needs a suite behind it, not a reading.
 
 Useful for cross-checking, never for settling. See task #45 for what is left.
 

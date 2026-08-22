@@ -597,6 +597,18 @@ export function stepMenu(state, input) {
     } else if (pressed('confirm')) {
       menu.submenu = null;
       menu.fight[c] = true;
+      // `global.charaction[global.charturn] = 1` — THE LINE THAT CLEARS A
+      // STALE DEFEND. obj_battlecontroller's bmenuno-1 confirm sets
+      // chartarget, faceaction AND charaction together; the sim set only
+      // faceaction, and since nothing in the fight ever zeroes charaction
+      // per turn (the dump zeroes it in obj_battlecontroller's Create,
+      // scr_dead and scr_prevhero, nowhere else), a character who chose
+      // DEFEND once kept `charaction == 10` for the REST OF THE FIGHT and
+      // took ceil(2*dmg/3) on every hit forever after. Invisible to the
+      // canonical whole-fight diff because that run pins party HP; caught
+      // the first time a recording let HP move (nka1 f494: the game deals
+      // Kris 58, the sim 38 = ceil(2*56/3)).
+      state.charaction[c] = 1;
       // `global.faceaction[myself] = 1` was set when FIGHT opened this row —
       // the character raises their weapon and HOLDS it through everyone
       // else's turn. faceaction does nothing until hero state 0 reads it, so

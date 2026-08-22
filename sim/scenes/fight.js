@@ -473,7 +473,13 @@ export function launchAttack(state, entry) {
       // 3's tracking swords at variant 0 (rate 32 decaying to 16) instead of
       // the real variant 3 (rate 20 decaying to 13) — a visibly slower wave.
       mg.variant = ac === 14 ? 3 : 0;
-      mg.damage = CONTROLLER_DAMAGE;
+      // `dc.damage = 206` — EVERY tracking-swords dispatch overrides the
+      // controller's 200 (ac 11 line 465, ac 14 line 500, ac 15 line 505,
+      // ac 16 line 518, ac 17 line 527). ac 11 and 15 already carried it;
+      // this branch was left on CONTROLLER_DAMAGE. CLAUDE.md's table said
+      // the wiki's 206 was wrong and there was "no override" — the override
+      // is there, and the wiki was right.
+      mg.damage = 206;
       trackingSwordsManager.init(mg, state);
       return mg;
     }
@@ -591,7 +597,12 @@ export function launchAttack(state, entry) {
       const mg = spawn(state, swordTunnelManager, { x: arena.x, y: state.view.y });
       mg.difficulty = difficulty;
       mg.knightDifficulty = difficulty;
-      mg.damage = CONTROLLER_DAMAGE;
+      // `dc.damage = 62` — ac 13 OVERRIDES the controller's monsterat*5.
+      // CLAUDE.md's wiki-correction table claimed "there is no 62 anywhere
+      // in the dump"; it is at obj_knight_enemy's Step line 482, on this
+      // branch, and the wiki was right. A negative grep is only as good as
+      // its scope — see the file's own rule about whole-dump greps.
+      mg.damage = 62;
       swordTunnelManager.init(mg, state);
       return mg;
     }

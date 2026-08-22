@@ -92,6 +92,7 @@ const SUITES = [
   ['verify-battlemsg.mjs', 'the battle message box — 15 lines, phase 4 gates, down messages'],
   // The whole-fight diff. Skips loudly without ~/knight-research/traces, so on
   // CI this reports SKIP rather than a green tick it has not earned.
+  ['verify-hp.mjs', 'party HP, targeting and the swoon values (the no-keep-alive half)'],
   ['verify-fullfight.mjs', 'the whole fight — one token, two runs, one diff'],
   ['sabotage-fullfight.mjs', 'the whole-fight differ itself — 10 injected faults'],
   ['verify-equipment.mjs', 'equipment — tables from the dump, mantle, graze factors'],
