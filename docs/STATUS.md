@@ -9,9 +9,10 @@ export PATH="$HOME/tools/node/bin:$PATH"
 cd ~/knight-sim && npm run verify
 ```
 
-Expected: **all 55 suites green, including `verify-fullfight`.** The
-whole-fight oracle diff now passes on BOTH recorded tokens — 12,011 and 12,007
-frames, 176 columns — under the four measured micro-tolerances that have always
+Expected: **all 58 suites green, including `verify-fullfight`.** The
+whole-fight oracle diff passes on all THREE recorded tokens — 12,011, 12,007
+and 12,126 frames, 176 columns, the last of which runs through the END
+CUTSCENE — under the four measured micro-tolerances that have always
 been part of its premise (POSITION 0.05px, ANGLE 0.02deg, SCALE 5e-5, SOUL
 0.01px). It is NOT bit-exact: a raw tolerance-free scan still shows ULP-scale
 differences from a constant one-ulp offset that does not accumulate. Say
