@@ -444,13 +444,34 @@ export function drawMenu(ctx, state, sprites) {
   // stops here.
   if (rise) ctx.translate(0, -rise);
   const font = loadFont();
-  if (menu.open && (menu.submenu === 'item' || menu.submenu === 'magic' || menu.submenu === 'act')) {
+  // THE NAMES MUST MATCH sim/menu.js. This read `'act'`, which the sim never
+  // sets — ACT is TWO stages there, `actpick` (the enemy picker, bmenuno 11)
+  // and then `actgrid` (the 2x6 option grid, bmenuno 9). Neither matched, so
+  // pressing ACT opened the menu in state and drew nothing at all: the button
+  // looked dead while the sim was sitting in the picker waiting for a confirm.
+  // The grid is the same 2x6 list as the bag and MAGIC; the picker is the
+  // enemy row.
+  if (
+    menu.open &&
+    (menu.submenu === 'item' || menu.submenu === 'magic' || menu.submenu === 'actgrid')
+  ) {
     drawItemList(ctx, state, sprites, font, menu.siner);
   } else if (menu.open && menu.submenu === 'target') {
     drawTargetPicker(ctx, state, sprites, font);
-  } else if (menu.open && menu.submenu === 'enemy') {
+  } else if (menu.open && (menu.submenu === 'enemy' || menu.submenu === 'actpick')) {
     drawEnemyRow(ctx, state, sprites, font);
   } else if (menu.open) {
+    // AN UNHANDLED SUBMENU IS A BUG, AND A SILENT ONE. Nothing in `sim/` cares
+    // what the renderer knows, and no suite covers `render/`, so when ACT's
+    // two stages were renamed the only symptom was a button that did nothing.
+    // Say so once instead of quietly drawing the battle message over it.
+    if (menu.submenu && !warnedSubmenus.has(menu.submenu)) {
+      warnedSubmenus.add(menu.submenu);
+      console.error(
+        `render/menu.js: no branch draws submenu '${menu.submenu}' — ` +
+          'it will look like the button does nothing. See sim/menu.js for the names.',
+      );
+    }
     drawBattleMsg(ctx, state, font);
   }
 
@@ -475,6 +496,9 @@ export function drawMenu(ctx, state, sprites) {
  * `global.battlemsg[0]`), so whatever was last set stays up — including
  * through turns that set nothing.
  */
+/** Submenu names already reported as undrawable, so the log stays one-shot. */
+const warnedSubmenus = new Set();
+
 function drawBattleMsg(ctx, state, font) {
   if (!font?.ready || !state.battlemsg) return;
   // LINE SPACING IS THE WRITER'S `vspace`, NOT THE FONT'S HEIGHT.
