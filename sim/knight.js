@@ -52,6 +52,7 @@
 // what this module credited them with, and are the reason TP is worth banking.
 
 import { gmlRound } from './gml.js';
+import { gmlRandom } from './rng.js';
 import { PARTY, statFor, scrDamage } from './damage.js';
 import { cue, cueStop } from './audio.js';
 import { scrShakescreen } from './shake.js';
@@ -241,7 +242,42 @@ export function tickChargeup(state) {
   if (!k || k.chargeupcon !== 1) return;
   k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
   if (k.chargeuptimer === 1) cue(state, 'snd_knight_powerup_white');
+
+  // THE WHITE AFTERIMAGE'S DRAW, and it is not cosmetic:
+  //
+  //     if ((chargeuptimer % 4) == 0 && chargeuptimer > 10) {
+  //         fade = instance_create_depth(x, y, depth + 1,
+  //                    obj_afterimage_fade_to_white);
+  //         ...
+  //         fade.direction = random(360);      // ONE u32 draw
+  //     }
+  //
+  // Nothing needs the ghost itself, so only the draw is taken. This block
+  // sits at the BOTTOM of obj_knight_enemy's Step, below the attack
+  // selector, and chargeupcon is never cleared — so it keeps firing every
+  // fourth frame straight through ROARING's launch, AFTER
+  // scr_bulletspawner has re-anchored the stream on that very frame.
+  //
+  // That is what verify37's f11269 was. The roar's Create rolls
+  // `rand_angle = irandom(360)` and read 220 where the game read 278 --
+  // exactly one u32 draw apart. It looked CONDITIONAL and unattributable
+  // because it is: whether `chargeuptimer % 4 == 0` lands on the launch
+  // frame depends on when the turn started, so token 37 took the draw and
+  // token 21 did not. Padding it unconditionally fixed 37 and broke 21.
+  // DEFERRED, because this block sits BELOW the attack selector in the same
+  // Step. On a launch frame scr_bulletspawner has already re-anchored the
+  // stream by the time this runs, so the draw belongs AFTER the launch --
+  // taken here it would be discarded by the reseed.
+  state.pendingChargeupDraw = k.chargeuptimer % 4 === 0 && k.chargeuptimer > 10;
+
   if (k.chargeuptimer === 60) state.turntimer = 1;
+}
+
+/** Takes the chargeup afterimage's draw, if this frame is due one. */
+export function consumeChargeupDraw(state) {
+  if (!state.pendingChargeupDraw) return;
+  state.pendingChargeupDraw = false;
+  if (state.gmlRng) gmlRandom(state.gmlRng, 360);
 }
 
 export function stepKnightAnim(state) {
