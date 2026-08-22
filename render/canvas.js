@@ -496,9 +496,33 @@ export async function createRenderer(canvas) {
         const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
         if (entry && entry.frames.length) {
           const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
+          // TWO DRAWS, and the second is the whole point. Every enemy that
+          // flashes does it the same way:
+          //
+          //     draw_sprite_ext(thissprite, ..., image_blend, 1);   // normal
+          //     if (flash == 1) {
+          //         fsiner += 1;
+          //         d3d_set_fog(true, c_white, 0, 1);
+          //         draw_sprite_ext(thissprite, ...,
+          //                         (-cos(fsiner / 5) * 0.4) + 0.6);
+          //         d3d_set_fog(false, c_black, 0, 0);
+          //     }
+          //
+          // The sprite is drawn at FULL alpha, and the pulse belongs to a
+          // SOLID WHITE SILHOUETTE composited over it -- `d3d_set_fog(true,
+          // c_white, 0, 1)` is the same fog trick the charge-up uses, which
+          // this file already has as `fogged()`. So the enemy GLOWS, brighter
+          // and dimmer, and never loses opacity.
+          //
+          // The previous version applied that alpha to the sprite ITSELF, so
+          // the Knight faded down to 20% and back -- he read as blinking out
+          // of existence rather than lighting up. Right curve, wrong layer.
           blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y,
             e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
-            (-Math.cos((k.fsiner ?? 0) / 5) * 0.4) + 0.6, e.image_blend);
+            e.image_alpha ?? 1, e.image_blend);
+          blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
+            e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
+            (-Math.cos((k.fsiner ?? 0) / 5) * 0.4) + 0.6);
           return true;
         }
       }

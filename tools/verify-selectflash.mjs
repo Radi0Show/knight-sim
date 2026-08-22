@@ -10,13 +10,24 @@
 //         becomeflash = 1;
 //     }
 //
-// and every enemy's own Draw counts `fsiner += 1` per frame and, while
-// flashing, draws ITSELF at `(-cos(fsiner / 5) * 0.4) + 0.6`.
+// and every enemy's own Draw draws itself NORMALLY at full alpha and then, if
+// flashing, composites a SOLID WHITE SILHOUETTE over it:
 //
-// So the highlight is the enemy PULSING IN OPACITY from 0.2 to 1.0 over about
-// 31 frames, restarting near transparent every time you enter the menu. The
-// renderer previously invented an additive white halo on the menu's siner --
-// wrong layer, curve, period and reset -- so this pins all four.
+//     draw_sprite_ext(thissprite, siner / 6, x, y, 2, 2, 0, image_blend, 1);
+//     if (flash == 1) {
+//         fsiner += 1;
+//         d3d_set_fog(true, c_white, 0, 1);
+//         draw_sprite_ext(thissprite, ..., (-cos(fsiner / 5) * 0.4) + 0.6);
+//         d3d_set_fog(false, c_black, 0, 0);
+//     }
+//
+// So the enemy GLOWS -- brighter and dimmer between 0.2 and 1.0 over about 31
+// frames, never losing opacity -- restarting dim every time you enter the
+// menu. Two wrong versions preceded this: an invented additive halo on the
+// menu's siner, and then the right curve applied to the SPRITE'S OWN alpha,
+// which faded the Knight out instead of lighting him up. This pins the timing
+// half (curve, period, reset); the layer half is in render/canvas.js, where
+// the overlay is drawn with fogged() over a full-alpha base.
 import { createState } from '../sim/state.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { stepFrame } from '../sim/index.js';

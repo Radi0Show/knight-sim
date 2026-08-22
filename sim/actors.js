@@ -133,7 +133,11 @@ export const knightActor = {
         && (state.menu.submenu === 'enemy' || state.menu.submenu === 'actpick'));
       if (selecting && !k.flash) k.fsiner = 0;
       k.flash = selecting ? 1 : 0;
-      k.fsiner = (k.fsiner ?? 0) + 1;
+      // `fsiner += 1` sits INSIDE the `if (flash == 1)` block, so it only runs
+      // while the enemy is the highlighted one. The reset on entry makes this
+      // indistinguishable from counting always, but it keeps the counter from
+      // climbing for the whole fight for no reason.
+      if (k.flash) k.fsiner = (k.fsiner ?? 0) + 1;
     }
 
     // `if (i_ex(obj_knight_swordtunnelanim)) exit;` — during Sword Tunnel a
