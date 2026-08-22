@@ -863,16 +863,29 @@ export function stepGameOver(over, keys = {}) {
   // The reader's only power is X, which obj_writer honours as
   // `if (halt == 0 && button2 == 1 && pos < length && skippable == 1)
   //  skipme = 1;` — the whole line at once, not a faster crawl.
+  // ANY OF THE THREE BUTTONS SKIPS. The original honours button2 alone
+  // (`if (halt == 0 && button2 == 1 && pos < length && skippable == 1)
+  // skipme = 1`), but a reader who has died here before is holding whichever
+  // key is under their thumb, and a death screen that ignores two of the
+  // three reads as frozen. Z, X and C all fill the line; the choice below is
+  // still confirm-only, so this cannot pick an option for you.
+  const skipHeld = !!(keys.confirm || keys.focus || keys.cancel || keys.button3);
+  const skipEdge = skipHeld && !over.heldSkip;
+  over.heldSkip = skipHeld;
+
   if (over.choiceT < 0) {
     if (t <= 2) return {};
     over.lineT = (over.lineT ?? 0) + 1;
-    if (keys.focus) {
+    if (skipHeld) {
       over.lineT = Math.max(over.lineT, typedFrames(over.line));
     }
     const { done } = typedCount(over.line, over.lineT);
     if (!done) return {};
     over.gap = (over.gap ?? 0) + 1;
-    if (over.gap < LINE_GAP) return {};
+    // A FRESH press also eats the thirty-frame hold between lines. Held is not
+    // enough for this one — otherwise a key still down from the fight would
+    // run the whole speech off in a couple of frames.
+    if (over.gap < LINE_GAP && !skipEdge) return {};
     over.gap = 0;
     over.lineT = 0;
     if (over.line < KNIGHT_LINES.length - 1) {
@@ -927,5 +940,6 @@ export function makeGameOver(shot, x, y) {
     heldConfirm: false,
     heldLeft: false,
     heldRight: false,
+    heldSkip: false,
   };
 }
