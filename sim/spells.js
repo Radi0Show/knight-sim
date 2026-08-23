@@ -133,11 +133,27 @@ export function canAfford(state, spellId, slot = 1) {
  * fight's one permanent buff, and the reason the ACT is worth a turn.
  */
 export function holdBreath(state) {
-  const first = (state.knight.holdbreathcount ?? 0) < 1;
+  // RETURNS THE PAGE KEY, not a sentence. It used to return its own condensed
+  // text —
+  //
+  //     '* Kris held their breath. The SOUL now moves faster.'
+  //
+  // — against the dump's
+  //
+  //     "* Kris held their breath.&* Their heartbeat quickened.&
+  //      * The SOUL now moves faster./%"
+  //
+  // so the chatbox lost a whole line ("Their heartbeat quickened.", and
+  // "* Kris smiled." on the repeat) and ran the rest together on one row. The
+  // correct pages were already in ACT_PAGES and driving the writer, so the
+  // fight showed two different texts for the same act depending on which one
+  // you were looking at. One source now; the caller pulls both from ACT_PAGES.
+  //
+  // The count is the dump's, verbatim: `holdbreathcount++`, pick on `<= 1`,
+  // then CLAMP back to 1 — which is what stops the buff stacking.
+  const n = (state.knight.holdbreathcount ?? 0) + 1;
   state.knight.holdbreathcount = 1;
-  return first
-    ? '* Kris held their breath. The SOUL now moves faster.'
-    : '* Kris held their breath... Nothing happened.';
+  return n <= 1 ? 'holdbreath_first' : 'holdbreath_again';
 }
 
 /** The soul's `wspeed`, which HoldBreath is the only thing that changes. */

@@ -20,6 +20,7 @@
 import { createState } from '../sim/index.js';
 import { stepMenu, openMenu, createMenu, listRows, BUTTONS } from '../sim/menu.js';
 import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford } from '../sim/spells.js';
+import { ACT_PAGES } from '../sim/dialogue.js';
 import { freshInventory } from '../sim/items.js';
 import { KNIGHT_MAXHP, stepKnightAnim } from '../sim/knight.js';
 import { stepRudeBuster, rudeBusterBusy } from '../sim/rudebuster.js';
@@ -243,11 +244,31 @@ if (st.knight.hp !== before) failures.push('Pacify damaged the Knight');
 // increment would let the buff stack forever.
 st = fresh(0);
 if (soulSpeed(st) !== 4) failures.push(`base soul speed is ${soulSpeed(st)}, expected 4`);
+// holdBreath returns the PAGE KEY; the text lives in ACT_PAGES, which is also
+// what drives the writer. It used to return its own condensed sentence, and
+// that copy had drifted from the dump — the chatbox dropped a whole line
+// ("Their heartbeat quickened.", and "Kris smiled." on the repeat) and ran the
+// rest together on one row, so the act showed two different texts depending on
+// which of the two you were reading. The lines below are the dump's, verbatim,
+// and are asserted because losing one is exactly what happened.
 const first = holdBreath(st);
 if (soulSpeed(st) !== 5) failures.push(`after HoldBreath the soul moves ${soulSpeed(st)}, expected 5`);
-if (!first.includes('faster')) failures.push('the first HoldBreath did not report the speed-up');
+if (first !== 'holdbreath_first') failures.push(`the first HoldBreath keyed ${first}`);
 const second = holdBreath(st);
-if (!second.includes('Nothing happened')) failures.push('the second HoldBreath did not refuse');
+if (second !== 'holdbreath_again') failures.push(`the second HoldBreath keyed ${second}`);
+{
+  const a = ACT_PAGES.holdbreath_first?.[0] ?? '';
+  const b = ACT_PAGES.holdbreath_again?.[0] ?? '';
+  for (const bit of ['Kris held their breath.', 'Their heartbeat quickened.', 'The SOUL now moves faster.']) {
+    if (!a.includes(bit)) failures.push(`holdbreath_first is missing "${bit}"`);
+  }
+  for (const bit of ['Kris held their breath...', 'Kris smiled.', 'Nothing happened.']) {
+    if (!b.includes(bit)) failures.push(`holdbreath_again is missing "${bit}"`);
+  }
+  // Three lines each — the `&` breaks are the writer's own separator.
+  if (a.split('&').length !== 3) failures.push(`holdbreath_first has ${a.split('&').length} lines, expected 3`);
+  if (b.split('&').length !== 3) failures.push(`holdbreath_again has ${b.split('&').length} lines, expected 3`);
+}
 if (st.knight.holdbreathcount !== 1) failures.push(`holdbreathcount reached ${st.knight.holdbreathcount}, expected 1`);
 if (soulSpeed(st) !== 5) failures.push('the second HoldBreath changed the speed');
 st.roaringActive = true;

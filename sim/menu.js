@@ -710,28 +710,31 @@ export function stepMenu(state, input) {
         if (!row || !row.usable) {
           cue(state, 'snd_error');
         } else if (menu.submenu === 'actgrid') {
-          const line = row.id === 1 && c === 0
-            ? holdBreath(state)
-            : `* ${PARTY[c].name} used ${row.label}.`;
-          menu.lastItem = line;
+
           // THE ACT'S CHATBOX MESSAGE HOLDS THE ATTACK BAR. The knight's
           // acting block picks the page set (checkcount/holdbreathcount pick
           // the first-time or repeat variant) and the bar is only created
           // once that writer dies — the director's act interlude runs it.
+          let key;
           if (c === 0) {
-            state.actCounts = state.actCounts ?? { check: 0, breath: 0 };
-            let key;
             if (row.id === 1) {
-              state.actCounts.breath += 1;
-              key = state.actCounts.breath <= 1 ? 'holdbreath_first' : 'holdbreath_again';
+              // holdBreath owns the count AND the variant — the dump picks the
+              // page from `holdbreathcount` itself, so a second counter here
+              // was duplicated state waiting to disagree with it.
+              key = holdBreath(state);
             } else {
+              state.actCounts = state.actCounts ?? { check: 0 };
               state.actCounts.check += 1;
               key = state.actCounts.check === 1 ? 'check' : 'point';
             }
-            state.pendingAct = { pages: ACT_PAGES[key] };
           } else {
-            state.pendingAct = { pages: ACT_PAGES[c === 1 ? 'susie' : 'ralsei'] };
+            key = c === 1 ? 'susie' : 'ralsei';
           }
+          state.pendingAct = { pages: ACT_PAGES[key] };
+          // ONE SOURCE FOR THE TEXT. The chatbox line and the writer's pages
+          // are the same strings now; they used to be two literals that had
+          // already drifted apart.
+          menu.lastItem = ACT_PAGES[key]?.[0] ?? `* ${PARTY[c].name} used ${row.label}.`;
           menu.submenu = null;
           // `state = 6` — the ACT swing plays NOW, and it outlasts the menu:
           // the character is still mid-animation when the next one is choosing.
