@@ -283,6 +283,26 @@ export function spawnHealWriter(state, target, amount) {
     y: pos.y - 6,
     maxed: max > 0 && hp >= max,
     healamt: amount,
+    // THE MESSAGE SPRITE'S SQUASH-AND-STRETCH, from obj_dmgwriter's Draw:
+    //
+    //     draw_sprite_ext(message_sprite, 2, x + 30, y,
+    //                     2 - stretch, stretch + kill, ...)
+    //     ...
+    //     if (stretchgo == 1) stretch += 0.4;
+    //     if (stretch >= 1.2) { stretch = 1; stretchgo = 0; }
+    //
+    // starting at 0.2. So it pops in WIDE AND FLAT (1.8 x 0.2) and settles at
+    // 1 x 1 — it is never drawn at 2 x 2 in the game, and drawing it there
+    // made the MAX graphic twice the size it should be in both axes, which is
+    // four times the area. Reported from play as the sprite being physically
+    // too big.
+    //
+    // obj_healwriter itself has no message sprite and no stretch — showing MAX
+    // over a character at all is this project's labelled deviation — so the
+    // animation is borrowed from the writer the game DOES show it on rather
+    // than invented.
+    stretch: 0.2,
+    stretchgo: 1,
     // GML `friction` reduces the SPEED MAGNITUDE and clamps at zero on
     // crossing; the writer only ever moves up, so this is vspeed climbing
     // toward 0 by 0.2 a frame.
@@ -293,6 +313,11 @@ export function spawnHealWriter(state, target, amount) {
 
 /** obj_healwriter's Draw, which is also its whole step. */
 export function stepHealWriters(state) {
+  for (const h of state.dmg?.heals ?? []) {
+    // `if (stretchgo == 1) stretch += 0.4;` then the 1.2 clamp back to 1.
+    if (h.stretchgo === 1) h.stretch = (h.stretch ?? 0.2) + 0.4;
+    if ((h.stretch ?? 0) >= 1.2) { h.stretch = 1; h.stretchgo = 0; }
+  }
   const d = state.dmg;
   if (!d || !d.heals.length) return;
   for (const h of d.heals) {

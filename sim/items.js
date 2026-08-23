@@ -219,13 +219,23 @@ export function scrHealitemAll(state, amount) {
  * REVIVES ARE HEAL AMOUNTS, not HP assignments — which is why heal modifiers
  * apply to them at all.
  *
- * UNRESOLVED, and flagged rather than guessed: `scr_itemuse` case 2 computes
- * `reviveamt = ceil(maxhp / 2)` and heals that. Against a SWOONed -999 that is
- * +80 and leaves them at -919, so it cannot be the BATTLE behaviour — the
- * fight is unwinnable if nothing lifts -999. The battle item path mustdiffer
- * and I have not located it. The amounts below follow the handoff spec, which
- * produces the behaviour the fight needs; they are NOT confirmed against the
- * dump.
+ * RESOLVED — the battle path is `scr_spell`, not `scr_itemuse`, and it is
+ * case 202:
+ *
+ *     reviveamt = ceil(global.maxhp[...] / 2);
+ *     if (global.hp[...] <= 0)
+ *         reviveamt = ceil(global.maxhp[...]) + abs(global.hp[...]);
+ *     scr_healitemspell(reviveamt);
+ *
+ * So a revive on someone STANDING is half their max, and on someone DOWN it
+ * is their whole bar plus however deep the hole is — 190 + 999 = 1189 for a
+ * swooned Susie. That is why the number on screen is enormous: it is the
+ * game's own, and scr_healitemspell passes it straight to the writer as
+ * `damage`. `scr_itemuse` case 2's ceil(maxhp / 2) is the OVERWORLD path,
+ * which is why it cannot lift -999 and never needs to.
+ *
+ * The amounts below already matched this; the note that used to sit here
+ * calling them unconfirmed guesses was out of date.
  */
 export function reviveAmount(state, target, which) {
   const hp = state.partyHp[target];

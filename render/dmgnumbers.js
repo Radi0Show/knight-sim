@@ -150,7 +150,11 @@ export function drawHealWriters(ctx, state, sprites) {
     if (h.maxed) {
       const msg = sprites?.get('spr_battlemsg');
       if (msg) {
-        drawSpriteExt(ctx, msg, 2, h.x + 30, h.y, 2, 2, 0, C_LIME, alpha);
+        // `2 - stretch` by `stretch + kill`, exactly as obj_dmgwriter draws
+        // it: wide and flat on the first frame, settling at 1 x 1. It was
+        // fixed at 2 x 2 — twice the settled size on both axes.
+        const st = h.stretch ?? 1;
+        drawSpriteExt(ctx, msg, 2, h.x + 30, h.y, 2 - st, st, 0, C_LIME, alpha);
         continue;
       }
     }
