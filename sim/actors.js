@@ -329,6 +329,32 @@ export const knightActor = {
     // write-only, the same family as `linex` and `splitbox`. Adding fields
     // that are provably always zero would only invite someone to "fix" them.
     e.x = KNIGHT.x;
+
+    // THE FAILED PACIFY'S COLOUR FLASH — obj_pacifyspell's `fail` path.
+    // con 6 walks image_blend toward c_blue at 0.12 a frame for 8 frames,
+    // then con 8 walks it back to c_white at 0.16 for 8 more, then con 9
+    // sets white and the object destroys. `merge_color` is a per-channel
+    // lerp, and GameMaker packs colours BGR — c_blue is 0xFF0000 in that
+    // order, not 0x0000FF.
+    if (state.pacifyFail) {
+      const pf = state.pacifyFail;
+      const merge = (a, b, amt) => {
+        const ch = (v, n) => (v >> n) & 255;
+        const mix = (n) => Math.round(ch(a, n) + (ch(b, n) - ch(a, n)) * amt) & 255;
+        return mix(0) | (mix(8) << 8) | (mix(16) << 16);
+      };
+      const C_BLUE = 16711680;
+      const C_WHITE = 16777215;
+      if (pf.con === 6) {
+        e.image_blend = merge(e.image_blend ?? C_WHITE, C_BLUE, 0.12);
+        pf.alarm -= 1;
+        if (pf.alarm <= 0) { pf.con = 8; pf.alarm = 8; }
+      } else if (pf.con === 8) {
+        e.image_blend = merge(e.image_blend ?? C_WHITE, C_WHITE, 0.16);
+        pf.alarm -= 1;
+        if (pf.alarm <= 0) { e.image_blend = C_WHITE; state.pacifyFail = null; }
+      }
+    }
     // THE ENDING STROBES SLOWER. The normal strong-hurt alternates on %2;
     // the win's block reads `(hurttimer % 3) == 0` for the idle frame — two
     // ball frames for every idle one, so he reads as losing the shape rather

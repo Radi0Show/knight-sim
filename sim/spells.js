@@ -198,9 +198,15 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     // Ralsei's healing. BlueRibbon's Heal+ multiplies what the WEARER heals.
     const st = statFor(state, slot);
     const amount = healAmountModifyByEquipment(st.magic * 5, st.healRibbons);
-    const did = applyHeal(state, target, st.magic * 5, st.healRibbons);
+    applyHeal(state, target, st.magic * 5, st.healRibbons);
     healNumber(state, target, amount);
-    return `Heal Prayer: +${did}`;
+    // NO CHATBOX LINE. scr_spell's case 2 heals, spawns obj_healanim, and
+    // writes the number through scr_dmgwriter_selfchar at type 3 (green) with
+    // `specialmessage = 3` when the target is already full — and that number
+    // above the character IS the entire feedback. `Heal Prayer: +55` was
+    // invented text in a box the game leaves alone.
+    state.spellDelay = 15;
+    return null;
   }
   if (spellId === 11) {
     // UltraHeal's cost is `225 - round(global.flag[1045] * 2.5)`; flag 1045 is
@@ -212,11 +218,25 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     return `UltraHeal: +${did}`;
   }
   if (spellId === 3) {
-    // Pacify SPARES a TIRED enemy. The Knight's `mercymax` is 100 and nothing
-    // in the fight raises its mercy, so it can never be spared — the TP is
-    // spent and nothing happens. Faithful, and worth showing rather than
-    // silently refusing the cast.
-    return 'Pacify: the Knight is not TIRED';
+    // PACIFY FAILS VISIBLY, it does not print an excuse. scr_spell's case 3
+    // spares only a TIRED enemy (`global.monsterstatus[star] == 1`); the
+    // Knight's status never leaves 0, so the else branch runs:
+    //
+    //     _pspell = instance_create(0, 0, obj_pacifyspell);
+    //     _pspell.target = global.monsterinstance[star];
+    //     _pspell.fail = 1;
+    //     global.spelldelay = 20;
+    //
+    // and obj_pacifyspell's `fail` path skips the lift-and-sparkle entirely
+    // (con 1 -> con 5) for a colour flash: con 6 walks image_blend toward
+    // c_blue at 0.12 a frame for 8 frames, con 8 walks it back to c_white at
+    // 0.16 for 8 more, con 9 restores white and destroys.
+    //
+    // `Pacify: the Knight is not TIRED` was invented text explaining a thing
+    // the game shows you instead.
+    state.pacifyFail = { con: 6, alarm: 8 };
+    state.spellDelay = 20;
+    return null;
   }
   return null;
 }
