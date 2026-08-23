@@ -445,7 +445,30 @@ export async function createRenderer(canvas) {
       // reimplementation and could have been perfect while the screen was
       // wrong — the exact failure mode the log exists to remove. One list,
       // one consumer for pixels, one for the CSV.
-      for (const d of knightDrawCalls(state, e)) {
+      const calls = knightDrawCalls(state, e);
+      // AN EMPTY LIST MUST MEAN "DELIBERATELY INVISIBLE", NOT "FELL THROUGH".
+      //
+      // This handler used to end in `return false`, which let the generic
+      // entity blit draw the Knight whatever state he was in. Now it owns the
+      // drawing outright, so a state knightDrawCalls has no branch for
+      // produces NO draw at all and he simply disappears — with no error, no
+      // failing suite, and the fight apparently dead behind him.
+      //
+      // The Draw really does have exits, and they are enumerated here: an
+      // invisible instance (the Stars cone), the sword-tunnel anim's `exit`,
+      // and the charge-up's con-2 `exit` (con 3 draws at alpha 0 instead).
+      // If none of those is true and the list is still empty, that is a GAP
+      // in the translation, not the game hiding him — fall back to the blit
+      // that used to be here rather than showing the player an empty arena.
+      if (!calls.length) {
+        const hidden = e.visible === false
+          || (k?.chargeupcon ?? 0) >= 2
+          || state.entities.some(
+            (x) => x.alive && x.type?.name === 'obj_knight_swordtunnelanim',
+          );
+        if (!hidden) return false;
+      }
+      for (const d of calls) {
         const entry = sprites.get(d.sprite);
         if (!entry || !entry.frames.length) continue;
         const idx = Math.abs(Math.floor(d.index)) % entry.frames.length;
