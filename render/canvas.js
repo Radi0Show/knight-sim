@@ -475,13 +475,35 @@ export async function createRenderer(canvas) {
         // `d3d_set_fog(true, colour, 0, 1)` renders the sprite as a solid
         // silhouette in that colour. GameMaker packs colours BGR.
         const img = d.fog >= 0
-          ? fogged(entry.frames[idx], [d.fog & 255, (d.fog >> 8) & 255, (d.fog >> 16) & 255])
+          ? fogged(entry.frames[idx], rgbOf(d.fog))
           : entry.frames[idx];
-        blit(img, entry.meta.ox, entry.meta.oy, d.x, d.y, d.xs, d.ys, d.ang, d.alpha, d.blend);
+        // `blend` TRAVELS AS A GAMEMAKER INTEGER because that is what the draw
+        // log compares against the oracle — but blit() hands it to tinted(),
+        // which REQUIRES an [r, g, b] array and throws a TypeError on anything
+        // else, deliberately and loudly.
+        //
+        // That threw on the FIRST knight draw of every run: the Knight's
+        // image_blend is normally unset, so the old code passed undefined and
+        // blit skipped the tint entirely, while these records default it to
+        // c_white. The throw killed the requestAnimationFrame loop, which is
+        // why the screen FROZE at the end of the intro with no Knight and no
+        // fight — nothing else in the app was broken, the loop had simply
+        // stopped being called.
+        //
+        // c_white is a no-op multiply, so it passes null and skips the work.
+        blit(img, entry.meta.ox, entry.meta.oy, d.x, d.y, d.xs, d.ys, d.ang, d.alpha,
+          d.blend === C_WHITE_GM ? null : rgbOf(d.blend));
       }
       return true;
     },
   };
+
+  /** GameMaker's c_white. A multiply by it changes nothing, so it means "no tint". */
+  const C_WHITE_GM = 16777215;
+  /** GameMaker packs colours BGR, so red is the LOW byte. */
+  function rgbOf(c) {
+    return [c & 255, (c >> 8) & 255, (c >> 16) & 255];
+  }
 
   /** Frame-seeded random for the charge trails (the 30Hz Draw-random rule). */
   function frandCanvas(frame, salt) {
