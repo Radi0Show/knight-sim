@@ -258,6 +258,39 @@ for (const [id, want] of [[2, 'ReviveMint'], [7, 'Spincake'], [29, 'TensionMax']
 
 console.log('grid: 2 columns x 6 rows, six per page over two pages, cursor is one 0..11 index');
 console.log('left and right both TOGGLE columns; up/down step 2 and CLAMP at the ends');
+// CANCEL IS A STACK, AND IT UNWINDS ONE CHARACTER AT A TIME. scr_prevhero
+// restores `temptension[charturn]`, the snapshot scr_nexthero took when that
+// character's turn began — so backing out of Ralsei's turn refunds SUSIE's
+// DEFEND and leaves Kris's banked.
+//
+// The button row used to advance `charturn` with a bare `+= 1`, skipping
+// scr_nexthero entirely: temptension stayed at the turn's opening value for
+// everyone, so one cancel rewound the TP all the way to the start of the turn
+// and undid every DEFEND at once. Reported from play as 32% dropping to zero
+// on a single X.
+{
+  const { BUTTONS, createMenu, openMenu, stepMenu } = await import('../sim/menu.js');
+  const { freshParty, TP_DEFEND } = await import('../sim/damage.js');
+  const defIdx = BUTTONS.findIndex((b) => b.name === 'DEFEND');
+  const s2 = createState({ seed: 1 });
+  s2.partyHp = freshParty();
+  s2.menu = createMenu();
+  openMenu(s2);
+  s2.tension = 0;
+  const tap = (k) => { stepMenu(s2, { [k]: true }); stepMenu(s2, {}); };
+  for (let i = 0; i < 2; i++) { s2.menu.selected[s2.menu.charturn] = defIdx; tap('confirm'); }
+  if (s2.tension !== TP_DEFEND * 2) {
+    failures.push(`two DEFENDs banked ${s2.tension} TP, expected ${TP_DEFEND * 2}`);
+  }
+  tap('cancel');
+  if (s2.menu.charturn !== 1) failures.push(`one cancel went to charturn ${s2.menu.charturn}, expected 1`);
+  if (s2.tension !== TP_DEFEND) {
+    failures.push(`one cancel left ${s2.tension} TP, expected ${TP_DEFEND} — it undid BOTH defends`);
+  }
+  tap('cancel');
+  if (s2.tension !== 0) failures.push(`the second cancel left ${s2.tension} TP, expected 0`);
+}
+
 console.log('names: ' + [7, 38, 39, 2, 30, 29].map((i) => ITEMS[i].name).join(', '));
 
 if (failures.length) {

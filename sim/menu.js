@@ -906,7 +906,21 @@ export function stepMenu(state, input) {
       setFace(state, c, FACE_IDLE);
     }
     selNoise = true;
-    menu.charturn += 1;
+    // `scr_nexthero()`, NOT a bare increment. This advanced `charturn` by hand
+    // and so skipped BOTH halves of the handover: the TP snapshot
+    // (`temptension[charturn] = global.tension`) and carrying the bag forward
+    // (`tempitem[i][charturn] = tempitem[i][charturn - 1]`).
+    //
+    // temptension therefore stayed at the turn's opening value for every
+    // character, and cancelling out of anyone's turn restored THAT — so
+    // DEFEND with Kris, DEFEND with Susie, then X at Ralsei rewound the TP
+    // from 32% to 0 and cancelled both defends instead of just Susie's.
+    // Reported from play exactly that way.
+    //
+    // The snapshot has to be taken AFTER the TP is paid, which is why the
+    // call belongs here and not above the DEFEND branch: scr_tensionheal runs
+    // on the choice, and the next character must inherit what it banked.
+    nextHero(menu, state);
     if (!skipFallen(state)) {
       menu.charturn = 0;
       menu.open = false;
