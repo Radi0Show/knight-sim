@@ -69,8 +69,12 @@ export function knightDrawCalls(state, e) {
     });
     return out;
   }
-  // con 3 is "gone until the roar's CleanUp hands him back".
-  if (k.chargeupcon >= 3) return out;
+  // NO EXIT FOR con 3. Only `chargeupcon == 2` exits the Draw; con 3 falls
+  // straight through to scr_enemy_drawidle_generic and the Knight is drawn as
+  // normal — at `image_alpha`, which the con 2 -> 3 handoff set to 0. So the
+  // game spends the whole roar issuing an INVISIBLE draw every frame rather
+  // than issuing none, and the two are indistinguishable on screen but not in
+  // the log: 805 base rows the sim did not have.
 
   // `if (state == 3 && hurttimer >= 0)` — the hurt strobe. The ending's branch
   // uses %3 where the ordinary one uses %2, so he flickers SLOWER while the

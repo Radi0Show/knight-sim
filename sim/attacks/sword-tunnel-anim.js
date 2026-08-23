@@ -28,7 +28,7 @@
 // reads as a slower, deeper sway.
 
 import { gmlRandom, gmlRandomRange } from '../rng.js';
-import { spawn } from '../entity.js';
+import { spawn, destroy } from '../entity.js';
 import { scrLerpvar } from '../lerpvar.js';
 
 export const swordTunnelAnim = {
@@ -111,6 +111,43 @@ export const swordTunnelAnim = {
       if (e.timer % 3 === 0 && state.gmlRng) {
         gmlRandomRange(state.gmlRng, 0, 0.2);
         gmlRandomRange(state.gmlRng, 0, 0.2);
+      }
+    }
+
+    // THE TEARDOWN, which was described in a comment here and never written:
+    //
+    //     if (global.turntimer < 10)
+    //     {
+    //         endtimer++;
+    //         image_alpha = 1;
+    //         x = obj_knight_enemy.x;
+    //         if (endtimer == 1) { sprite_index =
+    //             spr_roaringknight_ball_transition_sword;
+    //             image_index = 5; image_speed = 0.5; }
+    //         if (endtimer == 8) instance_destroy();
+    //     }
+    //
+    // Without it the anim survived until the end-of-turn sweep reaped it —
+    // THREE FRAMES LATE, on all five sword-tunnel turns. That is invisible in
+    // every traced column, because the only thing it changes is whether the
+    // Knight's own Draw exits: `if (i_ex(obj_knight_swordtunnelanim)) exit;`.
+    // The draw log sees it as 15 frames the game draws him and the sim does
+    // not, in five runs of exactly 3.
+    if (state.turntimer < 10) {
+      e.endtimer = (e.endtimer ?? 0) + 1;
+      e.image_alpha = 1;
+      const knight = state.entities.find(
+        (x) => x.alive && x.type.name === 'obj_knight_enemy',
+      );
+      if (knight) e.x = knight.x;
+      if (e.endtimer === 1) {
+        e.sprite_index = 'spr_roaringknight_ball_transition_sword';
+        e.image_index = 5;
+        e.image_speed = 0.5;
+      }
+      if (e.endtimer === 8) {
+        destroy(e);
+        return;
       }
     }
 

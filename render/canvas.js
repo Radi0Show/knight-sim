@@ -16,6 +16,7 @@ import { drawRoaringknightSlash } from './draw/slash.js';
 import { drawGrowtangle, tinted, fogged } from './draw/gm.js';
 import { drawSplitCut } from './draw/splitcut.js';
 import { drawMenu } from './menu.js';
+import { knightDrawCalls } from './knightdraw.js';
 import { drawTensionBar } from './tensionbar.js';
 import { drawGraze } from './graze.js';
 import { drawFightBar } from './fightbar.js';
@@ -408,48 +409,17 @@ export async function createRenderer(canvas) {
     obj_knight_enemy(ctx, e, state) {
       const k = state.knight;
 
-      // ROARING's launch. con 3 is "gone until the CleanUp hands him back";
-      // con 2 is the TEN-FRAME WHITE BURN-OUT that gets him there, and it is
-      // NOT dead code — the retraction this replaces assumed `chargeuptimer`
-      // was still ~60 from the charge-up turn, but obj_knight_roaring2's
-      // Create zeroes it on the same two lines that set con 2:
-      //
-      //     obj_knight_enemy.chargeupcon = 2;
-      //     obj_knight_enemy.chargeuptimer = 0;
-      //
-      // so `(10 - chargeuptimer) / 10` really does walk 0.9 -> 0 and the
-      // `== 10` handoff really does fire. sim/actors.js runs the timer; this
-      // draws it, fogged white like the charge-up's silhouette. The roar's
-      // own `darkness` lerp is delayed 20 frames, so the burn-out happens in
-      // full view — dropping it made him pop out in one frame.
-      if (k?.chargeupcon >= 3) return true;
-      if (k?.chargeupcon === 2) {
-        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
-        if (!entry || !entry.frames.length) return true;
-        const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
-        blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
-          e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, 0,
-          Math.max(0, e.image_alpha ?? 0));
-        return true;
-      }
-      // THE CHARGE-UP TURN (chargeupcon 1) — the Draw's two layers:
-      //
-      //     d3d_set_fog(true, c_white, 0, 1);
-      //     draw_sprite_ext(idlesprite, siner, x, y, ..., chargeuptimer / 10);
-      //     d3d_set_fog(false, ...);
-      //
-      // a SOLID WHITE copy fading in over the normal sprite in 10 frames —
-      // and, from the Step, obj_afterimage_fade_to_white copies every 4th
-      // frame past timer 10 (speed 4, random direction, alpha 0.6): the
-      // white trails shedding off him. The trails here are frame-seeded
-      // renderer ghosts (Draw-random rule; the oracle's RNG draws for them
-      // are covered by the per-launch re-anchor) with the drift and count
-      // kept and the fade rate approximated — LABELLED.
+      // THE CHARGE-UP'S AFTERIMAGE GHOSTS, which are NOT part of this Draw.
+      // In the game they are separate instances (obj_afterimage_fade_to_white)
+      // spawned from the knight's STEP, so they are outside the draw log by
+      // construction — the log covers obj_knight_enemy's own Draw only. They
+      // stay renderer-side, frame-seeded per the 30Hz Draw-random rule, and
+      // are LABELLED approximate in their fade.
       if (k?.chargeupcon === 1) {
-        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
-        if (!entry || !entry.frames.length) return false;
-        const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
-        const t = k.chargeuptimer ?? 0;
+        const entry0 = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
+        if (entry0 && entry0.frames.length) {
+          const idx0 = Math.abs(Math.floor(e.image_index ?? 0)) % entry0.frames.length;
+          const t = k.chargeuptimer ?? 0;
         // The trails, oldest first: one born every 4th frame past 10, each
         // drifting speed 4 along a seeded direction, fading over ~12 frames.
         for (let back = 12; back >= 1; back--) {
@@ -460,77 +430,33 @@ export async function createRenderer(canvas) {
           const alpha = Math.max(0, 0.6 - back * 0.05);
           if (alpha <= 0) continue;
           // FOGGED, not tinted — a white multiply is a no-op on dark art.
-          blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
+          blit(fogged(entry0.frames[idx0], [255, 255, 255]), entry0.meta.ox, entry0.meta.oy,
             e.x + Math.cos(dir) * dist, e.y + Math.sin(dir) * dist,
             e.image_xscale ?? 1, e.image_yscale ?? 1, 0, alpha);
         }
-        // The base sprite, then the white silhouette fading in over it.
-        blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y,
-          e.image_xscale ?? 1, e.image_yscale ?? 1, 0, e.image_alpha ?? 1, e.image_blend);
-        blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
-          e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, 0,
-          Math.min(1, t / 10));
-        return true;
-      }
-      if (state.entities.some(
-        (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
-      )) return true;
-
-      // THE SELECTION FLASH. sim/actors.js drives `flash` and `fsiner` exactly
-      // as obj_battlecontroller and the enemies' own Draws do; this only
-      // renders it. The alpha curve is the game's, character for character:
-      //
-      //     draw_sprite_ext(..., image_blend, (-cos(fsiner / 5) * 0.4) + 0.6)
-      //
-      // a pulse from 0.2 to 1.0 over ~31 frames, starting near transparent
-      // because the controller zeroes fsiner on the frame it becomes
-      // selected. What was here before was invented: three scaled-up fogged
-      // copies blended additively under the sprite, pulsing on the MENU's
-      // siner. Wrong layer, wrong curve, wrong period, wrong reset.
-      //
-      // It sits LAST so the charge-up, the roar burn-out and the sword-tunnel
-      // takeover all still win -- the Knight is never selectable during any
-      // of them, but a branch order that only works by luck is not one to
-      // rely on.
-      // IDLE ONLY. draw_monster_body_part is reached through
-      // scr_enemy_drawidle_generic's `state == 0` branch, so the base draw AND
-      // its flash overlay both stop while he is hurt — the strobe above owns
-      // those frames instead.
-      if (k?.flash && k.animState === 0) {
-        const entry = sprites.get(e.sprite_index ?? SPRITE_FOR.obj_knight_enemy);
-        if (entry && entry.frames.length) {
-          const idx = Math.abs(Math.floor(e.image_index ?? 0)) % entry.frames.length;
-          // TWO DRAWS, and the second is the whole point. Every enemy that
-          // flashes does it the same way:
-          //
-          //     draw_sprite_ext(thissprite, ..., image_blend, 1);   // normal
-          //     if (flash == 1) {
-          //         fsiner += 1;
-          //         d3d_set_fog(true, c_white, 0, 1);
-          //         draw_sprite_ext(thissprite, ...,
-          //                         (-cos(fsiner / 5) * 0.4) + 0.6);
-          //         d3d_set_fog(false, c_black, 0, 0);
-          //     }
-          //
-          // The sprite is drawn at FULL alpha, and the pulse belongs to a
-          // SOLID WHITE SILHOUETTE composited over it -- `d3d_set_fog(true,
-          // c_white, 0, 1)` is the same fog trick the charge-up uses, which
-          // this file already has as `fogged()`. So the enemy GLOWS, brighter
-          // and dimmer, and never loses opacity.
-          //
-          // The previous version applied that alpha to the sprite ITSELF, so
-          // the Knight faded down to 20% and back -- he read as blinking out
-          // of existence rather than lighting up. Right curve, wrong layer.
-          blit(entry.frames[idx], entry.meta.ox, entry.meta.oy, e.x, e.y,
-            e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
-            e.image_alpha ?? 1, e.image_blend);
-          blit(fogged(entry.frames[idx], [255, 255, 255]), entry.meta.ox, entry.meta.oy,
-            e.x, e.y, e.image_xscale ?? 1, e.image_yscale ?? 1, e.image_angle ?? 0,
-            (-Math.cos((k.fsiner ?? 0) / 5) * 0.4) + 0.6);
-          return true;
         }
       }
-      return false;
+
+      // EVERYTHING ELSE COMES FROM knightDrawCalls, which is the SAME list the
+      // headless trace writes and verify-fullfight diffs against the oracle.
+      //
+      // That shared source is the whole point. This handler used to decide
+      // what to draw independently, so the draw log verified a PARALLEL
+      // reimplementation and could have been perfect while the screen was
+      // wrong — the exact failure mode the log exists to remove. One list,
+      // one consumer for pixels, one for the CSV.
+      for (const d of knightDrawCalls(state, e)) {
+        const entry = sprites.get(d.sprite);
+        if (!entry || !entry.frames.length) continue;
+        const idx = Math.abs(Math.floor(d.index)) % entry.frames.length;
+        // `d3d_set_fog(true, colour, 0, 1)` renders the sprite as a solid
+        // silhouette in that colour. GameMaker packs colours BGR.
+        const img = d.fog >= 0
+          ? fogged(entry.frames[idx], [d.fog & 255, (d.fog >> 8) & 255, (d.fog >> 16) & 255])
+          : entry.frames[idx];
+        blit(img, entry.meta.ox, entry.meta.oy, d.x, d.y, d.xs, d.ys, d.ang, d.alpha, d.blend);
+      }
+      return true;
     },
   };
 

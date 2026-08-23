@@ -143,10 +143,34 @@ export const knightActor = {
     // state.knight are two different objects here; writing to the wrong one
     // is silent, which is exactly what verify-selectflash caught.
     if (k) {
+      // `becomeflash` IS A ONE-FRAME LATCH, and dropping it cost 88 frames of
+      // highlight. The two halves live in different objects and run in this
+      // order:
+      //
+      //     obj_battlecontroller Draw:  flash = 1; becomeflash = 1;
+      //     obj_knight_enemy Draw tail: if (becomeflash == 0) flash = 0;
+      //                                 becomeflash = 0;
+      //
+      // The Knight DRAWS the flash and only afterwards clears it, so on the
+      // frame you leave the enemy row the controller stops renewing the latch
+      // but `flash` is still 1 when the sprite goes down — the highlight
+      // outlives the menu state by exactly one frame. Modelled instantaneously
+      // it died a frame early EVERY time, which the replay token exposes as a
+      // 3-on/1-off pattern against the sim's 2-on/2-off: the recorded inputs
+      // step in and out of the row repeatedly, so the missing frame recurs
+      // three times per turn, all fight.
+      //
+      // The clear runs FIRST here, against LAST frame's latch, because that is
+      // where it sits relative to the controller in the real frame order.
+      if (!k.becomeflash) k.flash = 0;
+      k.becomeflash = 0;
       const selecting = !!(state.menu?.open
         && (state.menu.submenu === 'enemy' || state.menu.submenu === 'actpick'));
-      if (selecting && !k.flash) k.fsiner = 0;
-      k.flash = selecting ? 1 : 0;
+      if (selecting) {
+        if (!k.flash) k.fsiner = 0;
+        k.flash = 1;
+        k.becomeflash = 1;
+      }
       // `fsiner += 1` is the first line of scr_enemy_drawidle_generic's
       // `state == 0` branch, so it runs while IDLE whether or not anything is
       // flashing. It matters only while flashing, and the controller zeroes it
@@ -222,7 +246,11 @@ export const knightActor = {
       e.image_index = 0;
       e.fog = true;
       e.image_alpha = (10 - k.chargeuptimer) / 10;
-      if (k.chargeuptimer >= 10) {
+      // `if (chargeuptimer == 10)`, and it is checked AFTER the draw — so the
+      // alpha-0 frame at 10 is drawn before con flips. `>=` only differed
+      // while the timer arrived already past 10, which is exactly the bug
+      // above; it is written as the game writes it now that it cannot.
+      if (k.chargeuptimer === 10) {
         k.chargeupcon = 3;
         e.image_alpha = 0;
         e.fog = false;

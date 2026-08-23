@@ -78,7 +78,20 @@ export const roaring2 = {
     // `obj_knight_enemy.chargeupcon = 2` — the launch hides the white
     // charged knight (instantly, in effect: sim/knight.js has the dead-fade
     // note). The CleanUp below restores him.
-    if (state.knight) state.knight.chargeupcon = 2;
+    if (state.knight) {
+      state.knight.chargeupcon = 2;
+      // ...AND ZERO THE TIMER. obj_knight_roaring2's Create is two lines:
+      //
+      //     obj_knight_enemy.chargeupcon = 2;
+      //     obj_knight_enemy.chargeuptimer = 0;
+      //
+      // Only the first was translated, so the burn-out started with the
+      // ~185 left over from the charge-up turn: `chargeuptimer >= 10` was
+      // already true, con flipped to 3 on the FIRST frame, and the ten-frame
+      // white fade played as a single frame. The draw log caught it as
+      // 1 burnout row against the game's 10.
+      state.knight.chargeuptimer = 0;
+    }
 
     e.timer = 0;
     e.intensity = 1.5;

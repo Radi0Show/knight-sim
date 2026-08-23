@@ -82,11 +82,26 @@ st.menu.submenu = 'actpick';
 stepFrame(st, {});
 ok(st.knight.flash === 1, "ACT's enemy picker flashes as well");
 
-// Leaving clears it, so the Knight goes back to full opacity.
+// LEAVING TAKES ONE EXTRA FRAME, and that frame is `becomeflash`.
+//
+//     obj_battlecontroller Draw:  flash = 1; becomeflash = 1;
+//     obj_knight_enemy Draw tail: if (becomeflash == 0) flash = 0;
+//                                 becomeflash = 0;
+//
+// The Knight DRAWS the flash and only then clears it, so on the frame the menu
+// closes the controller stops renewing the latch but `flash` is still 1 when
+// the sprite goes down. Modelled instantaneously the highlight died a frame
+// early every time — 88 frames of it over the fight, which the draw log
+// measured as a 3-on/1-off pattern in the game against 2-on/2-off in the sim.
 st.menu.submenu = null;
 st.menu.open = false;
 stepFrame(st, {});
-ok(!st.knight.flash, 'flash clears when the menu closes');
+ok(st.knight.flash === 1, 'flash SURVIVES the frame the menu closes (the becomeflash latch)');
+stepFrame(st, {});
+ok(!st.knight.flash, 'and clears on the frame after');
+// The latch must not re-arm itself: a third frame stays clear.
+stepFrame(st, {});
+ok(!st.knight.flash, 'and stays clear');
 
 console.log(failed === 0
   ? 'verify-selectflash: OK — the game curve, period and reset'
