@@ -269,8 +269,12 @@ function drawTargetPicker(ctx, state, sprites, font) {
  * bar, and drawing them at full height overflows the row.
  */
 function drawEnemyRow(ctx, state, sprites, font) {
+  // `draw_sprite(spr_heart, 0, xx + 55, yy + 385 + (bmenucoord[...] * 30))`.
+  // This sat at x = 10, forty-five pixels left of where the game puts it and
+  // a long way from the name it is pointing at (drawn at x = 80). Reported
+  // from play as the heart being way too far from the enemy's name.
   const heart = sprites.get('spr_heart');
-  if (heart) drawSpriteExt(ctx, heart, 0, 10, 385, 1, 1, 0, null, 1);
+  if (heart) drawSpriteExt(ctx, heart, 0, 55, 385, 1, 1, 0, null, 1);
 
   // The name is EMPTY at setup — `global.monstername[myself] = ""` — and
   // obj_knight_enemy's Step fills it in with "Knight" on the frame

@@ -313,7 +313,35 @@ function nextHero(menu, state) {
  */
 function prevHero(menu, state) {
   if (menu.charturn <= 0) return false;
-  menu.charturn -= 1;
+  // IT SKIPS THE FALLEN, and it refuses when there is nobody to go back to.
+  // scr_prevhero does not decrement — it picks a target and gates each choice
+  // on `charmove`, which scr_dead clears:
+  //
+  //     if (charturn == 1) { if (charmove[0] == 1) { charturn = 0;
+  //                                                  moveswapped = 1; } }
+  //     if (charturn == 2) { moveswapped = 1;
+  //                          if (charmove[1] == 1 && acting[1] == 0) charturn = 1;
+  //                          else if (charmove[0] == 1)              charturn = 0; }
+  //     if (moveswapped == 1) { ...the undo... }
+  //
+  // A bare `charturn -= 1` handed the player a SWOONED character's menu:
+  // cancel from Ralsei with Susie down and you could pick her action, and
+  // reviving her next turn then let her act immediately. Reported from play.
+  //
+  // `isUp` reads `chardead`, which scr_dead and scr_revive set alongside
+  // charmove, so it is the same flag. `acting[1] == 0` is not modelled: it
+  // marks a character mid-ACT PERFORMANCE, which cannot be true during the
+  // command phase this runs in.
+  const from = menu.charturn;
+  let to = -1;
+  if (from === 1) {
+    if (isUp(state, 0)) to = 0;
+  } else if (from === 2) {
+    if (isUp(state, 1)) to = 1;
+    else if (isUp(state, 0)) to = 0;
+  }
+  if (to < 0) return false;
+  menu.charturn = to;
   const c = menu.charturn;
   state.tension = menu.temptension[c] ?? state.tension;
   menu.tempitem[c] = c === 0 ? [...state.inventory] : [...menu.tempitem[c - 1]];

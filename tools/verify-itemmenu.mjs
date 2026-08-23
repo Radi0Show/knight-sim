@@ -291,6 +291,43 @@ console.log('left and right both TOGGLE columns; up/down step 2 and CLAMP at the
   if (s2.tension !== 0) failures.push(`the second cancel left ${s2.tension} TP, expected 0`);
 }
 
+// CANCEL SKIPS THE FALLEN. scr_prevhero does not decrement — it picks a
+// target and gates each choice on `charmove`, which scr_dead clears:
+//
+//     if (charturn == 1) { if (charmove[0] == 1) charturn = 0; }
+//     if (charturn == 2) { if (charmove[1] == 1 && acting[1] == 0) charturn = 1;
+//                          else if (charmove[0] == 1)             charturn = 0; }
+//
+// A bare `charturn -= 1` handed the player a SWOONED character's menu, and
+// reviving them next turn then let them act immediately. Reported from play.
+{
+  const { BUTTONS: BT, createMenu: cm, openMenu: om, stepMenu: sm } = await import('../sim/menu.js');
+  const { freshParty: fp, scrDead } = await import('../sim/damage.js');
+  const s5 = createState({ seed: 1 });
+  s5.partyHp = fp();
+  scrDead(s5, 1);
+  s5.partyHp[1] = -999;                       // Susie swooned
+  s5.menu = cm();
+  om(s5);
+  const t5 = (k) => { sm(s5, { [k]: true }); sm(s5, {}); };
+  s5.menu.selected[0] = BT.findIndex((b) => b.name === 'DEFEND');
+  t5('confirm');                              // Kris acts; Susie is skipped
+  if (s5.menu.charturn !== 2) failures.push(`turn order skipped to ${s5.menu.charturn}, expected 2`);
+  t5('cancel');
+  if (s5.menu.charturn === 1) failures.push('cancel landed on the SWOONED character');
+  if (s5.menu.charturn !== 0) failures.push(`cancel went to ${s5.menu.charturn}, expected 0`);
+  // With everyone before them down, cancel must refuse rather than move.
+  const s6 = createState({ seed: 1 });
+  s6.partyHp = fp();
+  scrDead(s6, 0); s6.partyHp[0] = -80;
+  s6.menu = cm();
+  om(s6);
+  s6.menu.charturn = 1;
+  const t6 = (k) => { sm(s6, { [k]: true }); sm(s6, {}); };
+  t6('cancel');
+  if (s6.menu.charturn !== 1) failures.push('cancel moved with nobody living to go back to');
+}
+
 console.log('names: ' + [7, 38, 39, 2, 30, 29].map((i) => ITEMS[i].name).join(', '));
 
 if (failures.length) {

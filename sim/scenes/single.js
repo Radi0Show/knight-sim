@@ -163,6 +163,19 @@ const director = {
       for (let i = 0; i < 3; i++) scrRevive(state, i);
       state.invTimer = -1;
       clearTurn(state);
+      // AND GIVE THE HEART BACK. The real fight spawns obj_heart per TURN —
+      // obj_battlecontroller's Alarm 11 destroys the soul and the board
+      // together at the end of each one, and the next turn makes new ones.
+      // This drill built its soul ONCE, at scene setup, so any attack that
+      // destroys it left every later run with no heart at all.
+      //
+      // ROARING is exactly that attack: it pulls the soul into the vortex and
+      // destroys it partway through, which is why the drill for it went
+      // heartless after the first pass while every other attack looked fine.
+      // clearTurn has already nulled the dead one.
+      if (!state.soul || !state.soul.alive) {
+        state.soul = spawn(state, soul, { ...SOUL_START });
+      }
       // …and the drill's next turn has already chosen it, being the same one.
       state.currentAc = state.practiceEntry.ac;
       return;
