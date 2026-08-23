@@ -114,24 +114,24 @@ check((total.obj_afterimage_screen ?? 0) > 60,
 check((peak.obj_afterimage_screen ?? 0) > 3,
   'the copies should overlap — each lives long enough for the next few to start');
 
-// --------------------------------------------------------- THE IN-RUSH LINES
-// `timer >= 136 && intensity < 3.75`, one EVERY frame — the modulo in the
-// original is `(timer % 1) == 0`, which is always true.
-check(streaks > 100,
-  `the in-rush streaks fire once a frame for ~270 frames; saw ${streaks}`);
-check((peak.obj_particle_generic ?? 0) > 5,
-  `they should overlap heavily, peak was ${peak.obj_particle_generic ?? 0}`);
-// AND THEY MUST NOT SPAN THE SCREEN — the reported bug, and the one number
-// this file exists to hold down. `spr_pixel_white_front` is 4px wide, so the
-// dump's `image_xscale` lerp from 320 multiplies out to a 1280px bar on a
-// 640px view; the untouched translation peaked at 1200px, once a frame for
-// the whole wind-up. STREAK_UNIT divides that back to a length in pixels.
-// See the note at the spawn site: a deviation on a play report, not a
-// reading, which is exactly why it needs a test rather than a comment alone.
-check(longestStreak > 0, 'no streak was measured at all');
-check(longestStreak < VIEW_W,
-  `a streak should not span the view; the longest was ${longestStreak.toFixed(0)}px`
-  + ` against a ${VIEW_W}px screen`);
+// ------------------------------------------------ THE IN-RUSH LINES ARE GONE
+// They are NOT DRAWN, on a play report: there are no streaks across the
+// screen in this attack in the real fight. The dump asks for a 4x4
+// `spr_pixel_white_front` at image_xscale lerping 320 -> 2, which multiplies
+// out to a 1280px bar on a 640px view, once a frame for the whole wind-up.
+// Scaling that number down until it looked acceptable was the previous
+// attempt and it was still half the screen; the spawn site records why the
+// reading is not trusted.
+//
+// So this asserts the ABSENCE now — and, more importantly, that the two
+// `irandom` draws the spawn used are STILL TAKEN. The stream is shared with
+// everything else in the fight, so skipping them would move every later roll
+// and break the whole-fight diff; that is the part a future change is most
+// likely to get wrong when it "cleans up" the dead block.
+check(streaks === 0,
+  `the in-rush streaks are removed on a play report; ${streaks} were created`);
+check(longestStreak === 0,
+  `no streak should be drawn at all; the longest was ${longestStreak.toFixed(0)}px`);
 
 // ------------------------------------------------------------- THE CIRCLES
 // TWO, and they are opposites: a BLACK one at intensity 3.66 whose colour

@@ -518,6 +518,32 @@ export const roaring2 = {
     // so it is stretched to 320 wide on its first frame and then whips into
     // the centre in eight. `timer = 18` is its own kill switch — the position
     // lerp finishes at 8 and it sits for ten more frames shrinking.
+    //
+    // ── THE IN-RUSH STREAKS ARE NOT DRAWN. ──────────────────────────────
+    //
+    // Everything below is kept and still RUNS — the two irandom draws matter,
+    // because the stream is shared and skipping them would move every later
+    // roll — but the particle is no longer created, so nothing reaches the
+    // screen.
+    //
+    // WHY. The dump is unambiguous about what it asks for: a 4x4
+    // `spr_pixel_white_front` at `image_xscale` lerping 320 -> 2, angled at
+    // the vortex, born 480-560px out. Taken literally that is a 1280px streak
+    // — twice the width of the 640px screen — several times a frame. Dividing
+    // by the sheet width (the STREAK_UNIT reading above) brings it to ~320px,
+    // still half the screen.
+    //
+    // The player, who has the real fight in front of them, reports there are
+    // NO streaks across the screen in this attack at all. That is a direct
+    // observation of the thing being translated, and it beats a reading this
+    // file already admitted it could not make come out right: "something in
+    // the reading is wrong in a way no capture this project has can locate."
+    //
+    // So they are removed rather than left at a fudged length. The research
+    // stays here in full: if a future capture explains the 320, restore the
+    // spawn and delete this block. Do NOT "fix" it by scaling the number
+    // until it looks acceptable — that was the previous attempt.
+    const DRAW_INRUSH_STREAKS = false;
     if (e.timer >= 136 && e.intensity < 3.75) {
       const randangle = gmlIrandom(state.gmlRng, 360);
       const randdistance = 480 + gmlIrandom(state.gmlRng, 80);
@@ -525,6 +551,10 @@ export const roaring2 = {
       const py = state.view.y + e.fake_y + 55 + lengthdirY(randdistance, randangle);
       const cx = state.view.x + e.fake_x;
       const cy = state.view.y + e.fake_y + 55;
+      if (!DRAW_INRUSH_STREAKS) {
+        // The draws above have been taken; the particle is not made.
+        void px; void py; void cx; void cy;
+      } else {
       const p = spawn(state, particleGeneric, { x: px, y: py });
       p.not_outbound = false;
       p.sprite_index = 'spr_pixel_white_front';
@@ -538,6 +568,7 @@ export const roaring2 = {
       scrLerpvar(state, spawn, p, 'image_alpha', 1, 0.5, 16);
       scrLerpvar(state, spawn, p, 'x', px, cx, 8, 1);
       scrLerpvar(state, spawn, p, 'y', py, cy, 8, 1);
+      }
     }
 
     if (e.roaring_timer < 1 && e.intensity < 4) {
