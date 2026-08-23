@@ -79,6 +79,22 @@ export const knightActor = {
     // too.
     {
       const kb = state.knight;
+      // `if (chargeupcon == 2) { chargeuptimer++; ...draw...; if
+      // (chargeuptimer == 10) { chargeupcon = 3; image_alpha = 0; } exit; }`
+      //
+      // In endStep because it is Draw logic and the Draw runs after every
+      // Step: obj_knight_roaring2's Create sets con 2 during the controller's
+      // step, and a tick in the knight's own step happens before that, so the
+      // burn-out ran one frame behind for its whole ten-frame life.
+      if (kb && kb.chargeupcon === 2) {
+        kb.chargeuptimer = (kb.chargeuptimer ?? 0) + 1;
+        if (kb.chargeuptimer === 10) {
+          kb.chargeupcon = 3;
+          e.image_alpha = 0;
+          e.fog = false;
+        }
+        return;
+      }
       // `if (!i_ex(obj_knight_roaring2)) siner2++;` — the FIRST line of the
       // Draw, so it runs above both exits (the sword tunnel and the charge-up
       // still tick it) but not at all while he is invisible.
@@ -295,17 +311,24 @@ export const knightActor = {
     // `blockanim` swaps the idle for `spr_roaringknight_block_ol` for 15
     // frames instead. It only fires while `damagereduction < 0.1`, so in this
     // fight that is the 0.04 opening and nothing else.
-    // The Draw applies `x + shakex` at every draw site rather than moving the
-    // instance. Nothing in this renderer reads a `shakex` field, so it goes
-    // onto the position — the visible result is identical and it needs no new
-    // plumbing through the generic blit.
+    // THE SHAKE IS NOT ON THE INSTANCE. `obj_knight_enemy.x` never includes
+    // it: the Draw adds `x + shakex` at the sites that shake (the hurt strobe
+    // and the whiteflash copy) and draw_monster_body_part uses plain `x`.
+    //
+    // This used to fold shakex into the position, on the reasoning that
+    // nothing read a shakex field so the visible result was identical. That
+    // stopped being true when render/knightdraw.js started adding shakex at
+    // the strobe sites the way the Draw does — the strobe then got it TWICE —
+    // and it was never quite right anyway: anything reading the knight's x
+    // (attacks spawn at it, the Stars cone lerps to it) saw a shaken value the
+    // game never exposes.
     //
     // `+ hurtspriteoffx / + hurtspriteoffy` are in every one of those draw
     // sites too and are NOT translated, deliberately: `scr_enemy_object_init`
     // sets both to 0 and a whole-dump grep finds no other assignment. They are
     // write-only, the same family as `linex` and `splitbox`. Adding fields
     // that are provably always zero would only invite someone to "fix" them.
-    e.x = KNIGHT.x + (k?.shakex ?? 0);
+    e.x = KNIGHT.x;
     // THE ENDING STROBES SLOWER. The normal strong-hurt alternates on %2;
     // the win's block reads `(hurttimer % 3) == 0` for the idle frame — two
     // ball frames for every idle one, so he reads as losing the shape rather
@@ -332,7 +355,11 @@ export const knightActor = {
     // the "appears, then appears again" report. `fog` is the GPU replace, not
     // a multiply tint (see render/draw/gm.js).
     if (k?.chargeupcon === 2) {
-      k.chargeuptimer = (k.chargeuptimer ?? 0) + 1;
+      // The `chargeuptimer++` moved to endStep — see there. It is Draw logic,
+      // and running it here ticked it before obj_knight_roaring2's Create had
+      // set con 2, so the ten-frame burn-out ran a full step behind: the sim
+      // opened at alpha 1.0 where the game opens at 0.9 and never showed the
+      // final 0.0 frame at all.
       e.sprite_index = 'spr_roaringknight_idle';
       e.image_index = 0;
       e.fog = true;
@@ -341,11 +368,6 @@ export const knightActor = {
       // alpha-0 frame at 10 is drawn before con flips. `>=` only differed
       // while the timer arrived already past 10, which is exactly the bug
       // above; it is written as the game writes it now that it cannot.
-      if (k.chargeuptimer === 10) {
-        k.chargeupcon = 3;
-        e.image_alpha = 0;
-        e.fog = false;
-      }
       return;
     }
     e.fog = false;

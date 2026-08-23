@@ -320,10 +320,7 @@ export function stepKnightAnim(state) {
   // `shakex` is not decremented by the knight — scr_enemy_drawidle_generic
   // walks it toward zero, flipping sign each frame, which is what makes it a
   // shake rather than a slide.
-  if (k.shakex !== 0) {
-    k.shakex = -(k.shakex - Math.sign(k.shakex) * 2);
-    if (Math.abs(k.shakex) < 2) k.shakex = 0;
-  }
+
   // `if (state == 3) scr_enemy_hurt();` — and scr_enemy_hurt is
   //
   //     hurttimer -= 1;
@@ -339,7 +336,34 @@ export function stepKnightAnim(state) {
   // and the Knight went STATIC exactly when he should be flickering hardest.
   if (k.animState === 3) {
     k.hurttimer -= 1;
-    if (k.hurttimer < 0) k.animState = 0;
+    if (k.hurttimer < 0) {
+      k.animState = 0;
+    } else {
+      // THE SHAKE, and it is the ELSE branch — it stops the moment the hurt
+      // ends, leaving shakex wherever it got to rather than walking it home.
+      //
+      //     hurtshake += 1;
+      //     if (hurtshake > 1) {
+      //         if (shakex > 0) shakex -= 1;
+      //         if (shakex < 0) shakex += 1;
+      //         shakex = -shakex;
+      //         hurtshake = 0;
+      //     }
+      //
+      // EVERY OTHER FRAME, BY ONE. `hurtshake` is the half-rate gate, so 9
+      // decays as 9, 9, -8, -8, 7, 7, -6, -6 ... over about eighteen frames.
+      // The old model moved it EVERY frame BY TWO (9, -7, 5, -3, 1, 0) — the
+      // same alternation and roughly the same envelope, which is why a suite
+      // asserting only "it changes sign" passed, but a quarter of the
+      // duration and the wrong value on every single frame.
+      k.hurtshake = (k.hurtshake ?? 0) + 1;
+      if (k.hurtshake > 1) {
+        if (k.shakex > 0) k.shakex -= 1;
+        if (k.shakex < 0) k.shakex += 1;
+        k.shakex = -k.shakex;
+        k.hurtshake = 0;
+      }
+    }
   }
   // Both of these are in the DRAW, inside `state == 3 && hurttimer >= 0`, so
   // they see the value the Step just decremented.
@@ -621,7 +645,15 @@ export function stepEndCutscene(state) {
   // shaking. Without this the sim ran both at once, so his sprite jittered
   // against a view that was already jittering: twice the motion the game has,
   // and on the one frame the fight is asking you to look at him.
-  k.shakex = 0;
+  // NOT ON THE TRIGGER FRAME. `if (end_cutscene_version == 1) { ... shakex = 0
+  // }` sits at the TOP of the Draw, and the block that SETS ecv to 1 is
+  // further down it — so on the frame the ending fires, that test is still
+  // false and the killing blow's `shakex = 9` survives to be drawn. The sim
+  // zeroed it immediately and lost the flinch on the one frame the fight is
+  // asking you to look at him. This reads endtimer BEFORE the tick further
+  // down, so on the trigger frame it is still the -1 startEndCutscene set and
+  // `>= 0` means "every frame after the trigger".
+  if ((k.endtimer ?? 0) >= 0) k.shakex = 0;
   k.stronghurtanim = true;
   k.animState = 3;
   // ...AND THEN CLEARED AGAIN on the single frame hurttimer hits 15. The Draw
