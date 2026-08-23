@@ -40,6 +40,9 @@ const mkCtx = () => new Proxy({}, {
       };
     }
     if (VALUE_PROPS.has(p)) return t[p] ?? '';
+    if (p === 'drawImage' || p === 'fillText') {
+      return () => { globalThis.__drawCount = (globalThis.__drawCount ?? 0) + 1; };
+    }
     return () => undefined;
   },
   set(t, p, v) { t[p] = v; return true; },
@@ -85,6 +88,40 @@ try {
 } catch (e) {
   failures.push(`the renderer threw on frame ${f}: ${e.message}`);
   console.log(String(e.stack).split('\n').slice(0, 4).join('\n'));
+}
+
+// THE ACT'S TEXT REACHES state.battlemsg WITH THE MENU SHUT.
+//
+// This is the SIM half of a bug whose other half is in render/menu.js:
+// drawBattleMsg used to sit inside the button-row branch, so the flavour line
+// only drew while the menu was OPEN — and the director does not even reach the
+// ACT writer until `state.menu.open` is false. Selecting HoldBreath queued the
+// right three lines, typed them out, and drew nothing.
+//
+// The RENDER half is not asserted here and that is a real gap: drawBattleMsg
+// returns early on `!font?.ready`, and no font loads in this stub harness, so
+// a draw-count probe cannot tell the fixed and broken versions apart. Only
+// the state contract below is covered.
+{
+  const { createState: mk } = await import('../sim/state.js');
+  const { stepFrame: step } = await import('../sim/index.js');
+  const { buildPracticeScene: build } = await import('../sim/scenes/practice.js');
+  const st3 = mk({ seed: 3 });
+  build(st3, { seed: 3 });
+  st3.keepAlive = true;
+  let guard = 0;
+  while (!st3.menu?.open && guard++ < 2000) step(st3, {});
+  const tap = (k) => { step(st3, { [k]: true }); step(st3, {}); };
+  st3.menu.selected[0] = 1; tap('confirm'); tap('confirm');
+  st3.menu.gridIndex = 1; tap('confirm');            // Kris: HoldBreath
+  st3.menu.selected[st3.menu.charturn] = 4; tap('confirm');
+  st3.menu.selected[st3.menu.charturn] = 4; tap('confirm');
+  for (let i = 0; i < 4; i++) step(st3, {});
+  if (st3.menu.open) {
+    console.log('  skip  the menu did not close');
+  } else if (!String(st3.battlemsg ?? '').includes('held their breath')) {
+    failures.push(`with the menu shut the ACT's text never reached battlemsg (got ${JSON.stringify(st3.battlemsg)})`);
+  }
 }
 
 if (failures.length) {

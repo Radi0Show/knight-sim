@@ -475,6 +475,26 @@ export function drawMenu(ctx, state, sprites) {
     drawBattleMsg(ctx, state, font);
   }
 
+  // ...AND WHENEVER THE MENU IS SHUT. The line above only fires in the
+  // button-row branch, so the flavour line was drawn ONLY while the menu was
+  // open — and the messages that matter most are set after it closes.
+  //
+  // `obj_writer` is an INSTANCE in the game. It draws itself for as long as it
+  // lives and does not care what the menu is doing, which is the whole reason
+  // the knight's ACT gate is `actcon == 1 && !instance_exists(obj_writer)`:
+  // the writer outlives the command phase by design.
+  //
+  // In this sim the director does not even reach the ACT writer until the menu
+  // has closed (`if (state.menu.open) return;`), so an ACT's text was
+  // published to state.battlemsg at exactly the moment the only thing drawing
+  // it stopped being called. Selecting HoldBreath queued the right three lines
+  // and typed them out with nothing on screen — reported as the correct text
+  // not appearing.
+  //
+  // Not while a submenu is up: the item and spell lists occupy the same band,
+  // which is why the branch above is the narrow one.
+  if (!menu.open) drawBattleMsg(ctx, state, font);
+
   ctx.restore();
 }
 
