@@ -44,20 +44,6 @@
     image-rendering: crisp-edges;
     image-rendering: pixelated;
   }
-  /* The status line is kept for bug reports but is OFF by default — the
-     driver only reveals it when `?hud=1` is in the URL. */
-  #hud {
-    display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    padding: 4px 8px;
-    text-align: center;
-    background: rgba(0, 0, 0, .6);
-    opacity: .75;
-  }
-  body.hud #hud { display: block; }
   /* ATTRIBUTION. Small, dim, and at the very bottom of the window rather than
      inside the 640x480 frame -- the frame is the game's own art and nothing
      of ours belongs on it. `pointer-events: none` so it can never eat a click
@@ -76,12 +62,10 @@
     pointer-events: none;
     user-select: none;
   }
-  body.hud #credit { bottom: 26px; }
 </style>
 </head>
 <body>
   <canvas id="game" width="640" height="480"></canvas>
-  <div id="hud">loading…</div>
   <p id="credit">Game is by Toby Fox and the Deltarune Team</p>
   <script type="module" src="./main.js"></script>
 </body>

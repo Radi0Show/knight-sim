@@ -7,7 +7,7 @@
 import { createState, stepFrame } from '../sim/index.js';
 import { drain, MS_PER_FRAME } from '../sim/clock.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
-import { createRecorder, recordInput, encodeReplay, decodeReplay } from '../sim/replay.js';
+import { decodeReplay } from '../sim/replay.js';
 import { createTitle, stepTitle, MODES } from '../sim/modes.js';
 import { encodeConfig, decodeConfig, NONE } from '../sim/share.js';
 import { WEAPONS, ARMOR, canEquip } from '../sim/equipment.js';
@@ -99,9 +99,7 @@ const audio = createAudio();
 const keyboard = bindKeyboard(window);
 const gamepad = bindGamepad();
 // One reader, two sources: the sim sees the OR of keyboard and controller,
-// so both work at once and neither can mask the other. The replay recorder
-// sits downstream of this read, so controller runs produce tokens exactly
-// like keyboard runs.
+// so both work at once and neither can mask the other.
 const keys = {
   read() {
     const k = keyboard.read();
@@ -258,81 +256,8 @@ if (skip > 0) {
 
 // Exposed for debugging and for automated screenshots; nothing in sim/ reads
 // it back.
-window.__audio = audio;
-window.__intro = {
-  get seq() { return introSeq; },
-  skips: 0,
-  // Deterministic single-frame inspection: build a scene, step to t, paint.
-  // Same modules, same draw — throttle-immune (screenshot tooling stalls the
-  // rAF clock, and the drain then blows through the timeline in one burst).
-  hold: false, // freezes the rAF loop so a drive() paint stays on screen
-  drive(t) {
-    this.hold = true;
-    const sc = createIntroScene();
-    const cues = [];
-    for (let i = 0; i < t; i++) stepIntroScene(sc, cues);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
-    drawBackground(ctx, state, renderer.sprites);
-    drawIntroScene(ctx, sc, renderer.sprites);
-    return { phase: sc.phase, t: sc.t, done: sc.done };
-  },
-};
-// Deterministic single-frame inspection of the ENDING, auto-confirming the
-// dialogue gates. Same hold semantics as __intro.drive.
-window.__cutscene = {
-  /**
-   * @param t         frames to run
-   * @param opts.hold if set, STOP pressing confirm from this frame on — the
-   *                  run parks on whichever dialogue gate it reaches next,
-   *                  which is the only way to inspect a textbox that a
-   *                  confirm-every-other-frame driver clears before you can
-   *                  screenshot it.
-   */
-  drive(t, opts = {}) {
-    window.__intro.hold = true;
-    const sc = createVictoryScene();
-    const cues = [];
-    // Alternate confirm every other frame: gates need a fresh edge.
-    for (let i = 0; i < t; i++) {
-      const held = opts.hold !== undefined && i >= opts.hold;
-      stepVictoryScene(sc, { confirm: !held && i % 2 === 0 }, cues);
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, renderer.VIEW_W, renderer.VIEW_H);
-    drawVictoryScene(ctx, sc, renderer.sprites);
-    return {
-      t: sc.t, done: sc.done, wait: sc.wait, scriptIndex: sc.scriptIndex,
-      dialogue: sc.dialogue ? { ...sc.dialogue } : null,
-    };
-  },
-};
-window.__sim = {
-  get state() { return state; },
-  // The Game Over sequence, for the same reason state is here: it is a
-  // timeline with a lot of frames in it and no other way to look inside.
-  get over() { return over; },
-  step(n = 1) { for (let i = 0; i < n; i++) stepFrame(state, keys.read()); renderer.draw(state); },
-};
-
 let acc = 0;
 let last = performance.now();
-// `?pause=1` holds the sim still after the ?frames= fast-forward, which is what
-// makes a screenshot of a named frame reproducible — without it the page runs
-// on and whatever you sample is whatever moment the round-trip landed in. P
-// still toggles.
-let running = params.get('pause') !== '1';
-let simFrames = 0;
-let lastFpsSample = last;
-let fps = 0;
-
-const hud = document.getElementById('hud');
-// `?hud=1` brings back the debug readout (frame, HP, TP, the key legend) for
-// bug reports. Default is the game alone, letterboxed.
-const hudOn = params.get('hud') === '1';
-if (hudOn) document.body.classList.add('hud');
 
 // Shown to the player, not decoration: this scene contains a faithfully
 // translated attack that the real fight never selects, so it must not be
@@ -417,84 +342,22 @@ function reset() {
   // …and so does the shake switch. A fresh state starts with flag 12 clear, so
   // without this an R-restart silently turned the camera shake back on.
   state.flag12 = title.shake ? 0 : 1;
-  // A reset starts a new recording — a token must describe exactly one run.
-  recorder = createRecorder({ seed: state.seed, mode, attack: attackId, difficulty });
   state.spriteFrames = renderer.spriteFrames;
 state.spriteRate = renderer.spriteRate;
   build(state);
   acc = 0;
 }
 
+// R RESTARTS, and it is the only key the page binds beyond movement.
+//
+// The debug affordances that used to live here — P pause, Q music, B copy a
+// replay token, E deal 1000 to the Knight — are gone, along with the `?hud=1`
+// readout, the `?pause=1` freeze and the window.__sim / __intro / __cutscene
+// inspection handles. They were for building the thing, not for playing it,
+// and a practice tool should not offer the player a key that skips the fight.
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') reset();
-  if (e.code === 'KeyP') {
-    running = !running;
-    if (!running) audio.stopAll();
-  }
-  // Q — MUSIC ONLY. The sound effects are feedback (a graze, a hit, a bolt
-  // scoring) and muting them makes the fight harder to read; the track is the
-  // part people turn off. Two separate things, so one key for one of them.
-  if (e.code === 'KeyQ') {
-    musicOn = !musicOn;
-    if (musicOn) cueLoopNow('mus_knight');
-    else audio.stopLoop('mus_knight');
-  }
-  // B — copy a replay token for a bug report.
-  if (e.code === 'KeyB') copyReplay();
-  // E — DEBUG HIT: 1000 through the real damage path (scr_damage_enemy's
-  // anim/state effects included), so the ending is reachable in seconds when
-  // bug-fixing it. A practice-tool tool, shown in the HUD like every key.
-  // 1000 >= 100 so it strobes like any heavy hit, and the number is drawn.
-  if (e.code === 'KeyE' && mode === 'fight' && !introSeq && !tvOff && !cutsceneSeq) {
-    const dealt = damageKnight(state, 1000);
-    if (dealt > 0) spawnDmgNumber(state, KNIGHT.x, KNIGHT.ystart + 40, dealt, 1);
-  }
 });
-
-// ---- BUG REPORTS --------------------------------------------------------
-//
-// The token is the whole report. Everything else — what it looked like, which
-// attack, how far in — is recoverable by replaying it, so the tester only has
-// to say what looked wrong.
-let recorder = createRecorder({ seed: state.seed, mode, attack: attackId, difficulty });
-
-async function copyReplay() {
-  const token = encodeReplay(recorder);
-  let copied = false;
-  try {
-    await navigator.clipboard.writeText(token);
-    copied = true;
-  } catch {
-    // Clipboard access needs a secure context and a user gesture, and a
-    // keypress on a file:// page has neither. Falling back to a selectable
-    // box means the feature still works rather than failing silently.
-  }
-  showReplay(token, copied);
-}
-
-function showReplay(token, copied) {
-  let box = document.getElementById('replaybox');
-  if (!box) {
-    box = document.createElement('div');
-    box.id = 'replaybox';
-    box.style.cssText =
-      'position:fixed;left:0;right:0;bottom:0;background:#111;color:#ddd;'
-      + 'font:12px monospace;padding:8px;border-top:2px solid #e0a;z-index:99';
-    document.body.append(box);
-  }
-  box.innerHTML =
-    `<b style="color:#e0a">${copied ? 'Replay token copied.' : 'Replay token — copy this:'}</b> `
-    + `${recorder.frames} frames · paste it into the bug report `
-    + '<a href="https://github.com/Radi0Show/knight-sim/issues/new?template=bug.yml" '
-    + 'target="_blank" style="color:#6cf">(open an issue)</a> '
-    + '<button id="replayclose" style="float:right">close</button>'
-    + `<textarea readonly rows="3" style="width:100%;background:#000;color:#8f8;`
-    + `font:11px monospace;border:1px solid #444">${token}</textarea>`;
-  const ta = box.querySelector('textarea');
-  ta.focus();
-  ta.select();
-  box.querySelector('#replayclose').onclick = () => box.remove();
-}
 
 /** Push the settings at the things that consume them. No storage. */
 function applySettings() {
@@ -586,7 +449,6 @@ function shareSetup() {
   }
 }
 
-let musicOn = true;
 function cueLoopNow(name) {
   audio.play([{ name, pitch: 1, gain: 1, loop: true }]);
 }
@@ -654,22 +516,14 @@ function frame(now) {
   const elapsed = now - last;
   last = now;
 
-  // Controller driver keys — start pauses, select resets, mirroring the
-  // KeyP/KeyR handlers. Polled here because the Gamepad API has no events.
+  // Select resets, mirroring R. Start no longer pauses — the pause went with
+  // the rest of the debug keys. Polled here because the Gamepad API has no
+  // events.
   {
     const pe = gamepad.driverEdges();
     if (pe.reset) reset();
-    if (pe.pause) {
-      running = !running;
-      if (!running) audio.stopAll();
-    }
   }
 
-  // Debug freeze: a __intro.drive() paint stays on screen until released.
-  if (window.__intro.hold) {
-    requestAnimationFrame(frame);
-    return;
-  }
 
   // THE TITLE SCREEN runs on the same clock as everything else, so its cursor
   // bobs at 30Hz like the battle menu's rather than at the monitor's rate.
@@ -717,7 +571,6 @@ function frame(now) {
     for (let i = 0; i < is; i++) {
       const input = gatedKeys();
       if (input.confirm || input.cancel) {
-        window.__intro.skips += 1;
         introSeq.done = true;
         // The skip press must not fire FIGHT on the other side (the same
         // held-across-a-transition rule the title uses).
@@ -877,7 +730,7 @@ function frame(now) {
     return;
   }
 
-  if (running) {
+  {
     const { steps, accumulator } = drain(acc, elapsed);
     acc = accumulator;
     for (let i = 0; i < steps; i++) {
@@ -888,11 +741,9 @@ function frame(now) {
       // sim/replay.js. One byte a frame, run-length encoded; the cost of
       // recording unconditionally is nothing next to the cost of asking a
       // tester to reproduce something they already saw.
-      recordInput(recorder, input);
       const hitsBefore = state.counters.collisionHits;
       stepFrame(state, input);
       audio.play(drainCues(state));
-      simFrames += 1;
 
       // The win: the ending's white fade has filled (stepEndCutscene drives
       // it to 1 over 30 frames from endtimer 32). The story scene plays
@@ -948,7 +799,7 @@ function frame(now) {
           // needed no extraction pass. The typer over it is `snd_nosound`: the
           // Knight's words arrive in silence on top of the drone.
           audio.stopLoop('mus_knight');
-          if (musicOn) audio.play([{ name: 'audio_drone', pitch: 1, gain: 1, loop: true }]);
+          audio.play([{ name: 'audio_drone', pitch: 1, gain: 1, loop: true }]);
           over = makeGameOver(
             shot,
             (state.soul?.x ?? renderer.VIEW_W / 2) + 2 - (state.view?.x ?? 0),
@@ -962,11 +813,6 @@ function frame(now) {
 
   renderer.draw(state);
 
-  if (now - lastFpsSample >= 500) {
-    fps = Math.round((simFrames * 1000) / (now - lastFpsSample));
-    simFrames = 0;
-    lastFpsSample = now;
-  }
   // THE BANNER IS GONE, and rule 5 is still satisfied.
   //
   // It existed because the scene used to show content the real fight never
@@ -979,28 +825,6 @@ function frame(now) {
   //
   // If an unlabelled placeholder is ever added back, the label goes on the
   // thing itself, not here.
-  // THE READOUT IS OFF UNLESS ASKED FOR. The page is the game and nothing
-  // else now (letterboxed 640x480, black bars, no chrome); this line stays
-  // behind `?hud=1` because a playtester filing a report still needs the
-  // frame number and the key legend. Skipping the work when it is hidden
-  // also keeps a per-frame string build out of the loop.
-  if (!hudOn) {
-    requestAnimationFrame(frame);
-    return;
-  }
-  hud.innerHTML =
-    // The Game Over SCREEN says this now, in the game own font.
-
-    `frame ${state.frame} · sim ${fps}/30 Hz · hits ${state.counters.collisionHits}` +
-    // Raw, negatives included — the charbox prints them and so does this: a
-    // swooned -999 and a downed -80 are different situations and the readout
-    // that flattens both to 0 is the one that hides the difference.
-    ` · HP ${state.partyHp.join('/')}` +
-    ` · TP ${Math.floor((state.tension / 250) * 100)}%` +
-    ` · sprites ${renderer.spriteCount}` +
-    ` · ${running ? '' : '[PAUSED] '}arrows/WASD move · X focus/cancel · R reset` + ` · Q music ${musicOn ? 'on' : 'OFF'} · P pause · E debug-hit 1000 · <b style="color:#e0a">B report a bug</b>`
-    + (gamepad.connected() ? ' · 🎮 A confirm · B cancel/slow · start pause · select reset' : '');
-
   requestAnimationFrame(frame);
 }
 
