@@ -205,7 +205,13 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     // `specialmessage = 3` when the target is already full — and that number
     // above the character IS the entire feedback. `Heal Prayer: +55` was
     // invented text in a box the game leaves alone.
-    state.spellDelay = 15;
+    //
+    // `global.spelldelay` is NOT translated, deliberately. It drives
+    // obj_spellphase, which this sim does not model. The per-character resolve
+    // delay the director DOES use is obj_attackpress's own `spelldelay[c]`,
+    // which the dump initialises to 10 and the director already hardcodes at
+    // that. A state field nothing reads is the dead-write hazard this project
+    // keeps tripping over, so it is left out rather than left inert.
     return null;
   }
   if (spellId === 11) {
@@ -235,7 +241,6 @@ export function castSpell(state, slot, spellId, target = 0, opts = {}) {
     // `Pacify: the Knight is not TIRED` was invented text explaining a thing
     // the game shows you instead.
     state.pacifyFail = { con: 6, alarm: 8 };
-    state.spellDelay = 20;
     return null;
   }
   return null;
