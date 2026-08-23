@@ -107,6 +107,60 @@ for (const n of Object.keys(KNIGHT_ALONE)) {
   }
 }
 
+// THE CRAWL MUST REACH THE RENDERER. render/dialogue.js reveals the balloon
+// with `revealed(formatted, dlg.timer)`, and for a long time NOTHING wrote
+// dlg.timer — it was zeroed when a line was queued and never moved again, so
+// every balloon in the fight drew as an empty white bubble: box, tail and
+// voice blips all correct, not one letter on screen.
+//
+// The typing state the sim keeps (the writer's `pos`) was right the whole
+// time, which is exactly why no suite caught it — a dead write facing a dead
+// read, the same shape as `state.pinnedShuffle`. This drives a real fight far
+// enough to raise a balloon and asserts the field the RENDERER reads actually
+// climbs, rather than asserting the one the sim happens to keep.
+{
+  const { createState } = await import('../sim/state.js');
+  const { buildPracticeScene } = await import('../sim/scenes/practice.js');
+  const { stepFrame } = await import('../sim/index.js');
+  // A REAL INPUT STREAM, because the fight does not advance on its own: the
+  // menu waits on a press and a hand-tapped confirm never got far enough to
+  // raise a balloon at all. The FIRST version of this check did exactly that
+  // and passed against a deliberately broken timer — vacuous, the failure
+  // mode CLAUDE.md warns about under "a green suite does not mean a change
+  // took effect".
+  //
+  // tools/make-replay-token.mjs regenerates a playing token from a seed, so
+  // this stays self-contained: no recording, nothing from the private repo.
+  const { execFileSync } = await import('node:child_process');
+  const { decodeReplay } = await import('../sim/replay.js');
+  const out = execFileSync(process.execPath,
+    [new URL('make-replay-token.mjs', import.meta.url).pathname, '--seed', '37', '--frames', '2600'],
+    { encoding: 'utf8' });
+  const token = out.trim().split('\n').pop();
+  const replay = decodeReplay(token);
+  const st = createState({ seed: replay.meta.seed });
+  buildPracticeScene(st, { seed: replay.meta.seed });
+  // KEEP-ALIVE, as the whole-fight runs use: the scripted token does not dodge,
+  // so without it the party wipes around frame 598 and the fight stops long
+  // before the first balloon (which the real trace raises at f2042).
+  st.keepAlive = true;
+  const seen = new Set();
+  let sawText = false;
+  for (let f = 0; f < replay.frames; f++) {
+    stepFrame(st, replay.inputAt(f));
+    const d = st.dialogue;
+    if (d?.text) { sawText = true; seen.add(d.timer ?? 0); }
+  }
+  if (!sawText) {
+    console.log('  skip  no balloon was raised in the replay');
+  } else {
+    const vals = [...seen].sort((a, b) => a - b);
+    if (vals.length < 2 || vals[vals.length - 1] < 2) {
+      failures.push(`dlg.timer never advanced — the renderer would draw an EMPTY balloon (saw ${vals.join(',')})`);
+    }
+  }
+}
+
 console.log(`${Object.keys(KNIGHT_LINES).length} taunts, ${Object.keys(SUSIE_LINES).length} replies,`
   + ` starting turn ${FIRST_BALLOON_TURN}`);
 console.log(`turn 9 normal: ${KNIGHT_LINES[9].replace(/&/g, ' / ')}`);
