@@ -491,9 +491,25 @@ export function drawMenu(ctx, state, sprites) {
   // and typed them out with nothing on screen — reported as the correct text
   // not appearing.
   //
-  // Not while a submenu is up: the item and spell lists occupy the same band,
-  // which is why the branch above is the narrow one.
-  if (!menu.open) drawBattleMsg(ctx, state, font);
+  // ...AND ONLY WHILE ITS WRITER IS ALIVE. `state.battlemsg` is a STRING that
+  // persists — `global.battlemsg[0]` does too — but in the game the text on
+  // screen belongs to an `obj_writer` INSTANCE, and it disappears when that
+  // instance is destroyed. Drawing the string for as long as it is set put the
+  // dead message under the attack bar: the two share the band (the bar's rows
+  // are 365/403/441, the message's lines 376/404/432) and they OVERLAPPED.
+  //
+  // They never coexist in the game, and the knight's own gate is why:
+  //
+  //     if (actcon == 1 && !instance_exists(obj_writer)) scr_nextact();
+  //
+  // scr_nextact reaches scr_attackphase, which is what creates the bar — so
+  // the bar cannot exist until the writer is gone. `state.pendingAct` IS that
+  // writer here; the director nulls it on the confirm that would destroy the
+  // instance, and refuses to build a bar while it lives.
+  //
+  // Not while a submenu is up either: the item and spell lists occupy the same
+  // band, which is why the branch above is the narrow one.
+  if (!menu.open && state.pendingAct) drawBattleMsg(ctx, state, font);
 
   ctx.restore();
 }
