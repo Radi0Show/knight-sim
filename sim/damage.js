@@ -88,9 +88,30 @@ export const DEFAULT_GEAR = [
   { weapon: 18, armor: [21, 26] },
 ];
 
-/** The equipment in play. Falls back to the default build. */
+/**
+ * The equipment in play. Falls back to the default build.
+ *
+ * `loadout.shadowMantle === false` STRIPS armour 23 from every character, so
+ * the unmantled numbers can be asked for. That is what the note at the top of
+ * this file has always promised and it was NOT true: this read
+ * `state.loadout?.gear`, and the loadout object createState builds is
+ * `{ shadowMantle: true }` with no `gear` field at all — so it fell through to
+ * DEFAULT_GEAR every time and the flag was inert. A dead read facing a live
+ * write, the mirror of the balloon-timer bug.
+ *
+ * This is separate from `state.noMantle`, which suppresses only the TARGET
+ * REDIRECT for a recording whose party fights bare; this one changes what is
+ * equipped, so it moves DF and the x0.33 reduction as well.
+ */
 export function gearOf(state) {
-  return state.loadout?.gear ?? DEFAULT_GEAR;
+  if (state.loadout?.gear) return state.loadout.gear;
+  if (state.loadout?.shadowMantle === false) {
+    return DEFAULT_GEAR.map((g) => ({
+      ...g,
+      armor: (g.armor ?? []).filter((a) => a !== 23),
+    }));
+  }
+  return DEFAULT_GEAR;
 }
 
 /**

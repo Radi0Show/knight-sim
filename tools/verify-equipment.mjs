@@ -219,6 +219,40 @@ if (CHAPTER !== 3) failures.push('this fight is chapter 3');
 }
 
 const s = st();
+// THE MANTLE FLAG MUST DO SOMETHING. `state.loadout.shadowMantle = false` is
+// documented at the top of sim/damage.js as the way to ask for the unmantled
+// numbers, and for a long time it did nothing at all: gearOf read
+// `state.loadout?.gear`, the loadout object has no `gear` field, so it fell
+// through to the default build every time and the flag was inert.
+//
+// Asserted through the BEHAVIOUR rather than the table, because the table was
+// never the broken part: mantled, two of every three hits land on the wearer
+// at the x0.33 rate; unmantled, none of them do.
+{
+  const { createState } = await import('../sim/state.js');
+  const D = await import('../sim/damage.js');
+  const run = (mantled) => {
+    const st = createState({ seed: 5 });
+    st.partyHp = [9999, 9999, 9999];
+    st.invc = 0;
+    st.currentAc = 1;
+    st.loadout.shadowMantle = mantled;
+    const onKris = [];
+    for (let i = 0; i < 12; i++) {
+      st.invTimer = -1;
+      const before = [...st.partyHp];
+      D.scrDamageSingle(st, 100, 0, {});
+      onKris.push(before[0] !== st.partyHp[0]);
+    }
+    return onKris.filter(Boolean).length;
+  };
+  const withM = run(true);
+  const without = run(false);
+  if (withM < 6) failures.push(`mantled, only ${withM} of 12 hits reached the wearer — the brunt redirect is not running`);
+  if (without !== 0) failures.push(`unmantled, ${without} of 12 hits still went to Kris — the flag changed nothing`);
+  if (withM === without) failures.push('shadowMantle true and false behave identically — the flag is inert');
+}
+
 console.log(`${Object.keys(WEAPONS).length} weapons, ${Object.keys(ARMOR).length} armour — generated from the dump`);
 console.log('equipped: ' + [0, 1, 2].map((c) => {
   const q = statFor(s, c);
