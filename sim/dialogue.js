@@ -92,9 +92,38 @@ export const ACT_PAGES = {
   holdbreath_first: ['* Kris held their breath.&* Their heartbeat quickened.'
     + '&* The SOUL now moves faster.'],
   holdbreath_again: ['* Kris held their breath...&* Kris smiled.&* Nothing happened.'],
-  susie: ['* Susie talked to the Knight!'],
-  susie_done: ['* (Susie will not ACT any more.)'],
-  ralsei: ['* Ralsei tried talking...', '* ... but nothing happened.'],
+  // SUSIE'S ACT IS SEVEN PAGES AND SHE ONLY GETS ONE. The block ends with
+  // `global.canactsus[myself][0] = 0`, so S-Action leaves her list entirely
+  // after the first use — there is no repeat variant, which is why the old
+  // `susie_done` entry was a misreading: that line is the LAST PAGE of the
+  // one performance, not a separate second use.
+  //
+  // The `\EJ` etc. are face codes for Susie's portrait; the sim does not draw
+  // battle portraits, so they are stripped and only the text is kept.
+  susie: [
+    '* Susie talked to the Knight!',
+    "* I don't know what the hell you are, but...",
+    '* Leave Toriel alone! You hear me!?',
+    '* ...',
+    "* ... Fine, you don't wanna listen?",
+    '* Then we\'ll just. Have to do things the hard way.',
+    '* (Susie will not ACT any more.)',
+  ],
+  // RALSEI GETS FIVE THE FIRST TIME AND THREE AFTER, keyed on `ractcount`.
+  // The sim had two pages and neither matched: three whole pages of his
+  // pleading were missing, which is the substance of the ACT.
+  ralsei: [
+    '* Ralsei tried talking...',
+    "* Please... please, don't do this...",
+    '* If the Roaring happens, then... then...',
+    '* Please... stop...!',
+    '* (... but nothing happened.)',
+  ],
+  ralsei_again: [
+    '* Ralsei tried talking...',
+    '* Please, stop...',
+    '* (... but nothing happened.)',
+  ],
 };
 
 /** ACT results, which go to the CHATBOX rather than a balloon. */

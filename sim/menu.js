@@ -364,9 +364,15 @@ export function listRows(state) {
     }));
   }
   if (menu.submenu === 'actgrid') {
-    return (ACTS[c] ?? []).map((a, i) => ({
-      label: a.name, descb: a.descb, id: i, usable: true,
-    }));
+    // `global.canactsus[myself][0] = 0` — SUSIE'S ACT IS ONE USE. Her block
+    // ends by clearing her canact flag, so S-Action leaves the list entirely
+    // after the first time; the "(Susie will not ACT any more.)" line is the
+    // last PAGE of that one performance, not a second use. With the row gone
+    // the list is empty, and opening an empty list is the `snd_error` the
+    // confirm handler already plays.
+    return (ACTS[c] ?? [])
+      .map((a, i) => ({ label: a.name, descb: a.descb, id: i, usable: true }))
+      .filter(() => !(c === 1 && state.actCounts?.susieUsed));
   }
   return [];
 }
@@ -727,8 +733,16 @@ export function stepMenu(state, input) {
               state.actCounts.check += 1;
               key = state.actCounts.check === 1 ? 'check' : 'point';
             }
+          } else if (c === 1) {
+            // One performance only — the block clears her canact flag.
+            key = 'susie';
+            state.actCounts = state.actCounts ?? {};
+            state.actCounts.susieUsed = true;
           } else {
-            key = c === 1 ? 'susie' : 'ralsei';
+            // `ractcount++` picks five pages the first time and three after.
+            state.actCounts = state.actCounts ?? {};
+            state.actCounts.ralsei = (state.actCounts.ralsei ?? 0) + 1;
+            key = state.actCounts.ralsei <= 1 ? 'ralsei' : 'ralsei_again';
           }
           state.pendingAct = { pages: ACT_PAGES[key] };
           // ONE SOURCE FOR THE TEXT. The chatbox line and the writer's pages

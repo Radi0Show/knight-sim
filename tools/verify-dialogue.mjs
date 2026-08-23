@@ -15,7 +15,7 @@
 import {
   createDialogue, advanceBalloon, advanceReply, clearDialogue,
   KNIGHT_LINES, SUSIE_LINES, KNIGHT_ALONE, msgLines, revealed, dialogueDone,
-  FIRST_BALLOON_TURN,
+  FIRST_BALLOON_TURN, ACT_PAGES,
 } from '../sim/dialogue.js';
 
 const failures = [];
@@ -159,6 +159,57 @@ for (const n of Object.keys(KNIGHT_ALONE)) {
       failures.push(`dlg.timer never advanced — the renderer would draw an EMPTY balloon (saw ${vals.join(',')})`);
     }
   }
+}
+
+// THE ACT PERFORMANCES, PAGE BY PAGE. These are the fight's ACT content and
+// the sim had barely any of it: Susie's seven pages were two, and Ralsei's
+// five were two with three of his pleading lines missing entirely. They read
+// as the ACT "not working" because what appears is a stub of what the game
+// shows.
+//
+// Counts AND content, because a count alone would pass on filler.
+{
+  const P = ACT_PAGES;
+  const expect = { check: 2, point: 2, susie: 7, ralsei: 5, ralsei_again: 3 };
+  for (const [k, n] of Object.entries(expect)) {
+    if ((P[k] ?? []).length !== n) {
+      failures.push(`ACT_PAGES.${k} has ${(P[k] ?? []).length} pages, expected ${n}`);
+    }
+  }
+  const has = (k, bit) => (P[k] ?? []).some((pg) => pg.includes(bit));
+  for (const bit of ['Leave Toriel alone', "don't wanna listen", 'the hard way',
+    'will not ACT any more']) {
+    if (!has('susie', bit)) failures.push(`Susie's ACT is missing "${bit}"`);
+  }
+  for (const bit of ["please, don't do this", 'If the Roaring happens',
+    'Please... stop...!', 'but nothing happened']) {
+    if (!has('ralsei', bit)) failures.push(`Ralsei's first ACT is missing "${bit}"`);
+  }
+  if (!has('ralsei_again', 'Please, stop...')) {
+    failures.push("Ralsei's repeat ACT is missing \"Please, stop...\"");
+  }
+  // `susie_done` was a MISREADING — that line is the last page of the one
+  // performance, not a second use. Its presence would mean the split is back.
+  if (P.susie_done) failures.push('ACT_PAGES.susie_done is back; it is the last page of `susie`');
+}
+
+// SUSIE ACTS ONCE. `global.canactsus[myself][0] = 0` ends her block, so the
+// row leaves her list for the rest of the fight.
+{
+  const { createState: mk } = await import('../sim/state.js');
+  const Mm = await import('../sim/menu.js');
+  const Dd = await import('../sim/damage.js');
+  const s4 = mk({ seed: 1 });
+  s4.partyHp = Dd.freshParty();
+  s4.menu = Mm.createMenu();
+  Mm.openMenu(s4);
+  s4.menu.charturn = 1;
+  s4.menu.submenu = 'actgrid';
+  if (Mm.listRows(s4).length !== 1) failures.push("Susie should start with one ACT");
+  s4.actCounts = { susieUsed: true };
+  if (Mm.listRows(s4).length !== 0) failures.push("Susie's ACT should be gone after one use");
+  s4.menu.charturn = 2;
+  if (Mm.listRows(s4).length !== 1) failures.push("Ralsei's ACT should still be there");
 }
 
 console.log(`${Object.keys(KNIGHT_LINES).length} taunts, ${Object.keys(SUSIE_LINES).length} replies,`
