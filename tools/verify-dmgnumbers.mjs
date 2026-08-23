@@ -341,6 +341,45 @@ console.log('a critical starts at 2.5 and keeps growing 0.1 a frame');
 console.log('damage TAKEN is white (doomtype -1), red on death; damage DEALT is tinted per character');
 console.log('targeting: Kris is never the default; the ShadowMantle wearer takes 2 hits in 3; ac 13 exempt');
 
+// HEALING TO FULL SHOWS **MAX**, ABOVE THE CHARACTER'S SPRITE — and both heal
+// displays must agree on that, because the fight has two of them: items go
+// through obj_healwriter (spawnHealWriter) and spells through
+// scr_dmgwriter_selfchar (spawnSelfHealNumber).
+//
+// They had drifted apart: the item one was moved over the sprite on request
+// and the spell one was left at PARTY_POS, where damage TAKEN appears. So
+// Heal Prayer's MAX did come up — in a different place from a Spincake's, for
+// the same event, which reads as it not working.
+{
+  const { createState } = await import('../sim/state.js');
+  const D = await import('../sim/damage.js');
+  const S = await import('../sim/spells.js');
+  const I = await import('../sim/items.js');
+
+  const a = createState({ seed: 1 });
+  a.partyHp = D.freshParty(); a.partyHp[1] = 185; a.tension = 250;
+  S.castSpell(a, 2, 2, 1, { alreadyPaid: true });
+  const spell = a.dmg.list[0];
+  if (!spell) failures.push('a spell heal to full drew no number at all');
+  else if (spell.special !== 3) failures.push(`the spell heal to full flagged special ${spell.special}, expected 3 (MAX)`);
+
+  const b = createState({ seed: 1 });
+  b.partyHp = D.freshParty();
+  I.scrHealitem(b, 1, 150);
+  const item = b.dmg.heals[0];
+  if (!item) failures.push('an item heal at full HP drew no writer at all');
+  else if (!item.maxed) failures.push('the item heal at full HP did not flag MAX');
+
+  if (spell && item && spell.x !== item.x) {
+    failures.push(`the two heal displays sit at different x (spell ${spell.x}, item ${item.x}) — one is not over the sprite`);
+  }
+  // A heal that does NOT fill must show the number, not MAX.
+  const c = createState({ seed: 1 });
+  c.partyHp = D.freshParty(); c.partyHp[1] = 10;
+  I.scrHealitem(c, 1, 20);
+  if (c.dmg.heals[0]?.maxed) failures.push('a partial heal wrongly flagged MAX');
+}
+
 if (failures.length) {
   console.log('');
   for (const f of failures) console.log(`→ FAILURE  ${f}`);

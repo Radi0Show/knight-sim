@@ -204,14 +204,34 @@ export function resetDmgStack(state) {
  *
  * `maxed` is that test, taken by the caller AFTER the heal lands.
  */
+/**
+ * Where a heal number sits: the sprite's centre-top, from the manifest's own
+ * origins. Shared by BOTH heal displays so they cannot drift apart again.
+ */
+const HEAL_ANCHOR = [
+  { x: 156, y: 104 },
+  { x: 96, y: 142 },
+  { x: 127, y: 190 },
+];
+
 export function spawnSelfHealNumber(state, target, amount, maxed) {
   const d = state.dmg;
   if (!d) return;
-  const pos = PARTY_POS[target];
+  // ABOVE THE SPRITE, the same anchor the item heal uses.
+  //
+  // This drew at PARTY_POS — `(x, y + myheight - 24)`, where damage TAKEN
+  // appears, which is where scr_dmgwriter_selfchar really puts it. But the
+  // item heal was moved above the character's head on request, and leaving the
+  // SPELL heal behind meant Heal Prayer's number and its MAX came up somewhere
+  // different from a Spincake's, for the same event. Reported as healing to
+  // max not showing MAX above the character: it was showing it, at the old
+  // spot, while the item path put it where it was expected.
+  //
+  // Same labelled deviation as spawnHealWriter's, now applied consistently:
+  // both heal displays sit over the sprite, both keep the `tu` stack so
+  // several heals on one character read as a column rather than a pile.
+  const pos = HEAL_ANCHOR[target] ?? PARTY_POS[target];
   const tu = d.tu[target] ?? 0;
-  // PARTY_POS already IS `(x, y + myheight - 24)` — scr_damage_fixed and
-  // scr_damage_maxhp build a party writer at exactly that point, and it is
-  // where damage taken already appears. Only the `tu` step is new.
   spawnDmgNumber(state, pos.x, pos.y, amount, TYPE_HEAL, 8,
     { special: maxed ? MSG_MAX : 0, stack: false, yoff: -tu * 20 });
   d.tu[target] = tu + 1;
@@ -257,11 +277,6 @@ export function spawnSelfHealNumber(state, target, amount, maxed) {
  *   Susie ( 80, 142)  spr_susieb_idle   54x45   19    42                96      142
  *   Rals  ( 58, 190)  spr_ralsei_idle   69x47    0    58               127      190
  */
-const HEAL_ANCHOR = [
-  { x: 156, y: 104 },
-  { x: 96, y: 142 },
-  { x: 127, y: 190 },
-];
 
 export function spawnHealWriter(state, target, amount) {
   const d = state.dmg;
