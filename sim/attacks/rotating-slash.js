@@ -231,6 +231,22 @@ export const rotatingSlash = {
   },
 
   step(e, state) {
+
+    // `obj_knight_enemy.siner2 = 0;` — THE FIRST LINE OF THIS STEP, and it
+    // runs every frame the slash is alive. It PINS THE KNIGHT'S BOB: the
+    // Draw ticks siner2 to 1 immediately afterwards, so his y sits at a
+    // constant `ystart + cos(1/8) * 8` = 85.9375839233 for the whole attack
+    // instead of swinging. Five windows of 241-348 frames a fight, and the
+    // sim bobbed through all of them — up to 15.9 pixels off, and invisible
+    // to every traced column because the knight's y is not among the 176.
+    // obj_knight_tunnel_slasher_2_revised and obj_knight_swordfall open with
+    // the same line.
+    {
+      const kx = state.entities.find(
+        (x) => x.alive && x.type.name === 'obj_knight_enemy',
+      );
+      if (kx) kx.siner2 = 0;
+    }
     // The decrement is ABOVE the `done` guard deliberately. There is no `done`
     // in the original — the object keeps running its Step, doing nothing,
     // until Alarm_3 destroys it, and `local_turntimer` keeps counting down the

@@ -61,6 +61,47 @@ export const knightActor = {
    * the generator deletes itself at `turntimer < 20`.
    */
   endStep(e, state) {
+    // THE BOB IS SET IN THE DRAW, WHICH RUNS AFTER EVERY STEP.
+    //
+    //     if (state == 0 || state == 3) { image_index = 0;
+    //                                     y = ystart + (cos(siner2 / 8) * 8); }
+    //
+    // Computing it in the knight's own step read the entity list too early:
+    // on the frame obj_knight_swordtunnelanim destroys itself, the anim's Step
+    // has not run yet when the knight's has, so the knight still saw it alive,
+    // took the `exit` path and left `y` FROZEN for one frame. The game's Draw
+    // runs after all Steps, sees the anim gone, and recomputes — a 15.6 pixel
+    // difference on the single frame the tunnel ends, five times a fight.
+    //
+    // endStep is the phase that matches: everything else has moved. The gates
+    // are the Draw's own, in its order — invisible instances have no Draw at
+    // all, con 2 exits above this, and the sword-tunnel anim exits above it
+    // too.
+    {
+      const kb = state.knight;
+      // `if (!i_ex(obj_knight_roaring2)) siner2++;` — the FIRST line of the
+      // Draw, so it runs above both exits (the sword tunnel and the charge-up
+      // still tick it) but not at all while he is invisible.
+      //
+      // It lives in endStep with the y below it because the increment must
+      // come AFTER every Step: obj_knight_rotating_slash's Step pins
+      // `obj_knight_enemy.siner2 = 0` on every one of its frames, and the
+      // Draw then ticks it to 1. Incremented during the knight's own step it
+      // raced that pin and the bob kept swinging where the game holds it.
+      if (e.visible !== false
+        && !state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2')) {
+        e.siner2 += 1;
+      }
+      const drawRuns = kb
+        && e.visible !== false
+        && kb.chargeupcon !== 2
+        && !state.entities.some(
+          (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
+        );
+      if (drawRuns && (kb.animState === 0 || kb.animState === 3)) {
+        e.y = e.ystart + Math.cos(e.siner2 / 8) * 8;
+      }
+    }
     if (state.currentAc !== 0) return;
     if (!state.soul || !state.soul.alive) return;
     if (state.soul.x > state.view.x + 165) state.soul.x = state.view.x + 165;
@@ -73,7 +114,13 @@ export const knightActor = {
     e.image_yscale = 2;
     e.image_alpha = 1;
     e.depth = 88;
-    e.siner2 = 0;
+    // ONE, NOT ZERO. The Knight's Draw has already run once — and so has its
+    // `siner2++` — before the first frame this trace covers, so a counter
+    // started at 0 puts the whole bob one frame behind the game's for the
+    // rest of the fight. Measured off the draw log: with 0 the sim's y at
+    // frame N is exactly the game's at N-1, all fight; with 1 they agree to
+    // float noise.
+    e.siner2 = 1;
     e.aetimer = 0;
     e.ystart = KNIGHT.ystart;
     e.isActor = true;
@@ -100,7 +147,7 @@ export const knightActor = {
     // where the game puts it. That is not a rounding difference, it is him
     // sitting visibly wrong on screen, and no traced column could see it —
     // the knight's y is not among the 176.
-    if (e.visible !== false && !roaring) e.siner2 += 1;
+
 
     // THE SELECTION FLASH, and it is REAL game behaviour -- the note that
     // used to sit in the renderer calling it "a deliberate addition, nothing
