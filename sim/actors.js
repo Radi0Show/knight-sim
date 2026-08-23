@@ -89,7 +89,18 @@ export const knightActor = {
     // phase-4 finale holds him still while his own attack draws him. Running
     // the counter through it left him bobbing under a knight that is supposed
     // to be locked in place.
-    if (!roaring) e.siner2 += 1;
+    // ...AND ONLY WHILE THE DRAW EVENT RUNS. `siner2++` is the first line of
+    // obj_knight_enemy's Draw, ABOVE both `exit`s — so it keeps ticking during
+    // the sword tunnel and the charge-up — but an INVISIBLE instance has no
+    // Draw event at all, and the Stars cone hides him for ~250 frames a turn,
+    // six times.
+    //
+    // Ungated, the bob ran on through every Stars turn and came back out of
+    // phase: the draw log measured the Knight's y as much as 15.9 PIXELS from
+    // where the game puts it. That is not a rounding difference, it is him
+    // sitting visibly wrong on screen, and no traced column could see it —
+    // the knight's y is not among the 176.
+    if (e.visible !== false && !roaring) e.siner2 += 1;
 
     // THE SELECTION FLASH, and it is REAL game behaviour -- the note that
     // used to sit in the renderer calling it "a deliberate addition, nothing
@@ -162,10 +173,43 @@ export const knightActor = {
       //
       // The clear runs FIRST here, against LAST frame's latch, because that is
       // where it sits relative to the controller in the real frame order.
-      if (!k.becomeflash) k.flash = 0;
-      k.becomeflash = 0;
+      // WHETHER THE DRAW EVENT RUNS AT ALL, which gates everything below.
+      // `siner`, `fsiner` and the becomeflash tail all live INSIDE
+      // obj_knight_enemy's Draw, so none of them tick on a frame the event
+      // never reaches: an invisible instance (the Stars cone hides him), the
+      // sword-tunnel anim's `exit`, or the charge-up's con-2 `exit`, which
+      // returns before scr_enemy_drawidle_generic. con 3 does NOT exit, so the
+      // roar still ticks them — which is why the oracle's index keeps climbing
+      // through it.
+      //
+      // Ticking regardless is what made `siner` drift: the draw calls all
+      // matched while the index they carried wandered by hundreds.
+      const drawRuns = e.visible !== false
+        && k.chargeupcon !== 2
+        && !state.entities.some(
+          (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
+        );
+      if (drawRuns) {
+        if (!k.becomeflash) k.flash = 0;
+        k.becomeflash = 0;
+      }
+      // THREE MENU STATES, not two. There are TWO flash sites in
+      // obj_battlecontroller's Draw and only the first is the enemy row:
+      //
+      //   * the enemy-select block (bmenuno 1/3/11/12/13) flashes
+      //     `monsterinstance[bmenucoord[bmenuno][charturn]]` — the FIGHT row
+      //     and ACT's enemy picker;
+      //   * the ACT OPTION GRID (bmenuno 9) flashes
+      //     `monsterinstance[bmenucoord[11][charturn]]` — index 11 HARDCODED,
+      //     i.e. whichever enemy the ACT picker landed on. So the highlight
+      //     carries through from choosing the target to choosing the act.
+      //
+      // Missing the second left two frames per ACT unflashed, which the draw
+      // log showed as a 5-frame burst in the game against the sim's 3.
       const selecting = !!(state.menu?.open
-        && (state.menu.submenu === 'enemy' || state.menu.submenu === 'actpick'));
+        && (state.menu.submenu === 'enemy'
+          || state.menu.submenu === 'actpick'
+          || state.menu.submenu === 'actgrid'));
       if (selecting) {
         if (!k.flash) k.fsiner = 0;
         k.flash = 1;
@@ -177,7 +221,7 @@ export const knightActor = {
       // on entry, so the visible pulse is the same either way -- but a Knight
       // knocked into state 3 mid-menu stops advancing it, and that is the
       // behaviour worth being right about.
-      if (k.animState === 0) {
+      if (drawRuns && k.animState === 0) {
         k.fsiner = (k.fsiner ?? 0) + 1;
         // `siner += arg0` on the same line of scr_enemy_drawidle_generic, with
         // arg0 = 1/6 from the Knight's call. spr_roaringknight_idle has ONE

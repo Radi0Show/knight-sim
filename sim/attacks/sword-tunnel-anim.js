@@ -133,7 +133,18 @@ export const swordTunnelAnim = {
     // Knight's own Draw exits: `if (i_ex(obj_knight_swordtunnelanim)) exit;`.
     // The draw log sees it as 15 frames the game draws him and the sim does
     // not, in five runs of exactly 3.
-    if (state.turntimer < 10) {
+    // MINUS ONE, reading the clock the GAME's step sees. This is the same
+    // compensation sim/tension.js already applies to the graze gate, and for
+    // the same reason: the sim decrements `turntimer` in the END step, after
+    // this pass, so a mid-step reader here is one ahead of the game's.
+    //
+    // Measured, not assumed. The two clocks are IDENTICAL digit for digit —
+    // oracle_box.csv and the sim both read 10.1333333333 on the frame before
+    // the cut and 9.1333333333 after — so the earlier guess that the sim's
+    // turntimer "crossed 10 a frame late" was wrong. What differs is only
+    // which side of the decrement this test lands on, and the draw log
+    // measures it as exactly one frame per sword tunnel, five times.
+    if (state.turntimer - 1 < 10) {
       e.endtimer = (e.endtimer ?? 0) + 1;
       e.image_alpha = 1;
       const knight = state.entities.find(

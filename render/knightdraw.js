@@ -42,6 +42,18 @@ export function knightDrawCalls(state, e) {
   // reading the Knight's own Draw, where indeed it is not: the increment is in
   // the shared idle helper, two levels down.
   const siner = k.siner ?? 0;
+  // scr_enemy_drawidle_generic's `state == 0` branch is
+  //
+  //     fsiner += 1;
+  //     siner += arg0;                       // arg0 = 1/6
+  //     draw_monster_body_part(thissprite, siner, x, y);
+  //
+  // so the increment lands BEFORE the base draw and everything below it in
+  // the Draw, while the hurt strobe ABOVE it still sees the old value. One
+  // frame's Draw therefore uses two different indices, and the sim used one
+  // for both: exactly -1/6 on all 7,458 base rows and 0 on all 1,447 strobe
+  // rows, which is how the split was identified rather than guessed.
+  const sinerIdle = k.animState === 0 ? siner + (1 / 6) : siner;
   // scr_enemy_object_init: both are 0 for the Knight, and hurtsprite is the
   // SAME sprite as idlesprite (Create sets both to spr_roaringknight_idle).
   const offx = 0;
@@ -97,10 +109,10 @@ export function knightDrawCalls(state, e) {
   // BOTH the base draw and the selection flash — and is gated on `state == 0`,
   // so a Knight who is mid-hurt shows neither.
   if (k.animState === 0) {
-    out.push({ tag: 'base', sprite: spr, index: siner, x: e.x, y: e.y, xs, ys, ang, blend, alpha, fog: NO_FOG });
+    out.push({ tag: 'base', sprite: spr, index: sinerIdle, x: e.x, y: e.y, xs, ys, ang, blend, alpha, fog: NO_FOG });
     if (k.flash) {
       out.push({
-        tag: 'flash', sprite: spr, index: siner, x: e.x, y: e.y, xs, ys, ang, blend,
+        tag: 'flash', sprite: spr, index: sinerIdle, x: e.x, y: e.y, xs, ys, ang, blend,
         alpha: (-Math.cos((k.fsiner ?? 0) / 5) * 0.4) + 0.6,
         // draw_sprite_ext_flash fogs to its arg7, which the call site passes
         // as image_blend — white for the Knight, but it is the blend, not a
@@ -120,7 +132,7 @@ export function knightDrawCalls(state, e) {
     }
     if (k.animState === 0) {
       out.push({
-        tag: 'wflash_idle', sprite: spr, index: siner, x: e.x, y: e.y,
+        tag: 'wflash_idle', sprite: spr, index: sinerIdle, x: e.x, y: e.y,
         xs, ys, ang, blend, alpha: 0.62, fog: C_WHITE,
       });
     }
@@ -129,7 +141,7 @@ export function knightDrawCalls(state, e) {
   // `if (chargeupcon == 1)` — the wind-up's white silhouette fading in.
   if (k.chargeupcon === 1) {
     out.push({
-      tag: 'chargeup', sprite: spr, index: siner, x: e.x, y: e.y,
+      tag: 'chargeup', sprite: spr, index: sinerIdle, x: e.x, y: e.y,
       xs, ys, ang, blend, alpha: (k.chargeuptimer ?? 0) / 10, fog: C_WHITE,
     });
   }
