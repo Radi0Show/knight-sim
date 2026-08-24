@@ -30,6 +30,27 @@ const LINES_SPEED = 80;
 const TILE = 640; // spr_knight_bullet_flow is 320 wide, drawn at scale 2
 
 /** Frame the cone first drew, so the scroll starts at 0 as the original does. */
+/**
+ * A 2x nearest-neighbour copy of an image, made once and kept.
+ *
+ * Keyed on the image object itself, so a re-extracted sprite pack yields fresh
+ * copies rather than stale ones, and a WeakMap lets them go if the pack does.
+ */
+const x2Cache = new WeakMap();
+function x2(img) {
+  if (!img) return null;
+  const hit = x2Cache.get(img);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = img.width * 2;
+  c.height = img.height * 2;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, 0, 0, c.width, c.height);
+  x2Cache.set(img, c);
+  return c;
+}
+
 const firstDraw = new WeakMap();
 
 /**
@@ -224,8 +245,19 @@ export function drawPointingCone(ctx, e, state, deps) {
       [0, bgX], [0, bgX + TILE],
       [1, linesX], [1, linesX + TILE],
     ]) {
-      const img = flow.frames[frame];
-      if (img) b.drawImage(img, sx, 0, img.width * 2, img.height * 2);
+      // PRE-SCALED ONCE, not four times a frame. This passed width/height to
+      // drawImage, so every one of the four passes rescaled a 320px texture to
+      // 640 — 120 rescales a second between them. Smoothing is off on this
+      // buffer, so the scale is nearest-neighbour and doing it up front is
+      // PIXEL-IDENTICAL, just cached.
+      //
+      // Reported as the Stars drill lagging on Firefox but not Chrome. This is
+      // the cheap half; the expensive half is the full-screen
+      // `destination-in` below, which Firefox handles far worse than Chrome
+      // and which cannot be narrowed without changing how the wedge's edge
+      // antialiases. Left alone until it can actually be profiled.
+      const img = x2(flow.frames[frame]);
+      if (img) b.drawImage(img, sx, 0);
     }
 
     b.globalCompositeOperation = 'destination-in';
