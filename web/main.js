@@ -17,6 +17,7 @@ import { loadFont, drawText } from '../render/font.js';
 import { drawBackground } from '../render/background.js';
 import { buildSingleAttackScene, ATTACK_MENU, menuEntry } from '../sim/scenes/single.js';
 import { bindKeyboard } from '../input/keyboard.js';
+import { bindTouch } from '../input/touch.js';
 import { bindGamepad } from '../input/gamepad.js';
 import { createRenderer } from '../render/canvas.js';
 import { createIntroScene, stepIntroScene } from '../sim/intro.js';
@@ -98,13 +99,29 @@ if (window.matchMedia) {
 const audio = createAudio();
 const keyboard = bindKeyboard(window);
 const gamepad = bindGamepad();
-// One reader, two sources: the sim sees the OR of keyboard and controller,
-// so both work at once and neither can mask the other.
+// THE TOUCH OVERLAY — a d-pad and Z/X/R, shown only where the primary
+// pointer is coarse (the CSS media query owns visibility; binding it
+// everywhere costs nothing on a desktop). X carries the keyboard's
+// two-jobs mapping: held is the slow modifier, tapped is cancel. R calls
+// the same reset() as the key.
+const touch = bindTouch({
+  pad: document.getElementById('dpad'),
+  buttons: [
+    { el: document.getElementById('btnZ'), actions: ['confirm'] },
+    { el: document.getElementById('btnX'), actions: ['focus', 'cancel'] },
+    { el: document.getElementById('btnR'), actions: ['reset'] },
+  ],
+  onReset: () => reset(),
+});
+// One reader, three sources: the sim sees the OR of keyboard, controller and
+// touch, so all work at once and none can mask another.
 const keys = {
   read() {
     const k = keyboard.read();
     const g = gamepad.read();
+    const t = touch.read();
     for (const a of Object.keys(g)) if (g[a]) k[a] = true;
+    for (const a of Object.keys(t)) if (t[a]) k[a] = true;
     return k;
   },
 };

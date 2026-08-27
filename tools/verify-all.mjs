@@ -100,6 +100,7 @@ const SUITES = [
 ['verify-downstate.mjs', 'down state — the pose gate and the menu gate agree'],
 ['verify-selectflash.mjs', 'enemy selection flash — the game curve, not a halo'],
 ['verify-render-smoke.mjs', 'the renderer survives a real fight without throwing'],
+['verify-touch.mjs', 'the touch binder — pad sectors, latch, two thumbs'],
 ['verify-windowsize.mjs', 'SMALL is the window size obj_time would pick'],
 ['verify-replay.mjs', 'replay tokens — round-trip and reproduce a live run'],
 ['verify-determinism.mjs', 'byte-identical across 10 runs'],

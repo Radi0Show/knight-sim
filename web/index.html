@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Black Knife Simulator</title>
 <style>
   /* THE GAME FILLS THE WINDOW, and nothing else is on screen.
@@ -17,6 +17,14 @@
     overflow: hidden;
     color: #ccc;
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* MOBILE: the page is a game, not a document. No scroll, no pinch zoom,
+       no rubber-banding, no long-press callout — every one of those gestures
+       is a dodge input the browser would otherwise steal. */
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   /* The letterbox: centre the canvas in the viewport and let the aspect
      ratio decide which pair of bars appears. `min()` on both axes is what
@@ -62,11 +70,80 @@
     pointer-events: none;
     user-select: none;
   }
+  /* ---- TOUCH CONTROLS ------------------------------------------------
+     Hidden on fine-pointer machines; shown wherever the primary pointer is
+     coarse. The container ignores pointers so the play area stays clean —
+     only the pad and buttons themselves are targets. Positions respect the
+     notch/home-bar insets. */
+  #touch { display: none; }
+  @media (pointer: coarse) {
+    #touch {
+      display: block;
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+  }
+  #touch .pad, #touch .btn {
+    position: absolute;
+    pointer-events: auto;
+    touch-action: none;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  #dpad {
+    left: max(18px, env(safe-area-inset-left));
+    bottom: max(18px, env(safe-area-inset-bottom));
+    width: 148px;
+    height: 148px;
+  }
+  /* The pad's cross, drawn with gradients so there is no asset to load. */
+  #dpad::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(255,255,255,0.14), rgba(255,255,255,0.14)) 50% 0 / 34% 100% no-repeat,
+      linear-gradient(rgba(255,255,255,0.14), rgba(255,255,255,0.14)) 0 50% / 100% 34% no-repeat;
+    border-radius: inherit;
+  }
+  #touch .btn {
+    width: 64px;
+    height: 64px;
+    color: rgba(255, 255, 255, 0.55);
+    font: bold 20px/60px ui-monospace, Menlo, monospace;
+    text-align: center;
+  }
+  #touch .btn.down { background: rgba(255, 255, 255, 0.22); }
+  #btnZ {
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 74px);
+  }
+  #btnX {
+    right: calc(max(20px, env(safe-area-inset-right)) + 74px);
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  #touch #btnR {
+    top: max(14px, env(safe-area-inset-top));
+    right: max(14px, env(safe-area-inset-right));
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+    line-height: 40px;
+  }
 </style>
 </head>
 <body>
   <canvas id="game" width="640" height="480"></canvas>
   <p id="credit">Game is by Toby Fox and the Deltarune Team</p>
+  <div id="touch">
+    <div id="dpad" class="pad"></div>
+    <div id="btnZ" class="btn">Z</div>
+    <div id="btnX" class="btn">X</div>
+    <div id="btnR" class="btn">R</div>
+  </div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
