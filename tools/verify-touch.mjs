@@ -87,6 +87,38 @@ r = t.read();
 check(r.up && !r.right, 'sliding right -> up left RIGHT stuck on');
 pad.fire('pointerup', { pointerId: 5 });
 
+// onAction FIRES SYNCHRONOUSLY, INSIDE THE GESTURE'S CALL STACK. This is the
+// contract the credits links depend on: iOS Safari refuses a window.open
+// whose call is not in the pointer handler's own stack, however fresh the
+// tap, so the driver's open must happen in this callback — not when the 30Hz
+// loop reads the latch a frame later. The assertion is on synchrony itself:
+// the callback must have run before the dispatch returns.
+{
+  let sawDuringDispatch = false;
+  let fired = null;
+  const bz2 = stubEl({ left: 0, top: 0, width: 64, height: 64 });
+  const t2 = bindTouch({
+    buttons: [{ el: bz2, actions: ['confirm'] }],
+    onAction: (a) => { fired = a; sawDuringDispatch = true; },
+  });
+  bz2.fire('pointerdown', { pointerId: 9, clientX: 30, clientY: 30 });
+  check(sawDuringDispatch && fired === 'confirm',
+    'onAction did not fire synchronously inside the pointerdown dispatch');
+  check(t2.read().confirm === true, 'the hooked press still latched for the loop');
+}
+
+// setPointerCapture THROWING must not cost the press. A pointer that lifted
+// in the same tick (or a synthetic event) has no active pointer, and the
+// spec says capture throws — the guard is what kept a real tap from being
+// silently swallowed, which is exactly how the browser drive first failed.
+{
+  const bad = stubEl({ left: 0, top: 0, width: 64, height: 64 });
+  bad.setPointerCapture = () => { throw new Error('InvalidPointerId'); };
+  const t3 = bindTouch({ buttons: [{ el: bad, actions: ['confirm'] }] });
+  bad.fire('pointerdown', { pointerId: 11, clientX: 30, clientY: 30 });
+  check(t3.read().confirm === true, 'a throwing setPointerCapture swallowed the press');
+}
+
 // R goes through the callback, never through the input object.
 br.fire('pointerdown', { pointerId: 6, clientX: 322, clientY: 22 });
 r = t.read();

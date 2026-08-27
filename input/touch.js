@@ -23,7 +23,7 @@ import { createInput } from './state.js';
 
 const DEAD_ZONE = 0.28; // fraction of the pad's radius; inside it, no input.
 
-export function bindTouch({ pad, buttons = [], onReset } = {}) {
+export function bindTouch({ pad, buttons = [], onReset, onAction } = {}) {
   const held = new Set();
   const pressedSinceRead = new Set();
   /** pointerId -> Set of actions that pointer is holding. */
@@ -81,8 +81,13 @@ export function bindTouch({ pad, buttons = [], onReset } = {}) {
     release(ev.pointerId, dirs);
     press(ev.pointerId, dirs);
   };
+  // setPointerCapture THROWS (InvalidPointerId) when the pointer is already
+  // gone — a finger lifted in the same tick, or a synthetic event. The
+  // capture is a nicety (it keeps a drag that wanders off the element from
+  // orphaning its release); losing it must never cost the press itself.
+  const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* gone */ } };
   const onPadDown = (ev) => {
-    pad.setPointerCapture(ev.pointerId);
+    capture(pad, ev.pointerId);
     onPadMove(ev);
   };
   const onPadUp = (ev) => {
@@ -101,10 +106,18 @@ export function bindTouch({ pad, buttons = [], onReset } = {}) {
     if (!el) continue;
     el.addEventListener('pointerdown', (ev) => {
       ev.preventDefault();
-      el.setPointerCapture(ev.pointerId);
+      capture(el, ev.pointerId);
       el.classList.add('down');
       if (actions.includes('reset')) { onReset?.(); return; }
       press(ev.pointerId, actions);
+      // SYNCHRONOUS, inside the gesture's own call stack, and that is the
+      // whole point. Anything that needs the browser's user-activation —
+      // window.open above all; iOS Safari refuses a popup whose open() call
+      // is not in the handler stack, however fresh the tap — cannot wait for
+      // the 30Hz loop to read the latch. The driver decides what (if
+      // anything) the action means right now; the sim still sees the same
+      // latched input next frame.
+      for (const a of actions) onAction?.(a);
     });
     const up = (ev) => {
       ev.preventDefault();

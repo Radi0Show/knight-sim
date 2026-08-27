@@ -8,7 +8,7 @@ import { createState, stepFrame } from '../sim/index.js';
 import { drain, MS_PER_FRAME } from '../sim/clock.js';
 import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { decodeReplay } from '../sim/replay.js';
-import { createTitle, stepTitle, MODES } from '../sim/modes.js';
+import { createTitle, stepTitle, MODES, CREDITS, creditLink } from '../sim/modes.js';
 import { encodeConfig, decodeConfig, NONE } from '../sim/share.js';
 import { WEAPONS, ARMOR, canEquip } from '../sim/equipment.js';
 import { ITEMS } from '../sim/items.js';
@@ -104,6 +104,10 @@ const gamepad = bindGamepad();
 // everywhere costs nothing on a desktop). X carries the keyboard's
 // two-jobs mapping: held is the slow modifier, tapped is cancel. R calls
 // the same reset() as the key.
+// A link the touch handler already opened, so the loop's own open (from the
+// same latched confirm, one frame later) can be swallowed instead of opening
+// the page twice.
+let syncOpenedLink = null;
 const touch = bindTouch({
   pad: document.getElementById('dpad'),
   buttons: [
@@ -112,6 +116,23 @@ const touch = bindTouch({
     { el: document.getElementById('btnR'), actions: ['reset'] },
   ],
   onReset: () => reset(),
+  // LINKS MUST OPEN INSIDE THE GESTURE. The credits page's confirm returns an
+  // href that the frame loop passes to window.open — fine for a keyboard,
+  // where the keydown's user-activation is still fresh when the 30Hz step
+  // runs, but iOS Safari refuses a popup whose open() is not in the gesture
+  // handler's own call stack. So when a TAP lands on Z while the credits page
+  // has a linked row under the cursor, the open happens here, synchronously;
+  // the loop's duplicate is swallowed via syncOpenedLink. Every other state
+  // ignores the hook and the tap flows through the ordinary latch.
+  onAction: (a) => {
+    if (a !== 'confirm' || title.mode !== null) return;
+    const s = title.settings;
+    if (!s || s.page !== 'credits') return;
+    const href = creditLink(CREDITS[s.cursor] ?? {});
+    if (!href) return;
+    window.open(href, '_blank', 'noopener,noreferrer');
+    syncOpenedLink = href;
+  },
 });
 // One reader, three sources: the sim sees the OR of keyboard, controller and
 // touch, so all work at once and none can mask another.
@@ -558,7 +579,11 @@ function frame(now) {
       // `window.open` inside it would also break every headless verifier.
       // `noopener` because the tool has no reason to hand a third-party page
       // a handle back to this one.
-      if (r.link) window.open(r.link, '_blank', 'noopener,noreferrer');
+      if (r.link) {
+        // Swallow the copy the touch handler already opened in-gesture.
+        if (r.link === syncOpenedLink) syncOpenedLink = null;
+        else window.open(r.link, '_blank', 'noopener,noreferrer');
+      }
       // SHARE SETUP — build the link and put it on the clipboard.
       if (r.share) shareSetup();
       if (title.dirty) {
