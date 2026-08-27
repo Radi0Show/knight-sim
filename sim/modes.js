@@ -60,6 +60,7 @@ export const MODES = [
 // the same sum `battleat/df/mag` are.
 
 import { WEAPONS, ARMOR, canEquip, statsOf } from './equipment.js';
+import { WEAPON_REFUSALS, ARMOR_REFUSALS } from './equip-refusals.js';
 import { DEFAULT_GEAR, PARTY } from './damage.js';
 import { ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE } from './items.js';
 
@@ -396,10 +397,33 @@ function stepSettings(title, pressed) {
   const pocket = pocketOf(kind);
   if (pressed('up')) { eq.pocket = (eq.pocket + pocket.length - 1) % pocket.length; out.moved = true; }
   if (pressed('down')) { eq.pocket = (eq.pocket + 1) % pocket.length; out.moved = true; }
-  if (pressed('cancel')) { eq.stage = 'slot'; out.moved = true; }
+  // Moving the cursor replaces the comment in the game (scr_itemcomment runs
+  // per selection); here the next attempt sets a fresh one, so just clear.
+  if (out.moved) eq.comment = null;
+  if (pressed('cancel')) { eq.stage = 'slot'; eq.comment = null; out.moved = true; }
   if (pressed('confirm')) {
     const id = pocket[eq.pocket];
-    // The char flags ARE the equip rule — refused pieces buzz, like the menu.
+    // THE CHARACTER COMMENTS ON EVERY ATTEMPT. The dark menu's confirm is
+    //
+    //     if (canequip == 1) { snd_play(snd_equip); ...swap... }
+    //     else               { snd_play(snd_cantselect); }
+    //     scr_itemcomment(..., wmsg);          // BOTH paths
+    //
+    // so the remark is not a refusal message — it shows whether the equip
+    // landed or not, and refusal only changes the SOUND. The Mane Ax is why
+    // this exists: it is unequippable BY DESIGN (weaponchar all 0 in
+    // scr_weaponinfo) and Susie's line for it is "I'm too GOOD for that." —
+    // the sim refused silently, and a player read that as the menu being
+    // broken. Reported from play, twice removed: the refusal was right, the
+    // silence was the bug.
+    //
+    // Speaker keys are the game's: 2 Susie, 3 Ralsei. Kris has no line —
+    // scr_weaponinfo defines no wmessage1 because Kris never speaks.
+    {
+      const table = kind === 'weapon' ? WEAPON_REFUSALS : ARMOR_REFUSALS;
+      const line = id !== 0 ? table[id]?.[String(eq.char + 1)] : null;
+      eq.comment = line && line.trim() ? line : null;
+    }
     if (id !== 0 && !canEquip(kind, id, eq.char)) { out.error = true; return out; }
     if (eq.row === 0) title.gear[eq.char].weapon = id;
     else {

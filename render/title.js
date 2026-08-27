@@ -412,6 +412,14 @@ function drawSettings(ctx, title, sprites, font) {
   drawText(ctx, font, `AT ${st.at}   DF ${st.df}   MG ${st.magic}`, 150, 300,
     { color: rgb(DIM), xscale: 0.85, yscale: 0.85 });
 
+  // The character's remark on the last equip attempt — scr_itemcomment runs
+  // on BOTH the equip and the refusal, so this is not an error message; it is
+  // Susie telling you what she thinks of the Mane Ax.
+  if (eq.comment) {
+    drawText(ctx, font, eq.comment, 150, 330,
+      { color: rgb(DIM), xscale: 0.85, yscale: 0.85 });
+  }
+
   // The pocket, when a slot is open: every piece in the chapter's table
   // (BlackShard excluded), the unequippable greyed by the char flags.
   if (eq.stage === 'pocket') {
