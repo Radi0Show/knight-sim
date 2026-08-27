@@ -133,6 +133,44 @@
     font-size: 15px;
     line-height: 40px;
   }
+  /* SIDEWAYS. In portrait the letterbox is above and below the frame, so the
+     controls live in the black band underneath. In landscape the frame fills
+     the HEIGHT and the black bands move to the SIDES — the bottom corners
+     would sit on the game's own menu band (the 640x480 frame's bottom strip
+     is the button row and HP readout). So the pad and buttons move into the
+     side bars, vertically a little below centre, which is where thumbs
+     naturally rest on a held-sideways phone. R keeps its top-right corner.
+     Same sizes, same tolerances — only the anchors change. */
+  @media (pointer: coarse) and (orientation: landscape) {
+    /* The frame fills the height, so the window's bottom edge is the FRAME's
+       bottom edge — the credit was sitting on the game's own footer text.
+       Top-left is the one corner nothing claims (R owns top-right). */
+    #credit {
+      bottom: auto;
+      top: max(14px, env(safe-area-inset-top));
+      left: max(14px, env(safe-area-inset-left));
+      right: auto;
+      text-align: left;
+    }
+    #dpad {
+      left: max(12px, env(safe-area-inset-left));
+      bottom: auto;
+      top: 55%;
+      transform: translateY(-50%);
+    }
+    #btnZ {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: auto;
+      top: calc(55% - 58px);
+      transform: translateY(-50%);
+    }
+    #btnX {
+      right: calc(max(16px, env(safe-area-inset-right)) + 40px);
+      bottom: auto;
+      top: calc(55% + 30px);
+      transform: translateY(-50%);
+    }
+  }
 </style>
 </head>
 <body>
