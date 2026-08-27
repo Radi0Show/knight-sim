@@ -11,7 +11,7 @@
 // practice list wants each attack once, with its real difficulties offered as
 // options.
 
-import { spawn } from '../entity.js';
+import { spawn, destroy } from '../entity.js';
 import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
@@ -108,6 +108,19 @@ const director = {
     state.currentAc = state.practiceEntry.ac;
   },
 
+  step(e, state) {
+    // THE REBUILD RUNS IN STEP, NOT ENDSTEP, and the difference is one frame
+    // of clamp. The knight is the scene's oldest entity, so his endStep — the
+    // ac-0 wall clamp among other things — runs before this director's
+    // endStep. A soul spawned there went unclamped until the next frame;
+    // spawned here, the knight's endStep still lies ahead in the same frame
+    // and catches it. verify-swordslash held the line: one violating frame.
+    if (e.rebuild) {
+      e.rebuild = false;
+      settleBox(spawn(state, battlebox, { x: BOX.x, y: BOX.y }));
+      state.soul = spawn(state, soul, { ...SOUL_START });
+    }
+  },
   endStep(e, state) {
     if (e.started && state.turntimer > 0) state.turntimer -= 1;
 
@@ -172,10 +185,32 @@ const director = {
       // ROARING is exactly that attack: it pulls the soul into the vortex and
       // destroys it partway through, which is why the drill for it went
       // heartless after the first pass while every other attack looked fine.
-      // clearTurn has already nulled the dead one.
-      if (!state.soul || !state.soul.alive) {
-        state.soul = spawn(state, soul, { ...SOUL_START });
-      }
+      //
+      // AND THE BOARD GOES WITH IT — Alarm 11 is `with (obj_heart)
+      // instance_destroy(); with (obj_growtangle) instance_destroy();`, both
+      // together, every turn. The drill used to keep ONE board and ONE soul
+      // for its whole life, and Stars is where that showed: the cone drags
+      // the board ~90px left during a run, the reused board never goes back
+      // (launchAttack's placement is gated on `arenaOpened !== ac`, which a
+      // reused board always fails), and a soul left where the previous run
+      // ended can sit OUTSIDE the next run's grow-in — the wall sweeps out
+      // through it, reject-on-entry keeps it out, and the player dodges from
+      // the free half of the screen. Reported from play: "you can glitch
+      // outside the box and dodge way easier".
+      //
+      // Destroying and respawning BOTH each run is the fight's own turn
+      // cycle, not a patch.
+      // Torn down THIS frame, rebuilt on the NEXT — Alarm 11's frame has no
+      // soul and no board either, and rebuilding in the same endStep left the
+      // fresh soul unclamped for exactly one frame (verify-swordslash caught
+      // it: the ac-0 wall clamp runs in the knight's endStep, before this).
+      if (state.soul?.alive) destroy(state.soul);
+      state.soul = null;
+      const oldGt = state.entities.find(
+        (x) => x.alive && x.type.name === 'obj_growtangle',
+      );
+      if (oldGt) destroy(oldGt);
+      e.rebuild = true;
       // …and the drill's next turn has already chosen it, being the same one.
       state.currentAc = state.practiceEntry.ac;
       return;

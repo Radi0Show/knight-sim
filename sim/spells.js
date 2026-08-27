@@ -51,6 +51,7 @@ function healNumber(state, target, amount) {
   spawnSelfHealNumber(state, target, amount, maxed);
 }
 import { cue } from './audio.js';
+import { ACT_PAGES } from './dialogue.js';
 
 // Where the caster and the Knight stand. Duplicated from sim/actors.js rather
 // than imported: actors.js pulls in damage.js which pulls in this, and the
@@ -132,6 +133,40 @@ export function canAfford(state, spellId, slot = 1) {
  * The payoff is soul speed 4 -> 5, and 6 while Roaring is on screen — the
  * fight's one permanent buff, and the reason the ACT is worth a turn.
  */
+/**
+ * THE KNIGHT'S ACTING BLOCKS — the counts, their clamps, and the page choice
+ * they drive, exactly as obj_knight_enemy's Step performs each ACT after the
+ * menu closes:
+ *
+ *     acting == 2:    actcon = 1; checkcount++;  pages by checkcount == 1
+ *     acting == 2b:   holdbreathcount++; pages by <= 1; holdbreathcount = 1
+ *     actingsus == 1: seven pages; sactcount = 1; canactsus[0] = 0
+ *     actingral == 1: ractcount++; five pages or three by ractcount == 1
+ *
+ * Called by the director when the ACT's writer is BORN — the sim's "after the
+ * menu" — never at selection. At selection these effects could not be undone:
+ * an X after choosing HoldBreath left the speed buff live and the repeat page
+ * armed, and cancelling Ralsei's first R-Action burned his five-page variant
+ * unseen.
+ */
+export function resolveActPages(state, c, actId) {
+  state.actCounts = state.actCounts ?? {};
+  const n = state.actCounts;
+  if (c === 0) {
+    if (actId === 1) return ACT_PAGES[holdBreath(state)];
+    n.check = (n.check ?? 0) + 1;
+    return ACT_PAGES[n.check === 1 ? 'check' : 'point'];
+  }
+  if (c === 1) {
+    // `global.canactsus[myself][0] = 0` — one performance, then the row
+    // leaves her list. Read by listRows.
+    n.susieUsed = true;
+    return ACT_PAGES.susie;
+  }
+  n.ralsei = (n.ralsei ?? 0) + 1;
+  return ACT_PAGES[n.ralsei <= 1 ? 'ralsei' : 'ralsei_again'];
+}
+
 export function holdBreath(state) {
   // RETURNS THE PAGE KEY, not a sentence. It used to return its own condensed
   // text —

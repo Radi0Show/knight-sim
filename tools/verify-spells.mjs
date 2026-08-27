@@ -280,13 +280,63 @@ st.menu.submenu = 'actgrid';
 st.menu.gridIndex = 1;
 tap(st, 'confirm');
 if (st.menu.charturn !== 1) failures.push('HoldBreath did not advance the turn');
-if (soulSpeed(st) !== 5) failures.push('HoldBreath through the menu did not buff the soul');
+// THE BUFF LANDS AT RESOLUTION, NOT SELECTION. Selection only queues
+// (`acting = 1`); holdbreathcount++ and the speed change are in the knight's
+// acting block, which the sim runs when the ACT's writer is born, after the
+// menu closes. It USED to land at selection — and an X after choosing could
+// not un-ring it, which is the cancel-leak family reported from play. So the
+// menu confirm must leave the speed at 4, and resolveActPages is what flips
+// it to 5.
+if (soulSpeed(st) !== 4) failures.push('HoldBreath buffed AT SELECTION — cancel could not undo it');
+if (!st.pendingAct || st.pendingAct.act !== 1) failures.push('HoldBreath did not queue the act');
+{
+  const { resolveActPages } = await import('../sim/spells.js');
+  const pages = resolveActPages(st, st.pendingAct.c ?? 0, st.pendingAct.act);
+  if (soulSpeed(st) !== 5) failures.push('resolution did not buff the soul');
+  if (!pages?.[0]?.includes('held their breath')) failures.push('resolution picked the wrong pages');
+}
 
 console.log(`Kris: ${ACTS[0].map((a) => a.name).join(', ')}`);
 console.log(`Susie: ${SPELL_LIST[1].map((i) => `${SPELLS[i].name} ${SPELLS[i].cost}TP`).join(', ')}`);
 console.log(`Ralsei: ${SPELL_LIST[2].map((i) => `${SPELLS[i].name} ${SPELLS[i].cost}TP`).join(', ')}`);
 console.log('HoldBreath: soul 4 -> 5, 6 during Roaring, and works exactly once');
 console.log(`Rude Buster: bolt lands frame ${landOn} · no press ${noPress.dealt} · perfect ${perfect.dealt} (bonus halved with the base)`);
+
+// A CANCELLED SPELL MUST NOT FIRE. scr_prevhero's `charaction = 0` is what
+// stops the resolve phase running the choice — the game's resolver iterates
+// characters by charaction, while this sim's iterates the pending queues, so
+// prevHero has to clear the queue entry alongside the action. Without that,
+// cancelling a Rude Buster refunded the 125 TP and then fired the bolt
+// anyway, and the character could pick a second action on top — reported
+// from play twice within hours ("cast anyways with no tp cost").
+{
+  const { createState: mk } = await import('../sim/state.js');
+  const { stepFrame: step } = await import('../sim/index.js');
+  const { buildPracticeScene: build } = await import('../sim/scenes/practice.js');
+  const s7 = mk({ seed: 3 });
+  build(s7, { seed: 3 });
+  s7.keepAlive = true;
+  let g = 0;
+  while (!s7.menu?.open && g++ < 2000) step(s7, {});
+  s7.tension = 250;
+  const t7 = (k) => { step(s7, { [k]: true }); step(s7, {}); };
+  s7.menu.selected[0] = 4; t7('confirm');            // Kris DEFEND
+  s7.menu.selected[1] = 1; t7('confirm'); t7('confirm'); // Susie: Rude Buster
+  const paid = s7.tension;
+  t7('cancel');
+  if (s7.tension <= paid) failures.push(`cancel did not refund the spell (TP ${s7.tension})`);
+  if (s7.pendingSpell?.[1]) failures.push('cancel left the spell QUEUED — it will fire for free');
+  s7.menu.selected[1] = 4; t7('confirm');
+  s7.menu.selected[2] = 4; t7('confirm');
+  const hp7 = s7.knight.hp;
+  let bolt = false;
+  for (let i = 0; i < 600 && !s7.menu.open; i++) {
+    step(s7, {});
+    if (s7.entities.some((e) => e.alive && /rudebuster/i.test(e.type?.name ?? ''))) bolt = true;
+  }
+  if (bolt) failures.push('the cancelled Rude Buster spawned its bolt');
+  if (s7.knight.hp !== hp7) failures.push(`the knight took ${hp7 - s7.knight.hp} from a cancelled spell`);
+}
 
 if (failures.length) {
   console.log('');

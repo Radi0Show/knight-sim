@@ -37,7 +37,7 @@ import {
 } from '../dmgnumbers.js';
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
-import { castSpell } from '../spells.js';
+import { castSpell, resolveActPages } from '../spells.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, tickChargeup, phase4Reached,
@@ -924,7 +924,15 @@ const director = {
     // same writer), only the final `/%` halt lets one destroy it.
     if (state.pendingAct) {
       const a = state.pendingAct;
-      if (!a.w) a.w = { pos: 1, page: 0, halted: false, pmb: 0, automash: 0 };
+      if (!a.w) {
+        // THE WRITER'S BIRTH IS THE ACTING BLOCK. The pages, the counts and
+        // their side effects (HoldBreath's speed buff, Susie's one-use flag,
+        // Ralsei's first/repeat split) all land HERE, after the menu — never
+        // at selection, so a cancelled ACT leaves no trace. See
+        // resolveActPages in sim/spells.js.
+        a.pages = resolveActPages(state, a.c ?? 0, a.act ?? 0);
+        a.w = { pos: 1, page: 0, halted: false, pmb: 0, automash: 0 };
+      }
       const w = a.w;
       const visible = msgLines(a.pages[w.page]).join('').length;
       let b1 = false;

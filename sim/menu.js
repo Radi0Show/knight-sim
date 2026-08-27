@@ -346,6 +346,16 @@ function prevHero(menu, state) {
   state.tension = menu.temptension[c] ?? state.tension;
   menu.tempitem[c] = c === 0 ? [...state.inventory] : [...menu.tempitem[c - 1]];
   state.charaction[c] = 0;
+  // THE DEED IS UN-QUEUED WITH THE TURN. scr_prevhero's charaction = 0 is
+  // what stops the resolve phase firing the choice — the game's resolver
+  // iterates characters BY charaction. This sim's resolver iterates the
+  // pending queues directly, so each queue entry must go with the action:
+  // without these, cancelling a Rude Buster refunded the 125 TP and then
+  // fired the bolt anyway, and the character could act AGAIN on top of it.
+  // Reported from play, twice, within hours of each other.
+  if (state.pendingSpell) state.pendingSpell[c] = null;
+  if (state.pendingItem) state.pendingItem[c] = null;
+  if (state.pendingAct?.c === c) state.pendingAct = null;
   // `global.faceaction[charturn] = 0` — scr_prevhero drops the pose too, so a
   // cancelled DEFEND stops looking defended.
   setFace(state, c, FACE_IDLE);
@@ -745,38 +755,18 @@ export function stepMenu(state, input) {
           cue(state, 'snd_error');
         } else if (menu.submenu === 'actgrid') {
 
-          // THE ACT'S CHATBOX MESSAGE HOLDS THE ATTACK BAR. The knight's
-          // acting block picks the page set (checkcount/holdbreathcount pick
-          // the first-time or repeat variant) and the bar is only created
-          // once that writer dies — the director's act interlude runs it.
-          let key;
-          if (c === 0) {
-            if (row.id === 1) {
-              // holdBreath owns the count AND the variant — the dump picks the
-              // page from `holdbreathcount` itself, so a second counter here
-              // was duplicated state waiting to disagree with it.
-              key = holdBreath(state);
-            } else {
-              state.actCounts = state.actCounts ?? { check: 0 };
-              state.actCounts.check += 1;
-              key = state.actCounts.check === 1 ? 'check' : 'point';
-            }
-          } else if (c === 1) {
-            // One performance only — the block clears her canact flag.
-            key = 'susie';
-            state.actCounts = state.actCounts ?? {};
-            state.actCounts.susieUsed = true;
-          } else {
-            // `ractcount++` picks five pages the first time and three after.
-            state.actCounts = state.actCounts ?? {};
-            state.actCounts.ralsei = (state.actCounts.ralsei ?? 0) + 1;
-            key = state.actCounts.ralsei <= 1 ? 'ralsei' : 'ralsei_again';
-          }
-          state.pendingAct = { pages: ACT_PAGES[key] };
-          // ONE SOURCE FOR THE TEXT. The chatbox line and the writer's pages
-          // are the same strings now; they used to be two literals that had
-          // already drifted apart.
-          menu.lastItem = ACT_PAGES[key]?.[0] ?? `* ${PARTY[c].name} used ${row.label}.`;
+          // SELECTION QUEUES, RESOLUTION COUNTS. The menu marks the act
+          // (`acting = 1`); everything else — checkcount++, holdbreathcount++
+          // and its clamp, canactsus = 0, ractcount++, and the page choice
+          // those counts drive — happens in the KNIGHT'S acting blocks, after
+          // the menu has closed. This used to do all of it at selection, and
+          // cancel could not un-ring any of that bell: an X after choosing
+          // HoldBreath left the speed buff live and the repeat page armed,
+          // and cancelling Ralsei's first R-Action burned his five-page
+          // variant without ever showing it. resolveActPages (sim/spells.js)
+          // is the acting block; the director calls it when the writer is
+          // born, which is the sim's "after the menu".
+          state.pendingAct = { c, act: row.id };
           menu.submenu = null;
           // `state = 6` — the ACT swing plays NOW, and it outlasts the menu:
           // the character is still mid-animation when the next one is choosing.
