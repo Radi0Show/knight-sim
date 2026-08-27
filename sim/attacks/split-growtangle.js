@@ -31,6 +31,34 @@
 // Other_11, and the debug_print calls. Other_12/13 (the fountain walls) are
 // DEAD CODE — nothing in the dump calls event_user(2) or event_user(3).
 
+// ── THE "SAFE SPOT" REPORTS (bottom-left corner, between two teeth) ────────
+//
+// Investigated twice, four ways, and NOT reproducible as a dead zone:
+//
+//   1. a 9x7 hit-density map over the whole box interior, 2,400 pinned
+//      frames per cell: minimum 9 hits, no zero cell anywhere;
+//   2. the exact pressed-in corner, pinned 3,600 frames: 19 hits, teeth
+//      passing within 0.8px;
+//   3. the player's own route — holding down-left through real collision —
+//      across four seeds and all three difficulties: 40-55 hits every run,
+//      still landing in the final frames of 6,000;
+//   4. every mechanism that could make a sim-only safe strip, checked
+//      against the dump: the teeth cull OFFSCREEN (view -80/+760/+580),
+//      identical both sides, never at the box walls; the fan's positions and
+//      angles are oracle-verified row-exact; the collision model is
+//      calibrated on 48 oracle contact points.
+//
+// What the reports are almost certainly describing: ONE wave's angular gap.
+// Thirteen teeth fan out from the cut, and between two adjacent trajectories
+// there is real empty space — standing in it, that wave misses entirely,
+// and that is the game's own geometry. The next split's cut angle differs
+// and covers it, which is what the measured continuing hits show.
+//
+// Do not "fix" this by widening teeth or adding coverage: every candidate
+// mechanism is verified faithful, and making the corner more dangerous than
+// the translation says would be inventing difficulty. What would reopen it:
+// a capture of the real fight where a stationary soul in that corner
+// survives MULTIPLE waves.
 import { spawn } from '../entity.js';
 import { splitGrowtangleEffect } from '../fx.js';
 import { cue } from '../audio.js';
