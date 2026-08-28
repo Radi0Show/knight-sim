@@ -92,6 +92,16 @@ function starSurface(w, h) {
 
 /** `draw_angle = 1 - draw_angle` — a 1px per-frame jitter on the wedge. */
 const drawAngle = new WeakMap();
+/** Last frame's dirty rects, per cone, so clears cover shrink as well as growth. */
+const prevRect = new WeakMap();
+const prevStarRect = new WeakMap();
+
+/** Union of two [x0,y0,x1,y1] rects; either may be null. */
+function unionRect(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+}
 
 export function drawPointingCone(ctx, e, state, deps) {
   const { sprites, VIEW_W, VIEW_H, scratch } = deps;
@@ -182,11 +192,35 @@ export function drawPointingCone(ctx, e, state, deps) {
   const yTop = -600 * Math.sin(rad(180 - openAngle / 2));
   const yBottom = -600 * Math.sin(rad(180 + openAngle / 2));
 
+  // THE WEDGE'S SCREEN BOUNDING BOX, and everything below stays inside it.
+  //
+  // This pipeline used to run at full 640x480 every frame — a whole-surface
+  // clear, four tile draws, a whole-surface `destination-in` mask, and a
+  // whole-surface blit — and Firefox rasterises the composite passes far
+  // slower than Chrome, which is the reported Stars lag (still present after
+  // the tile pre-scale). The wedge is the only region that ever holds pixels,
+  // so the clears and blits crop to its box, padded 2px for the antialiased
+  // edge and UNIONED with last frame's box so the shrink of the one-degree
+  // jitter cannot leave a stale rim.
+  const mouthSX = mouthX - state.view.x;
+  const apexSY = apexY - state.view.y;
+  const rect = [
+    Math.max(0, Math.floor(mouthSX + xLeft) - 2),
+    Math.max(0, Math.floor(apexSY + yTop) - 2),
+    Math.min(VIEW_W, Math.ceil(mouthSX) + 2),
+    Math.min(VIEW_H, Math.ceil(apexSY + 2 + yBottom) + 2),
+  ];
+  // ...AND unioned with LAST frame's star box: the star surface is blitted
+  // INTO this buffer inside that box, so a clear that covered only the wedge
+  // left last frame's stars ghosting wherever the boxes do not overlap.
+  const clearR = unionRect(unionRect(rect, prevRect.get(e)), prevStarRect.get(e));
+  prevRect.set(e, rect);
+
   const buf = scratch(VIEW_W, VIEW_H);
   const b = buf.getContext('2d');
   b.imageSmoothingEnabled = false;
   b.setTransform(1, 0, 0, 1, 0, 0);
-  b.clearRect(0, 0, VIEW_W, VIEW_H);
+  b.clearRect(clearR[0], clearR[1], clearR[2] - clearR[0], clearR[3] - clearR[1]);
   b.save();
   b.translate(-state.view.x, -state.view.y);
 
@@ -213,13 +247,26 @@ export function drawPointingCone(ctx, e, state, deps) {
     g.lineTo(mouthX + xLeft, apexY + 2 + yBottom);
     g.closePath();
   };
+  // THE CLIP IS THE MASK. The old order was: fill the wedge, draw the flow
+  // tiles across the whole surface with `lighter`, then one whole-surface
+  // `destination-in` pass with the wedge path to take the spill back off.
+  // `destination-in` touches EVERY pixel of the surface whatever the path
+  // covers — that is what it is — and it is the single pass Firefox
+  // rasterises worst. Clipping to the same path FIRST means nothing is ever
+  // painted outside the wedge, so the mask pass has nothing to do and is
+  // gone. Interior pixels are bit-identical (same fill, same adds, same
+  // coverage); the only difference lives in the antialiased 1px edge, where
+  // clip coverage replaces the mask's post-multiply.
   wedgePath(b);
+  b.clip();
   // merge_color(c_white, c_black, angle / target_angle): white closed, black open.
   const k = Math.max(0, Math.min(1, angle / target));
   const v = Math.round(255 * (1 - k));
   b.fillStyle = `rgb(${v},${v},${v})`;
   b.fill();
-  b.restore();
+  // Back to screen space for the tiles — the clip persists (it was defined in
+  // world coordinates and mapped at definition time); only the transform pops.
+  b.setTransform(1, 0, 0, 1, 0, 0);
 
   // ---- the two flow layers ------------------------------------------------
   //
@@ -260,17 +307,14 @@ export function drawPointingCone(ctx, e, state, deps) {
       if (img) b.drawImage(img, sx, 0);
     }
 
-    b.globalCompositeOperation = 'destination-in';
-    b.save();
-    b.translate(-state.view.x, -state.view.y);
-    wedgePath(b);
-    b.fillStyle = '#ffffff';
-    b.fill();
+    // The clip has done the destination-in's whole job; pop it before the
+    // heart punch-out, which must be able to cut the wedge's own edge.
     b.restore();
 
-
     // `draw_set_blend_mode(bm_subtract); with (obj_heart) draw_sprite(...)` —
-    // the soul is PUNCHED OUT of the backdrop, so it stays readable against it.
+    // the soul is PUNCHED OUT of the backdrop, so it stays readable against
+    // it. `destination-out` via drawImage only composites the drawn image's
+    // own 20x20 rect, so this pass was never part of the cost.
     const heart = state.soul;
     const hs = heart && sprites.get('spr_dodgeheart');
     if (hs && hs.frames[0]) {
@@ -281,6 +325,8 @@ export function drawPointingCone(ctx, e, state, deps) {
       b.restore();
     }
     b.globalCompositeOperation = 'source-over';
+  } else {
+    b.restore();
   }
 
   // ---- the star surface ----------------------------------------------------
@@ -300,11 +346,30 @@ export function drawPointingCone(ctx, e, state, deps) {
     (x) => x.alive && x.type.name === 'obj_knight_pointing_star' && x.con === 0,
   );
   if (stars.length) {
+    // THE STARS' OWN BOX, same reasoning as the wedge's: they cluster at the
+    // cone's mouth, and clearing/blitting the whole 640x480 for a dozen
+    // sprites was most of this surface's cost. 48px of pad per side covers
+    // the largest star sprite at its grown scale; the union with last frame
+    // covers movement.
+    let sr = null;
+    for (const st of stars) {
+      const pad = 48 * Math.max(1, st.image_xscale ?? 1);
+      const sx = st.x - state.view.x;
+      const sy = st.y - state.view.y;
+      sr = unionRect(sr, [sx - pad, sy - pad, sx + pad, sy + pad]);
+    }
+    sr = [
+      Math.max(0, Math.floor(sr[0])), Math.max(0, Math.floor(sr[1])),
+      Math.min(VIEW_W, Math.ceil(sr[2])), Math.min(VIEW_H, Math.ceil(sr[3])),
+    ];
+    const sClear = unionRect(sr, prevStarRect.get(e));
+    prevStarRect.set(e, sr);
+
     const sbuf = starSurface(VIEW_W, VIEW_H);
     const s = sbuf.getContext('2d');
     s.imageSmoothingEnabled = false;
     s.setTransform(1, 0, 0, 1, 0, 0);
-    s.clearRect(0, 0, VIEW_W, VIEW_H);
+    s.clearRect(sClear[0], sClear[1], sClear[2] - sClear[0], sClear[3] - sClear[1]);
     s.save();
     s.translate(-state.view.x, -state.view.y);
 
@@ -313,22 +378,40 @@ export function drawPointingCone(ctx, e, state, deps) {
     const grate = sprites.get('spr_knight_line_grate');
     if (grate && grate.frames[0]) {
       const flick = (state.frame % 2) * 2; // star_flicker = 2 - star_flicker
-      s.save();
-      s.setTransform(1, 0, 0, 1, 0, 0);
-      s.globalCompositeOperation = 'destination-out';
-      s.drawImage(grate.frames[0], 0, flick,
-        grate.frames[0].width * 2, grate.frames[0].height * 2);
-      s.restore();
+      // SOURCE-CROPPED to the star box. destination-out via drawImage only
+      // composites the drawn rect, so drawing just the slice of the grate
+      // that overlaps the stars is the same subtraction at a fraction of the
+      // pixels. The mapping is exact: the grate sits at (0, flick) scaled
+      // 2x, so destination (dx,dy,dw,dh) reads source (dx/2, (dy-flick)/2,
+      // dw/2, dh/2).
+      const g0 = grate.frames[0];
+      const gx0 = Math.max(sr[0], 0);
+      const gy0 = Math.max(sr[1], flick);
+      const gx1 = Math.min(sr[2], g0.width * 2);
+      const gy1 = Math.min(sr[3], flick + g0.height * 2);
+      if (gx1 > gx0 && gy1 > gy0) {
+        s.save();
+        s.setTransform(1, 0, 0, 1, 0, 0);
+        s.globalCompositeOperation = 'destination-out';
+        s.drawImage(g0, gx0 / 2, (gy0 - flick) / 2, (gx1 - gx0) / 2, (gy1 - gy0) / 2,
+          gx0, gy0, gx1 - gx0, gy1 - gy0);
+        s.restore();
+      }
     }
 
     for (const st of stars) if (st.image_xscale <= 0.5) drawStarUserEvent0(s, st, sprites);
     s.restore();
     s.globalCompositeOperation = 'source-over';
 
-    // Normal alpha blending for the stars, over the purple backdrop.
+    // Normal alpha blending for the stars, over the purple backdrop —
+    // cropped to their box; everywhere else the surface is transparent.
     b.setTransform(1, 0, 0, 1, 0, 0);
     b.globalCompositeOperation = 'source-over';
-    b.drawImage(sbuf, 0, 0);
+    const scw = sClear[2] - sClear[0];
+    const sch = sClear[3] - sClear[1];
+    if (scw > 0 && sch > 0) {
+      b.drawImage(sbuf, sClear[0], sClear[1], scw, sch, sClear[0], sClear[1], scw, sch);
+    }
   }
 
   // `draw_set_blend_mode(bm_add); surface_reset_target(); draw_surface(surf, ...)`
@@ -338,7 +421,17 @@ export function drawPointingCone(ctx, e, state, deps) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'lighter';
-  ctx.drawImage(buf, 0, 0);
+  // Cropped to the union of the wedge's and the stars' boxes: outside them
+  // the surface is transparent and `lighter` with transparent is a no-op, so
+  // the pixels are identical and the screen composite shrinks with the cone.
+  const outR = unionRect(clearR, prevStarRect.get(e));
+  const ow = Math.min(VIEW_W, outR[2]) - Math.max(0, outR[0]);
+  const oh = Math.min(VIEW_H, outR[3]) - Math.max(0, outR[1]);
+  if (ow > 0 && oh > 0) {
+    const ox = Math.max(0, outR[0]);
+    const oy = Math.max(0, outR[1]);
+    ctx.drawImage(buf, ox, oy, ow, oh, ox, oy, ow, oh);
+  }
   ctx.restore();
 
   return true; // draw_self() already happened — see the note in drawPointingCone
