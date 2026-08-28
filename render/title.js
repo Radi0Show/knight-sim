@@ -424,7 +424,7 @@ function drawSettings(ctx, title, sprites, font) {
   // (BlackShard excluded), the unequippable greyed by the char flags.
   if (eq.stage === 'pocket') {
     const kind = eq.row === 0 ? 'weapon' : 'armor';
-    const pocket = pocketOf(kind);
+    const pocket = pocketOf(kind, title.gear);
     const table = kind === 'weapon' ? WEAPONS : ARMOR;
     // A scrolling window of 7 rows.
     const win = 7;

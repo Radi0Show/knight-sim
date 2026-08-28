@@ -141,12 +141,20 @@ export function drawSpriteExt(ctx, entry, sub, x, y, xs, ys, angleDeg, color, al
  * every caller passes as 0 (black). Under `bm_add` black contributes nothing,
  * so the beam is a spike that fades out along its length.
  */
-export function drawBeamColor(ctx, x, y, length, width, angle, color, alpha, circle = false) {
-  const e1x = x + ldx(length, angle + width / 2);
-  const e1y = y + ldy(length, angle + width / 2);
-  const e2x = x + ldx(length, angle - width / 2);
-  const e2y = y + ldy(length, angle - width / 2);
+/**
+ * Gradients for the beams, cached. During Stars' burst wind-up every charging
+ * star draws SIX of these a frame — ~18 stars gave ~108 fresh CanvasGradient
+ * allocations per frame, reported from play as a massive FPS drop exactly
+ * when the stars wind up. A gradient is position-free if the triangle is
+ * drawn in LOCAL space (translate/rotate first), so one gradient per
+ * (colour, integer length) serves every beam of that shape forever. The
+ * length is Math.round'd FOR THE CACHE KEY ONLY — the strobe's fractional
+ * lengths differ from the rounded gradient by under a pixel of ramp, and the
+ * triangle geometry itself keeps the exact float length.
+ */
+const beamGradients = new WeakMap();
 
+export function drawBeamColor(ctx, x, y, length, width, angle, color, alpha, circle = false) {
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
   if (circle) {
@@ -156,15 +164,35 @@ export function drawBeamColor(ctx, x, y, length, width, angle, color, alpha, cir
     ctx.fill();
   }
   // The gradient runs apex -> tip, which is what a two-colour triangle with
-  // both far vertices the same colour interpolates to.
-  const g = ctx.createLinearGradient(x, y, x + ldx(length, angle), y + ldy(length, angle));
-  g.addColorStop(0, rgb(color));
-  g.addColorStop(1, 'rgb(0,0,0)');
+  // both far vertices the same colour interpolates to. Drawn in LOCAL space
+  // (apex at the origin, beam along +x) so the cached gradient fits every
+  // position and angle; GameMaker's angles are CCW, canvas rotation is CW,
+  // hence the negation.
+  // A CanvasGradient belongs to the context that made it, and MORE THAN ONE
+  // context draws beams in the same frame (the roar's beams go to its own
+  // star surface). A per-context map means neither evicts the other — a
+  // single shared cache cleared on context change would have churned every
+  // frame of the roar, which is the failure this cache exists to remove.
+  let perCtx = beamGradients.get(ctx);
+  if (!perCtx) beamGradients.set(ctx, (perCtx = new Map()));
+  const key = `${rgb(color)}|${Math.round(length)}`;
+  let g = perCtx.get(key);
+  if (!g) {
+    g = ctx.createLinearGradient(0, 0, Math.round(length), 0);
+    g.addColorStop(0, rgb(color));
+    g.addColorStop(1, 'rgb(0,0,0)');
+    perCtx.set(key, g);
+  }
+  ctx.translate(x, y);
+  ctx.rotate((-angle * Math.PI) / 180);
+  const half = (width / 2) * Math.PI / 180;
+  const ex = length * Math.cos(half);
+  const ey = length * Math.sin(half);
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(e1x, e1y);
-  ctx.lineTo(e2x, e2y);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(ex, -ey);
+  ctx.lineTo(ex, ey);
   ctx.closePath();
   ctx.fill();
   ctx.restore();

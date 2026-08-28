@@ -91,6 +91,7 @@ export const SETTINGS_PAGES = [
  * `MODES.length + n`, which is what `stepTitle` branches on.
  */
 export const TITLE_EXTRAS = [
+  { id: 'gear', name: 'GEAR / ITEMS' },
   { id: 'settings', name: 'SETTINGS' },
   { id: 'credits', name: 'CREDITS' },
 ];
@@ -120,9 +121,25 @@ export const CREDITS = [
 export const creditLink = (row) => (row.link ? `https://${row.link}` : null);
 
 /** BlackShard (26) stays out of the pocket; id 0 is the empty slot. */
-export function pocketOf(kind) {
+export function pocketOf(kind, gear = null) {
   const table = kind === 'weapon' ? WEAPONS : ARMOR;
-  return [0, ...Object.keys(table).map(Number).filter((id) => id !== 26 || kind !== 'weapon')];
+  let ids = Object.keys(table).map(Number).filter((id) => id !== 26 || kind !== 'weapon');
+  // EQUIPPED PIECES LEAVE THE LIST — which is the game's own shape, not just
+  // tidiness: the dark menu lists STORAGE, and a piece someone is wearing is
+  // on the character, not in storage. Listing everything regardless read as
+  // clutter ("I would appreciate taking out already equipped items") and let
+  // two characters wear the same piece at once, which the game cannot
+  // express. Both the stepper and the renderer pass the SAME gear so their
+  // row indices cannot drift apart.
+  if (gear) {
+    const worn = new Set();
+    for (const g of gear) {
+      if (kind === 'weapon') worn.add(g.weapon);
+      else for (const a of g.armor ?? []) worn.add(a);
+    }
+    ids = ids.filter((id) => !worn.has(id));
+  }
+  return [0, ...ids];
 }
 
 export function createTitle() {
@@ -213,6 +230,24 @@ function openSettings(title) {
  * X means on the page: without it, cancelling would drop the player into the
  * settings hub they never asked for.
  */
+/**
+ * GEAR, opened from the title directly. The equip page always existed inside
+ * SETTINGS, and a playtester assumed the loadout was fixed because Bad Time
+ * Simulator's settings never held one — "I kind of assumed you couldn't
+ * tweak your armor". A thing the fight balances around should not be a page
+ * players have to suspect exists. `root` gives X the same leave-to-title
+ * meaning as the credits page.
+ */
+function openGear(title) {
+  title.settings = {
+    page: 'equip',
+    root: true,
+    cursor: 0,
+    equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
+    items: { stage: 'slots', slot: 0, pick: 0 },
+  };
+}
+
 function openCredits(title) {
   title.settings = {
     page: 'credits',
@@ -373,7 +408,13 @@ function stepSettings(title, pressed) {
   if (eq.stage === 'char') {
     if (pressed('left')) { eq.char = (eq.char + 2) % 3; out.moved = true; }
     if (pressed('right')) { eq.char = (eq.char + 1) % 3; out.moved = true; }
-    if (pressed('cancel')) { s.page = null; out.moved = true; }
+    // `root`: the page was opened straight from the title (the GEAR row), so
+    // X leaves to the title rather than dropping into a settings hub the
+    // player never visited — the same rule the credits page carries.
+    if (pressed('cancel')) {
+      if (s.root) title.settings = null; else s.page = null;
+      out.moved = true;
+    }
     if (pressed('confirm')) { eq.stage = 'slot'; eq.row = 0; out.selected = true; }
     return out;
   }
@@ -386,7 +427,7 @@ function stepSettings(title, pressed) {
       // Start the pocket cursor on the currently-equipped piece.
       const kind = eq.row === 0 ? 'weapon' : 'armor';
       const cur = eq.row === 0 ? title.gear[eq.char].weapon : title.gear[eq.char].armor[eq.row - 1] ?? 0;
-      const pocket = pocketOf(kind);
+      const pocket = pocketOf(kind, title.gear);
       eq.pocket = Math.max(0, pocket.indexOf(cur));
       out.selected = true;
     }
@@ -394,7 +435,7 @@ function stepSettings(title, pressed) {
   }
   // pocket
   const kind = eq.row === 0 ? 'weapon' : 'armor';
-  const pocket = pocketOf(kind);
+  const pocket = pocketOf(kind, title.gear);
   if (pressed('up')) { eq.pocket = (eq.pocket + pocket.length - 1) % pocket.length; out.moved = true; }
   if (pressed('down')) { eq.pocket = (eq.pocket + 1) % pocket.length; out.moved = true; }
   // Moving the cursor replaces the comment in the game (scr_itemcomment runs
@@ -518,7 +559,9 @@ export function stepTitle(title, input, attacks) {
   if (pressed('confirm')) {
     if (!title.pickingAttack && title.index >= MODES.length) {
       const extra = TITLE_EXTRAS[title.index - MODES.length];
-      if (extra.id === 'credits') openCredits(title); else openSettings(title);
+      if (extra.id === 'credits') openCredits(title);
+      else if (extra.id === 'gear') openGear(title);
+      else openSettings(title);
       return { moved: false, chosen: false, selected: true };
     }
     if (!title.pickingAttack && MODES[title.index].id === 'single') {

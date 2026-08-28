@@ -1028,6 +1028,19 @@ function skipFallen(state) {
 /** Reopen for the next turn, back at the first conscious character. */
 export function openMenu(state) {
   state.menu.open = true;
+  // `scr_mnendturn` clears LAST turn's choices as the new command phase
+  // opens — for every slot, `charaction[i] = 0; faceaction[i] = 0` (among a
+  // dozen other fields this sim keeps elsewhere). The sim reset these only
+  // when the player picked something NEW, so a character who DEFENDed stayed
+  // in the defend pose through the next menu until another action overwrote
+  // it. Reported from play: "sprites are stuck in the defend state until
+  // using another action — the function is fine, the bug is just visual."
+  // The function was fine precisely because the damage reduction reads
+  // charaction during the ENEMY phase, which ends before this runs.
+  for (let i = 0; i < 3; i++) {
+    state.charaction[i] = 0;
+    setFace(state, i, FACE_IDLE);
+  }
   // `scr_battlecursor_memory_reset()` — called by scr_mnendturn before every
   // menu (flag 14, cursor memory, is 0 by default): ALL of bmenucoord zeroes,
   // which includes the button-row cursor per character. Without it the row
