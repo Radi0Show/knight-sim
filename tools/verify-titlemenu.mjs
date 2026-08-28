@@ -27,8 +27,7 @@
 
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
-  ITEM_PICKER,
-} from '../sim/modes.js';
+  ITEM_PICKER, GEAR_PAGES } from '../sim/modes.js';
 import {
   ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE, freshInventory,
 } from '../sim/items.js';
@@ -290,9 +289,12 @@ function atRoster() {
 
   const nav = () => {
     const t = createTitle();
-    for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
-    tap(t, 'confirm'); // SETTINGS
-    const items = SETTINGS_PAGES.findIndex((p) => p.id === 'items');
+    // ITEMS moved out of SETTINGS and into the GEAR / ITEMS hub off the
+    // title, alongside WEAPONS / ARMOR — the settings copies were stale
+    // leftovers once the loadout got its own row.
+    for (let i = 0; i < extraAt('gear'); i++) tap(t, 'down');
+    tap(t, 'confirm'); // GEAR / ITEMS hub
+    const items = GEAR_PAGES.findIndex((p) => p.id === 'items');
     for (let i = 0; i < items; i++) tap(t, 'down');
     tap(t, 'confirm'); // ITEMS
     return t;
@@ -352,9 +354,14 @@ function atRoster() {
   tap(t3, 'cancel');
   check(i3.stage === 'slots', 'X should back out of the picker');
   check(t3.bag.join() === keep.join(), 'and leave the bag alone');
-  // ...and X from the grid goes back to the hub, one stage at a time.
+  // ...and X from the grid goes back one stage at a time — to the GEAR hub
+  // now, since that is the door the page was entered through. The exit
+  // remembers where it came from (`s.back`); the same page entered through
+  // settings would return there.
   tap(t3, 'cancel');
-  check(t3.settings?.page === null, 'X from the grid returns to the settings hub');
+  check(t3.settings?.page === 'gearhub', 'X from the grid returns to the GEAR / ITEMS hub');
+  tap(t3, 'cancel');
+  check(t3.settings === null, 'and X from the hub leaves to the title');
 }
 
 // ---- SHARE SETUP copies, it does not open ---------------------------------

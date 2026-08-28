@@ -14,7 +14,7 @@ import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { VERSION } from '../web/version.js';
 import {
-  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER,
+  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER, GEAR_PAGES,
   pocketOf, previewStats,
 } from '../sim/modes.js';
 import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
@@ -202,6 +202,20 @@ function drawSettings(ctx, title, sprites, font) {
         drawText(ctx, small, 'link copied', 420, 170 + row * 40 + 6,
           { color: rgb(HILITE) });
       }
+    }
+    centred(ctx, font, 'Z  open      X  back', 448, DIM, 0.75);
+    return;
+  }
+
+  // The GEAR / ITEMS hub — the settings hub's exact shape, two rows.
+  if (s.page === 'gearhub') {
+    centred(ctx, font, 'GEAR / ITEMS', 60, c_white, 1.4);
+    for (let i = 0; i < GEAR_PAGES.length; i++) {
+      const y = 190 + i * 40;
+      const on = i === s.cursor;
+      if (on && heart) drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+      drawText(ctx, font, GEAR_PAGES[i].name, 190, y,
+        { color: rgb(on ? HILITE : c_white) });
     }
     centred(ctx, font, 'Z  open      X  back', 448, DIM, 0.75);
     return;

@@ -124,6 +124,34 @@ try {
   }
 }
 
+// THE TITLE'S PAGES ALL RENDER. The fight smoke above never reaches the
+// title, and the GEAR / ITEMS hub was added as a new page branch — a throw
+// in any page's draw would freeze the menu exactly like the tinted() crash
+// froze the fight. Stub canvas, every page, including the new hub.
+{
+  const { drawTitle } = await import('../render/title.js');
+  const { createTitle } = await import('../sim/modes.js');
+  const ctx2 = mkCtx();
+  const pages = [null, 'gearhub', 'equip', 'items', 'audio', 'graphics', 'credits'];
+  for (const page of pages) {
+    const t = createTitle();
+    if (page !== undefined && page !== 'title') {
+      t.settings = {
+        page,
+        root: page === 'gearhub' || page === 'credits',
+        cursor: 0,
+        equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
+        items: { stage: 'slots', slot: 0, pick: 0 },
+      };
+    }
+    try {
+      drawTitle(ctx2, t, renderer.sprites, []);
+    } catch (err) {
+      failures.push(`drawTitle threw on page ${JSON.stringify(page)}: ${err.message}`);
+    }
+  }
+}
+
 if (failures.length) {
   console.log('');
   for (const x of failures) console.log(`→ FAILURE  ${x}`);

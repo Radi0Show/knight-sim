@@ -72,14 +72,24 @@ import { ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE } from './items.js';
 export const ITEM_PICKER = [0, ...ITEM_IDS];
 
 export const SETTINGS_PAGES = [
-  { id: 'equip', name: 'WEAPONS / ARMOR' },
-  { id: 'items', name: 'ITEMS' },
   { id: 'audio', name: 'MUSIC / SFX' },
   { id: 'graphics', name: 'GRAPHICS' },
   // SHARE is not a page — confirming on it copies a link and stays put, which
   // is why it returns `out.share` instead of setting `s.page`.
   { id: 'share', name: 'SHARE SETUP' },
   { id: 'unused', name: 'UNUSED' },
+];
+
+/**
+ * THE GEAR / ITEMS HUB — its own two-row menu off the title, in the settings
+ * hub's exact shape. WEAPONS / ARMOR and ITEMS lived inside SETTINGS first,
+ * and moving the loadout to the title made the settings copies stale
+ * leftovers; settings is for how the game LOOKS AND SOUNDS, the hub is for
+ * what the party CARRIES.
+ */
+export const GEAR_PAGES = [
+  { id: 'equip', name: 'WEAPONS / ARMOR' },
+  { id: 'items', name: 'ITEMS' },
 ];
 
 /**
@@ -240,7 +250,7 @@ function openSettings(title) {
  */
 function openGear(title) {
   title.settings = {
-    page: 'equip',
+    page: 'gearhub',
     root: true,
     cursor: 0,
     equip: { stage: 'char', char: 0, row: 0, pocket: 0 },
@@ -267,6 +277,17 @@ function stepSettings(title, pressed) {
   const out = { moved: false, selected: false, error: false };
 
   // ---- the hub ----
+  // ONE WAY OUT OF A PAGE, wherever it was entered from: back to the gear
+  // hub when that is where the player came from, off the whole overlay when
+  // the page IS the root (credits, the hub itself), and to the settings hub
+  // otherwise. Five call sites had five copies of a two-way version of this,
+  // and the gear hub would have made every one of them three-way.
+  const leavePage = () => {
+    if (s.back) { s.page = s.back; s.back = null; }
+    else if (s.root) title.settings = null;
+    else s.page = null;
+  };
+
   if (s.page === null) {
     // The "copied" confirmation is on a clock rather than latched, so it
     // cannot get stuck on after the player walks away from the row.
@@ -291,8 +312,27 @@ function stepSettings(title, pressed) {
         return out;
       }
       s.page = page;
+      s.back = null;
       s.cursor = 0;
       s.equip = { stage: 'char', char: 0, row: 0, pocket: 0 };
+      out.selected = true;
+    }
+    return out;
+  }
+
+  if (s.page === 'gearhub') {
+    if (pressed('up')) { s.cursor = (s.cursor + GEAR_PAGES.length - 1) % GEAR_PAGES.length; out.moved = true; }
+    if (pressed('down')) { s.cursor = (s.cursor + 1) % GEAR_PAGES.length; out.moved = true; }
+    // The hub is the root: X leaves to the title.
+    if (pressed('cancel')) { title.settings = null; out.moved = true; return out; }
+    if (pressed('confirm')) {
+      s.page = GEAR_PAGES[s.cursor].id;
+      // Pages entered from here come BACK here — the same page reached
+      // through settings used to return to the settings hub, and the exit
+      // has to remember which door the player used.
+      s.back = 'gearhub';
+      s.equip = { stage: 'char', char: 0, row: 0, pocket: 0 };
+      s.items = { stage: 'slots', slot: 0, pick: 0 };
       out.selected = true;
     }
     return out;
@@ -320,7 +360,7 @@ function stepSettings(title, pressed) {
         it.slot += it.slot % 2 === 0 ? 1 : -1;
         out.moved = true;
       }
-      if (pressed('cancel')) { s.page = null; out.moved = true; }
+      if (pressed('cancel')) { leavePage(); out.moved = true; }
       if (pressed('confirm')) {
         it.stage = 'pick';
         // Open the picker ON the slot's current contents, so a nudge is one
@@ -366,7 +406,7 @@ function stepSettings(title, pressed) {
     // X goes back to wherever the page was opened FROM — the title now, not
     // the hub, which no longer lists it.
     if (pressed('cancel')) {
-      if (s.root) title.settings = null; else s.page = null;
+      leavePage();
       out.moved = true;
     }
     return out;
@@ -381,7 +421,7 @@ function stepSettings(title, pressed) {
       title.dirty = true;
       out.moved = true;
     }
-    if (pressed('cancel')) { s.page = null; out.moved = true; }
+    if (pressed('cancel')) { leavePage(); out.moved = true; }
     return out;
   }
 
@@ -399,7 +439,7 @@ function stepSettings(title, pressed) {
       title.dirty = true;
       out.moved = true;
     }
-    if (pressed('cancel')) { s.page = null; out.moved = true; }
+    if (pressed('cancel')) { leavePage(); out.moved = true; }
     return out;
   }
 
@@ -412,7 +452,7 @@ function stepSettings(title, pressed) {
     // X leaves to the title rather than dropping into a settings hub the
     // player never visited — the same rule the credits page carries.
     if (pressed('cancel')) {
-      if (s.root) title.settings = null; else s.page = null;
+      leavePage();
       out.moved = true;
     }
     if (pressed('confirm')) { eq.stage = 'slot'; eq.row = 0; out.selected = true; }
