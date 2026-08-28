@@ -7,7 +7,10 @@
 // background fill, because those files are content-stable between deploys
 // and there are hundreds of them. CACHE bumps on deploy via sw.js itself
 // changing, which retires the old cache in activate.
-const CACHE = 'blackknife-v1';
+// KEEP IN LOCKSTEP WITH web/version.js — the worker cannot import modules,
+// so the link is by convention: every release bumps both, and the new cache
+// name is what makes an installed PWA pick up the new build.
+const CACHE = 'blackknife-1.0.1';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

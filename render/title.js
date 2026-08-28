@@ -12,6 +12,7 @@
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
+import { VERSION } from '../web/version.js';
 import {
   MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER,
   pocketOf, previewStats,
@@ -160,6 +161,13 @@ export function drawTitle(ctx, title, sprites, attacks) {
   centred(ctx, font, title.pickingAttack
     ? 'Z  choose      X  back'
     : 'arrows  move      Z  choose', 448, DIM, 0.75);
+
+  // The build number, bottom-left. Small and dim: it is for bug reports
+  // ("which version are you on?"), not decoration — the replay-token
+  // reporter is gone, so this is what a player can still tell us.
+  drawText(ctx, font, `v${VERSION}`, 8, 462, {
+    color: rgb(DIM), xscale: 0.6, yscale: 0.6,
+  });
   ctx.restore();
 }
 

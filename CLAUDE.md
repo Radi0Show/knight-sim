@@ -26,6 +26,16 @@ node tools/verify-damage.mjs               # no bullet holds the placeholder
 - `~/knight-research/` — PRIVATE repo: the oracle, the GML dump, the traces.
   Never publish it. `knight-sim` is the public side.
 
+## Versioning
+
+`web/version.js` holds the build number, drawn bottom-left of the title.
+**Bump the patch number in the same commit as every change that ships** — a
+fix, a feature, a tweak; if a player could notice it, it gets a number. Bump
+`CACHE` in `web/sw.js` to match (the worker cannot import modules, so the two
+are linked by convention; the cache name is what makes an installed PWA fetch
+the new build). The number exists so a bug report can say which build it came
+from, now that the replay-token reporter is gone.
+
 **Commits carry NO `Co-Authored-By` trailer.** The history was rewritten once
 to strip it from all seven repos; do not reintroduce it, in this repo or any
 of the sibling `*-sim` scaffolds.
