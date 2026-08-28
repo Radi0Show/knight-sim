@@ -17,9 +17,13 @@
 // was already cued by ROARING while Stars was silent, which is exactly the
 // hole this suite cannot see — the per-site work is still reading the object.
 import { readdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const DUMP = process.env.HOME + '/knight-research/gml_dump/CodeEntries';
-const SIM = process.env.HOME + '/knight-sim/sim';
+const DUMP = process.env.KNIGHT_DUMP
+  ?? join(homedir(), 'knight-research', 'gml_dump', 'CodeEntries');
+const SIM = fileURLToPath(new URL('../sim', import.meta.url));
 
 // Objects the real fight actually reaches (CLAUDE.md's selector table),
 // plus the shared bullet/controller layer.
@@ -101,7 +105,7 @@ const collectPushes = (dir) => {
   }
 };
 collectPushes(SIM);
-const index = JSON.parse(readFileSync(`${process.env.HOME}/knight-sim/assets/audio/index.json`, 'utf8'));
+const index = JSON.parse(readFileSync(new URL('../assets/audio/index.json', import.meta.url), 'utf8'));
 const unplayable = [...emitted].filter((s) => !index[s]).sort();
 if (unplayable.length) {
   console.log(`\n→ FAILURE  ${unplayable.length} cue(s) with no file in assets/audio/index.json (silent):`);

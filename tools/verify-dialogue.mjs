@@ -12,6 +12,7 @@
 //     `if (global.hp[2] > 0)`, so the exchange holds rather than skipping
 //     ahead. She is the one being talked to.
 
+import { fileURLToPath } from 'node:url';
 import {
   createDialogue, advanceBalloon, advanceReply, clearDialogue,
   KNIGHT_LINES, SUSIE_LINES, KNIGHT_ALONE, msgLines, revealed, dialogueDone,
@@ -134,7 +135,7 @@ for (const n of Object.keys(KNIGHT_ALONE)) {
   const { execFileSync } = await import('node:child_process');
   const { decodeReplay } = await import('../sim/replay.js');
   const out = execFileSync(process.execPath,
-    [new URL('make-replay-token.mjs', import.meta.url).pathname, '--seed', '37', '--frames', '2600'],
+    [fileURLToPath(new URL('make-replay-token.mjs', import.meta.url)), '--seed', '37', '--frames', '2600'],
     { encoding: 'utf8' });
   const token = out.trim().split('\n').pop();
   const replay = decodeReplay(token);

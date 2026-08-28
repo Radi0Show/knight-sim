@@ -62,9 +62,10 @@
 // worse than one that drops a free one, however the totals read.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 const TRACES = process.env.KNIGHT_TRACES
-  || join(process.env.HOME, 'knight-research', 'traces');
+  || join(homedir(), 'knight-research', 'traces');
 const NAMES = (process.env.KNIGHT_FIT_NAMES || 'verify21j,verify37').split(',');
 /** Both sides store these positions as f32 and agree to about five decimals;
  *  0.01px sits far inside the 8px gap between consecutive probe samples and

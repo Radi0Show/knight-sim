@@ -38,14 +38,16 @@
 // columns are suppressed for that frame.
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 // KNIGHT_TRACES overrides where the oracle CSVs are read from. It exists so
 // this differ can be SABOTAGE-TESTED against a synthetic oracle — a suite that
 // has never been shown a real divergence is a suite that might report none by
 // construction. tools/sabotage-fullfight.mjs uses it.
 const TRACES = process.env.KNIGHT_TRACES
-  || join(process.env.HOME, 'knight-research', 'traces');
+  || join(homedir(), 'knight-research', 'traces');
 const SIM_OUT = process.env.KNIGHT_SIM_OUT || '/tmp/knight-fullfight';
 
 /**
@@ -392,7 +394,7 @@ function newestSimMtime() {
       }
     }
   };
-  walk(new URL('../sim', import.meta.url).pathname);
+  walk(fileURLToPath(new URL('../sim', import.meta.url)));
   return newest;
 }
 

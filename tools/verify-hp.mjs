@@ -32,6 +32,7 @@
 // being silently compared.
 
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const TRACES = process.env.KNIGHT_TRACES
-  || join(process.env.HOME, 'knight-research', 'traces');
+  || join(homedir(), 'knight-research', 'traces');
 const NAME = 'hprun-nka1';
 const OUT = '/tmp/knight-hp';
 
