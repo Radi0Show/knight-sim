@@ -551,6 +551,7 @@ function startRun() {
 let runMode = title.mode ?? 'normal';
 
 function frame(now) {
+  lastFrameRun = now;
   const elapsed = now - last;
   last = now;
 
@@ -783,7 +784,8 @@ function frame(now) {
       // sim/replay.js. One byte a frame, run-length encoded; the cost of
       // recording unconditionally is nothing next to the cost of asking a
       // tester to reproduce something they already saw.
-      const hitsBefore = state.counters.collisionHits;
+      const hpBefore = state.partyHp[0] + state.partyHp[1] + state.partyHp[2];
+      const caughtBefore = state.soul?.alive && state.soul.image_alpha === 0;
       stepFrame(state, input);
       audio.play(drainCues(state));
 
@@ -798,7 +800,25 @@ function frame(now) {
       // HITLESS: one hit and it starts over. The restart is instant because
       // the sim is a pure function of (seed, input) — there is nothing to
       // tear down, which is the whole reason this mode is cheap to offer.
-      if (runMode === 'hitless' && state.counters.collisionHits > hitsBefore) {
+      //
+      // A HIT IS DAMAGE, NOT A place_meeting POSITIVE. This used to watch
+      // `counters.collisionHits`, which counts every registered overlap —
+      // including a class that deals nothing: a tooth's ACTIVE gate lives
+      // inside its contact handler, so a just-spawned, unarmed tooth
+      // overlapping the soul on the cut line increments the counter and does
+      // no damage at all. Measured on a wandering Flurry run: 86 of 188
+      // counted collisions were consequence-free. Reported from play as
+      // grazing the red slashes restarting the fight, and as "restarting at
+      // random during the box split" — teeth spawn exactly where the cut is.
+      //
+      // The game's own judgement of a no-hit run is damage taken, so the
+      // trigger is the party's HP dropping — plus the splitslash CATCH
+      // (image_alpha 0, the cut carrying the soul), which is a hit whose
+      // damage lands ~35 frames later and must restart NOW, not after the
+      // animation.
+      const hpNow = state.partyHp[0] + state.partyHp[1] + state.partyHp[2];
+      const caughtNow = state.soul?.alive && state.soul.image_alpha === 0;
+      if (runMode === 'hitless' && (hpNow < hpBefore || (caughtNow && !caughtBefore))) {
         hitlessDeaths += 1;
         reset();
         break;
@@ -870,4 +890,40 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// THE LOOP, plus a WATCHDOG for browsers that starve requestAnimationFrame.
+// Opera GX shipped exactly that: a black screen where each keypress painted
+// one frame — rAF never fired, and the only draws were the event-path ones
+// (Bad Time Simulator reportedly has the same failure there). If the page is
+// VISIBLE and no frame has run for 500ms, the watchdog drives frame() itself
+// with a wall-clock timestamp. drain() meters sim steps by elapsed real time,
+// so if rAF later revives and the two overlap briefly, the sim does not
+// double-step — the accumulator absorbs it.
+let lastFrameRun = performance.now();
 requestAnimationFrame(frame);
+// A probe rAF, separate from the game loop, is the liveness signal; the
+// fallback is a 33ms interval driving frame() at full rate. It ARMS when the
+// probe has been silent half a second with the page visible, and DISARMS the
+// moment real rAF ticks return, so a browser that merely throttled catches
+// back up without ever running both for long.
+let rafTick = performance.now();
+const rafProbe = () => { rafTick = performance.now(); requestAnimationFrame(rafProbe); };
+requestAnimationFrame(rafProbe);
+let fallback = null;
+setInterval(() => {
+  const stale = performance.now() - rafTick > 500;
+  const visible = document.visibilityState === 'visible';
+  if (stale && visible && !fallback) {
+    fallback = setInterval(() => frame(performance.now()), 33);
+  } else if (!stale && fallback) {
+    clearInterval(fallback);
+    fallback = null;
+  }
+}, 250);
+
+// THE APP SHELL. The service worker is what turns add-to-home-screen into a
+// standalone app (and keeps the fight loadable offline). Registration failing
+// — file://, an old browser, private mode — costs nothing: the page is fully
+// functional without it.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}

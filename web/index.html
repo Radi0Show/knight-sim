@@ -3,6 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<!-- iOS reads these instead of (most of) the manifest: standalone display and
+     the home-screen icon. black-translucent lets the game draw under the
+     status bar, which the safe-area insets in the CSS already account for. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BlackKnife">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
 <title>Black Knife Simulator</title>
 <style>
   /* THE GAME FILLS THE WINDOW, and nothing else is on screen.
@@ -92,6 +102,13 @@
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.25);
     background: rgba(255, 255, 255, 0.06);
+    /* Belt and braces ON the elements, not only inherited from body: a held
+       X was long-press-selecting its own label ("it selects x if you hold
+       it and it's kinda distracting" — reported from a phone). The
+       tap-highlight flash goes for the same reason. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
   #dpad {
     left: max(18px, env(safe-area-inset-left));
