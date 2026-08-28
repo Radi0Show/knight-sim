@@ -43,6 +43,10 @@ const NONE = {
   up: false, down: false, left: false, right: false, confirm: false, cancel: false,
 };
 
+// Rows move; ids do not. Every drive resolves its target through
+// TITLE_EXTRAS so adding a row (GEAR did it) shifts nothing here.
+const extraAt = (id) => MODES.length + TITLE_EXTRAS.findIndex((x) => x.id === id);
+
 const failures = [];
 const check = (ok, msg) => { if (!ok) failures.push(msg); };
 
@@ -111,13 +115,15 @@ function atRoster() {
 {
   check(!SETTINGS_PAGES.some((p) => p.id === 'credits'),
     'CREDITS should no longer be a settings page');
-  check(TITLE_EXTRAS.map((e) => e.id).join(',') === 'settings,credits',
-    `the title's extra rows should be SETTINGS then CREDITS, got `
+  // GEAR sits first — the loadout is a thing the fight balances around, so
+  // it earns the top of the extras rather than a settings page.
+  check(TITLE_EXTRAS.map((e) => e.id).join(',') === 'gear,settings,credits',
+    `the title's extra rows should be GEAR, SETTINGS, CREDITS, got `
     + TITLE_EXTRAS.map((e) => e.id).join(','));
 
   const t = createTitle();
-  for (let i = 0; i < MODES.length + 1; i++) tap(t, 'down');
-  check(t.index === MODES.length + 1, 'the cursor should reach the CREDITS row');
+  for (let i = 0; i < extraAt('credits'); i++) tap(t, 'down');
+  check(t.index === extraAt('credits'), 'the cursor should reach the CREDITS row');
   tap(t, 'confirm');
   check(t.settings?.page === 'credits', 'confirm on CREDITS should open it directly');
   check(t.settings?.root === true, 'it opens as a ROOT page, not through the hub');
@@ -163,7 +169,7 @@ function atRoster() {
     'credit links are stored bare; creditLink adds the scheme');
 
   const t = createTitle();
-  for (let i = 0; i < MODES.length + 1; i++) tap(t, 'down');
+  for (let i = 0; i < extraAt('credits'); i++) tap(t, 'down');
   tap(t, 'confirm');
   for (let i = 0; i < wander; i++) tap(t, 'down');
   const hit = tap(t, 'confirm');
@@ -177,7 +183,7 @@ function atRoster() {
   // keypress — and the frame batch after a throttled tab resumes can be dozens
   // of steps long.
   const t4 = createTitle();
-  for (let i = 0; i < MODES.length + 1; i++) tap(t4, 'down');
+  for (let i = 0; i < extraAt('credits'); i++) tap(t4, 'down');
   tap(t4, 'confirm');
   for (let i = 0; i < wander; i++) tap(t4, 'down');
   let opens = 0;
@@ -200,7 +206,7 @@ function atRoster() {
   const noLink = CREDITS.findIndex((c) => !c.link);
   if (noLink >= 0) {
     const t2 = createTitle();
-    for (let i = 0; i < MODES.length + 1; i++) tap(t2, 'down');
+    for (let i = 0; i < extraAt('credits'); i++) tap(t2, 'down');
     tap(t2, 'confirm');
     for (let i = 0; i < noLink; i++) tap(t2, 'down');
     const miss = tap(t2, 'confirm');
@@ -227,8 +233,8 @@ function atRoster() {
 // ---- SETTINGS still opens and closes with one press each -------------------
 {
   const t = createTitle();
-  for (let i = 0; i < MODES.length; i++) tap(t, 'down');
-  check(t.index === MODES.length, 'could not reach the SETTINGS row');
+  for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
+  check(t.index === extraAt('settings'), 'could not reach the SETTINGS row');
   tap(t, 'confirm');
   check(t.settings !== null, 'SETTINGS did not open');
   check(t.settings.page === null, 'SETTINGS should open on its hub');
@@ -241,7 +247,7 @@ function atRoster() {
   const t = createTitle();
   check(t.scaling === 'fit', `the default scaling should fill the window, got ${t.scaling}`);
   check(t.shake === true, 'the shake should default ON, as the game has it');
-  for (let i = 0; i < MODES.length; i++) tap(t, 'down');
+  for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
   tap(t, 'confirm');
   const gfx = SETTINGS_PAGES.findIndex((p) => p.id === 'graphics');
   check(gfx >= 0, 'there is no GRAPHICS page');
@@ -284,7 +290,7 @@ function atRoster() {
 
   const nav = () => {
     const t = createTitle();
-    for (let i = 0; i < MODES.length; i++) tap(t, 'down');
+    for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
     tap(t, 'confirm'); // SETTINGS
     const items = SETTINGS_PAGES.findIndex((p) => p.id === 'items');
     for (let i = 0; i < items; i++) tap(t, 'down');
@@ -358,7 +364,7 @@ function atRoster() {
 // share every frame the row is highlighted.
 {
   const t = createTitle();
-  for (let i = 0; i < MODES.length; i++) tap(t, 'down');
+  for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
   tap(t, 'confirm');
   const row = SETTINGS_PAGES.findIndex((p) => p.id === 'share');
   check(row >= 0, 'SHARE SETUP should be in the settings hub');
@@ -379,7 +385,7 @@ function atRoster() {
 
   // Walking onto the row does NOT fire it — only a press does.
   const t2 = createTitle();
-  for (let i = 0; i < MODES.length; i++) tap(t2, 'down');
+  for (let i = 0; i < extraAt('settings'); i++) tap(t2, 'down');
   tap(t2, 'confirm');
   let fired = false;
   for (let i = 0; i < row; i++) { if (tap(t2, 'down').share) fired = true; }
