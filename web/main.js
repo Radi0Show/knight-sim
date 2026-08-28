@@ -925,5 +925,9 @@ setInterval(() => {
 // — file://, an old browser, private mode — costs nothing: the page is fully
 // functional without it.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // Module-relative, not document-relative — the same rule as the asset
+  // loaders (4911a09): the hub hosts this driver from a page one level up,
+  // where './sw.js' resolves to a URL that does not exist. The worker's
+  // scope stays web/ either way; that is where the installable app lives.
+  navigator.serviceWorker.register(new URL('./sw.js', import.meta.url)).catch(() => {});
 }
