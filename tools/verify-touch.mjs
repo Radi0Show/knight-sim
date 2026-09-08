@@ -14,7 +14,9 @@ function stubEl(rect) {
     addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
     setPointerCapture() {},
     getBoundingClientRect() { return this.rect; },
-    fire(type, ev) { for (const fn of listeners[type] ?? []) fn({ preventDefault() {}, ...ev }); },
+    // `type` rides along: the R button's release handler reads ev.type to
+    // tell a real pointerup (the tap) from a pointercancel (disarm only).
+    fire(type, ev) { for (const fn of listeners[type] ?? []) fn({ type, preventDefault() {}, ...ev }); },
   };
 }
 
@@ -119,11 +121,22 @@ pad.fire('pointerup', { pointerId: 5 });
   check(t3.read().confirm === true, 'a throwing setPointerCapture swallowed the press');
 }
 
-// R goes through the callback, never through the input object.
+// R goes through the callback, never through the input object — and the TAP
+// IS DECIDED ON RELEASE, because a held R is the touch overlay's EXIT (the
+// hold timer, input/touch.js header). So a touch alone restarts nothing; the
+// pointerup that follows before the hold fires is the restart.
 br.fire('pointerdown', { pointerId: 6, clientX: 322, clientY: 22 });
 r = t.read();
-check(resets === 1, 'the reset button did not call back');
+check(resets === 0, 'a touch alone must not restart — the tap is decided on release');
 check(r.confirm === false && r.cancel === false, 'reset leaked into the input object');
+br.fire('pointerup', { pointerId: 6 });
+r = t.read();
+check(resets === 1, 'the reset button did not call back on release');
+check(r.confirm === false && r.cancel === false, 'reset leaked into the input object');
+// A pointercancel (the browser taking the finger) DISARMS: no restart, no exit.
+br.fire('pointerdown', { pointerId: 7, clientX: 322, clientY: 22 });
+br.fire('pointercancel', { pointerId: 7 });
+check(resets === 1, 'a cancelled touch on R must not restart');
 
 if (failures.length) {
   for (const f of failures) console.log(`→ FAILURE  ${f}`);

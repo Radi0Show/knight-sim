@@ -14,8 +14,8 @@ Open the link. Nothing to install.
 | **Z** | confirm |
 | **X** | cancel — and hold it to move slowly while dodging |
 | **R** | restart the fight |
-| **P** | pause |
-| **B** | **report a bug** |
+| **Esc** (Start on a controller) | leave the run and go back to the title |
+| hold **R** (touch) | the same exit — a tap of the on-screen R restarts |
 
 X does two jobs on purpose: that's how the real game binds it.
 

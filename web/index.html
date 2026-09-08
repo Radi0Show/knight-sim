@@ -142,6 +142,23 @@
     right: calc(max(20px, env(safe-area-inset-right)) + 74px);
     bottom: max(18px, env(safe-area-inset-bottom));
   }
+  /* TOUCH BUTTONS — the GRAPHICS toggle (sim/modes.js `swapZX`). The driver
+     puts `swap` on #touch and Z and X trade PLACES: each keeps its label and
+     its action, only the anchors change, so the letter on a button is always
+     what it does. Two ids plus a class outranks the plain #btnZ / #btnX
+     rules whatever their order — which is also why the landscape block
+     below carries its own swapped pair (its plain #btnZ would otherwise
+     lose to THESE and a swapped button would drop back to the bottom band).
+     MIRRORED BY HAND in thedevice/DEVICE_KNIGHT/index.html, the hub's own
+     host page: vendoring never copies this file. */
+  #touch.swap #btnZ {
+    right: calc(max(20px, env(safe-area-inset-right)) + 74px);
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  #touch.swap #btnX {
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 74px);
+  }
   #touch #btnR {
     top: max(14px, env(safe-area-inset-top));
     right: max(14px, env(safe-area-inset-right));
@@ -185,6 +202,20 @@
       right: calc(max(16px, env(safe-area-inset-right)) + 40px);
       bottom: auto;
       top: calc(55% + 30px);
+      transform: translateY(-50%);
+    }
+    /* The swap, sideways — the FULL anchor set (bottom: auto included),
+       because the portrait swap rules outrank these plain ones. */
+    #touch.swap #btnZ {
+      right: calc(max(16px, env(safe-area-inset-right)) + 40px);
+      bottom: auto;
+      top: calc(55% + 30px);
+      transform: translateY(-50%);
+    }
+    #touch.swap #btnX {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: auto;
+      top: calc(55% - 58px);
       transform: translateY(-50%);
     }
   }

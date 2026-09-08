@@ -130,26 +130,53 @@ export const CREDITS = [
  */
 export const creditLink = (row) => (row.link ? `https://${row.link}` : null);
 
-/** BlackShard (26) stays out of the pocket; id 0 is the empty slot. */
-export function pocketOf(kind, gear = null) {
+/**
+ * The pick list for a slot: id 0 (the empty slot), then every piece in the
+ * chapter's table with BlackShard (weapon 26, the Knight's own drop) left out.
+ *
+ * NOTHING IS HIDDEN FOR BEING WORN. This used to drop every id anyone in the
+ * party had on, on the claim that the game "cannot express two characters
+ * wearing the same piece". It can, and does: `global.armor` is a 48-slot bag
+ * of plain ids — scr_armorget appends with only a `noroom` check and no
+ * duplicate test, the shops buy through a bare scr_armorget (obj_shop1 /
+ * obj_shop_music Draw), and obj_darkcontroller's equip swap (Step_0, the
+ * `newequip = global.armor[coord]` … `global.armor[coord] = oldequip` pair)
+ * hands the old piece back to storage — so a second LodeStone is a second
+ * entry and a second wearer. The sim has no storage model at all, which
+ * makes its bag "unlimited copies of everything", and the filter turned that
+ * into "one copy of everything": LodeStone could be worn once across the
+ * party (1 of the 6 a player asked for landed, measured by driving this
+ * menu headlessly), and the ShadowMantle — on Kris in DEFAULT_GEAR — was
+ * listed for NOBODY, Kris included, so the piece the fight balances around
+ * read as removed. It also broke the cursor start at the slot confirm
+ * below: the worn piece was never in the list, so `indexOf` was always -1
+ * and every slot opened on "(Nothing)".
+ *
+ * The tidiness the filter bought ("taking out already equipped items") is
+ * kept by the renderer instead: `wornBy` tells it who has a piece on and it
+ * draws their initials beside the name, so a second copy reads as a choice
+ * rather than clutter. `gear` stays a parameter for the call sites; the list
+ * no longer depends on it, and the stepper and renderer cannot drift apart
+ * because there is nothing left to drift.
+ */
+export function pocketOf(kind, gear = null) { // gear: kept for the callers, unused
   const table = kind === 'weapon' ? WEAPONS : ARMOR;
-  let ids = Object.keys(table).map(Number).filter((id) => id !== 26 || kind !== 'weapon');
-  // EQUIPPED PIECES LEAVE THE LIST — which is the game's own shape, not just
-  // tidiness: the dark menu lists STORAGE, and a piece someone is wearing is
-  // on the character, not in storage. Listing everything regardless read as
-  // clutter ("I would appreciate taking out already equipped items") and let
-  // two characters wear the same piece at once, which the game cannot
-  // express. Both the stepper and the renderer pass the SAME gear so their
-  // row indices cannot drift apart.
-  if (gear) {
-    const worn = new Set();
-    for (const g of gear) {
-      if (kind === 'weapon') worn.add(g.weapon);
-      else for (const a of g.armor ?? []) worn.add(a);
-    }
-    ids = ids.filter((id) => !worn.has(id));
-  }
+  const ids = Object.keys(table).map(Number).filter((id) => id !== 26 || kind !== 'weapon');
   return [0, ...ids];
+}
+
+/**
+ * Who has a piece on: the party slots (0 Kris, 1 Susie, 2 Ralsei) wearing
+ * `id` anywhere in `kind`. The pocket renderer's wearer tag; the same walk
+ * scr_armorcheck_equipped_party does when the game asks whether anyone in
+ * the party wears something, which is why it COUNTS wearers rather than
+ * finding one.
+ */
+export function wornBy(kind, id, gear) {
+  if (!gear || id === 0) return [];
+  return gear.flatMap((g, i) => (
+    (kind === 'weapon' ? g.weapon === id : (g.armor ?? []).includes(id)) ? [i] : []
+  ));
 }
 
 export function createTitle() {
@@ -220,6 +247,17 @@ export function createTitle() {
      * fills the screen. Both are offered because both are right sometimes.
      */
     scaling: 'fit',
+    /**
+     * TOUCH BUTTONS — swap the on-screen Z and X. No GML counterpart: the
+     * game has no touch UI, this is the overlay's own layout. False is as
+     * shipped (Z above-right, X below-left); true mirrors them. It is a
+     * POSITION swap — a CSS class the driver toggles on #touch — never a
+     * remap: the labels travel with the buttons, so the letter on a button
+     * is always what it does. Persisted with shake and scaling, and like
+     * them kept OUT of the share token: it is how a person holds a phone,
+     * not a setup.
+     */
+    swapZX: false,
     /** Set when gear/volumes change; the driver persists and clears it. */
     dirty: false,
   };
@@ -412,12 +450,22 @@ function stepSettings(title, pressed) {
     return out;
   }
 
-  // ---- graphics: two toggles ----
+  // ---- graphics: three toggles ----
   if (s.page === 'graphics') {
-    if (pressed('up') || pressed('down')) { s.cursor = 1 - s.cursor; out.moved = true; }
-    if (pressed('left') || pressed('right') || pressed('confirm')) {
+    // Three rows since TOUCH BUTTONS joined SCREEN SIZE and SCREEN SHAKE, so
+    // the old `1 - cursor` flip became a wrap. Each key is polled ONCE —
+    // `pressed()` latches, so `up || down` would leave a same-frame down
+    // unrecorded (the trap verify-titlemenu's header describes).
+    const ROWS = 3;
+    if (pressed('up')) { s.cursor = (s.cursor + ROWS - 1) % ROWS; out.moved = true; }
+    if (pressed('down')) { s.cursor = (s.cursor + 1) % ROWS; out.moved = true; }
+    const flipL = pressed('left');
+    const flipR = pressed('right');
+    const flipC = pressed('confirm');
+    if (flipL || flipR || flipC) {
       if (s.cursor === 0) title.scaling = title.scaling === 'fit' ? 'pixel' : 'fit';
-      else title.shake = !title.shake;
+      else if (s.cursor === 1) title.shake = !title.shake;
+      else title.swapZX = !title.swapZX;
       title.dirty = true;
       out.moved = true;
     }

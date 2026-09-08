@@ -18,16 +18,31 @@
 // X IS ONE BUTTON WITH TWO JOBS here exactly as on the keyboard: held it is
 // the SLOW modifier, tapped it is CANCEL. Same mapping (['focus','cancel']),
 // same reason it cannot collide — the menu is closed during the bullet phase.
+//
+// R HAS TWO JOBS TOO, split by DURATION rather than by phase: a TAP restarts
+// the run (`onReset`), a HOLD of HOLD_MS leaves it for the title (`onExit`).
+// The keyboard has Escape and a pad has Start for the exit; the overlay has
+// only Z, X and R, and a fourth button on a phone's bottom band is a thumb
+// in the way of the arena. The cost is that the restart fires on RELEASE
+// rather than on touch — a tap has to prove it was not a hold — so an
+// on-screen restart is one tap-length later than the key's. The timer is
+// PER POINTER like everything else here, and a pointercancel (the browser
+// taking the finger for a scroll or a gesture) clears it without firing
+// either job: a stray restart is exactly what the hold exists to prevent.
 
 import { createInput } from './state.js';
 
 const DEAD_ZONE = 0.28; // fraction of the pad's radius; inside it, no input.
+/** How long R is held before the tap becomes an exit. */
+const HOLD_MS = 600;
 
-export function bindTouch({ pad, buttons = [], onReset, onAction } = {}) {
+export function bindTouch({ pad, buttons = [], onReset, onExit, onAction, holdMs = HOLD_MS } = {}) {
   const held = new Set();
   const pressedSinceRead = new Set();
   /** pointerId -> Set of actions that pointer is holding. */
   const byPointer = new Map();
+  /** pointerId -> the armed hold timer on a reset button. */
+  const holdTimers = new Map();
 
   const press = (id, actions) => {
     let mine = byPointer.get(id);
@@ -108,7 +123,20 @@ export function bindTouch({ pad, buttons = [], onReset, onAction } = {}) {
       ev.preventDefault();
       capture(el, ev.pointerId);
       el.classList.add('down');
-      if (actions.includes('reset')) { onReset?.(); return; }
+      if (actions.includes('reset')) {
+        // Arm the hold. The timer fires the EXIT and forgets the pointer, so
+        // the release that follows finds nothing and restarts nothing; a
+        // release BEFORE it fires is the tap, and that is the restart. It
+        // used to call onReset() right here, synchronously — see the header
+        // for why that moved to the release.
+        const id = ev.pointerId;
+        const timer = setTimeout(() => {
+          holdTimers.delete(id);
+          onExit?.();
+        }, holdMs);
+        holdTimers.set(id, timer);
+        return;
+      }
       press(ev.pointerId, actions);
       // SYNCHRONOUS, inside the gesture's own call stack, and that is the
       // whole point. Anything that needs the browser's user-activation —
@@ -123,6 +151,15 @@ export function bindTouch({ pad, buttons = [], onReset, onAction } = {}) {
       ev.preventDefault();
       el.classList.remove('down');
       release(ev.pointerId);
+      // The R button: a still-armed timer means the hold never fired. Only a
+      // real release (pointerup) counts as the tap; a pointercancel just
+      // disarms.
+      const timer = holdTimers.get(ev.pointerId);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        holdTimers.delete(ev.pointerId);
+        if (ev.type === 'pointerup') onReset?.();
+      }
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);

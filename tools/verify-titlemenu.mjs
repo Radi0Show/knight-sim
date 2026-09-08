@@ -27,7 +27,7 @@
 
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
-  ITEM_PICKER, GEAR_PAGES } from '../sim/modes.js';
+  ITEM_PICKER, GEAR_PAGES, pocketOf, wornBy } from '../sim/modes.js';
 import {
   ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE, freshInventory,
 } from '../sim/items.js';
@@ -241,11 +241,12 @@ function atRoster() {
   check(t.settings === null, 'X did not close SETTINGS');
 }
 
-// ---- the GRAPHICS page: two toggles, both persisted through `dirty` --------
+// ---- the GRAPHICS page: three toggles, all persisted through `dirty` -------
 {
   const t = createTitle();
   check(t.scaling === 'fit', `the default scaling should fill the window, got ${t.scaling}`);
   check(t.shake === true, 'the shake should default ON, as the game has it');
+  check(t.swapZX === false, 'the touch buttons should default to Z / X, as shipped');
   for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
   tap(t, 'confirm');
   const gfx = SETTINGS_PAGES.findIndex((p) => p.id === 'graphics');
@@ -260,8 +261,113 @@ function atRoster() {
   tap(t, 'down');
   tap(t, 'right');
   check(t.shake === false, 'the second row should toggle the shake');
+  // TOUCH BUTTONS — the Z/X swap, the third row. A layout switch the driver
+  // turns into a CSS class; all the menu owns is the flag and that it is
+  // persisted like the other two.
+  tap(t, 'down');
+  t.dirty = false;
+  tap(t, 'right');
+  check(t.swapZX === true, 'the third row should swap the touch buttons');
+  check(t.dirty === true, 'the swap must mark the settings dirty to persist');
+  tap(t, 'left');
+  check(t.swapZX === false, 'and toggle back');
+  // The cursor WRAPS over the three rows, both ways — the page used to flip
+  // `1 - cursor`, which a third row silently breaks.
+  tap(t, 'down');
+  check(t.settings.cursor === 0,
+    `down from the third row should wrap to the first, got ${t.settings.cursor}`);
+  tap(t, 'up');
+  check(t.settings.cursor === 2,
+    `up from the first row should wrap to the third, got ${t.settings.cursor}`);
   tap(t, 'cancel');
   check(t.settings.page === null, 'X did not return to the settings hub');
+}
+
+// ---- THE POCKET LISTS EVERYTHING, worn or not -----------------------------
+// The equip list used to drop every piece anyone in the party had on, on the
+// claim that the game cannot put one piece on two characters. It can:
+// `global.armor` is a 48-slot bag of plain ids with no uniqueness rule
+// (scr_armorget appends with only a noroom check; the dark menu's equip swap
+// hands the old piece back to it), so a second LodeStone is simply a second
+// entry. The filter capped LodeStone at ONE wearer across the party and,
+// because Kris starts in the ShadowMantle, hid the mantle from EVERY
+// character's list — reported from play as "can't put it on all three" and
+// "the mantle is missing". Driven for real here, the way the reports did it.
+{
+  const LODESTONE = 24;
+  const MANTLE = 23;
+  const nav = () => {
+    const t = createTitle();
+    for (let i = 0; i < extraAt('gear'); i++) tap(t, 'down');
+    tap(t, 'confirm'); // GEAR / ITEMS hub
+    const equip = GEAR_PAGES.findIndex((p) => p.id === 'equip');
+    for (let i = 0; i < equip; i++) tap(t, 'down');
+    tap(t, 'confirm'); // WEAPONS / ARMOR
+    return t;
+  };
+  const t = nav();
+  check(t.settings?.page === 'equip', 'WEAPONS / ARMOR should open its page');
+  const eq = t.settings.equip;
+
+  // The stepper and the renderer both build the list with the gear passed
+  // in; whatever the gear, the list is the whole table. Only BlackShard —
+  // the Knight's own drop — stays out, and only from the weapon pocket.
+  check(pocketOf('armor', t.gear).includes(MANTLE),
+    'the ShadowMantle must be listed while Kris is wearing it');
+  check(pocketOf('armor', t.gear).length === pocketOf('armor').length,
+    'the armour pocket must not shrink for worn pieces');
+  check(pocketOf('weapon', t.gear).length === pocketOf('weapon').length,
+    'nor the weapon pocket');
+  check(!pocketOf('weapon', t.gear).includes(26), 'BlackShard stays out of the weapon pocket');
+  check(pocketOf('armor', t.gear)[0] === 0, 'the pocket leads with the empty slot');
+
+  // SIX LODESTONES: every armour slot of every character, through the menu.
+  let landed = 0;
+  for (let c = 0; c < 3; c++) {
+    for (let slot = 1; slot <= 2; slot++) {
+      while (eq.char !== c) tap(t, 'right');
+      tap(t, 'confirm');                       // char -> slot
+      while (eq.row !== slot) tap(t, 'down');
+      tap(t, 'confirm');                       // slot -> pocket
+      const pocket = pocketOf('armor', t.gear);
+      // The cursor opens ON the worn piece — the intent at the slot confirm,
+      // dead all the while the worn piece was filtered out of its own list
+      // (indexOf -1, so every slot opened on "(Nothing)").
+      const worn = t.gear[c].armor[slot - 1] ?? 0;
+      check(pocket[eq.pocket] === worn,
+        `char ${c} slot ${slot}: the cursor should open on the worn piece (${worn}), got ${pocket[eq.pocket]}`);
+      const want = pocket.indexOf(LODESTONE);
+      check(want >= 0, `char ${c} slot ${slot}: LodeStone should be in the list`);
+      while (eq.pocket !== want) tap(t, 'down');
+      const r = tap(t, 'confirm');
+      check(r.selected === true && !r.error, `char ${c} slot ${slot}: equipping LodeStone should land`);
+      if (t.gear[c].armor[slot - 1] === LODESTONE) landed += 1;
+      tap(t, 'cancel');                        // slot -> char
+    }
+  }
+  check(landed === 6, `all six armour slots should take a LodeStone, got ${landed}`);
+  check(wornBy('armor', LODESTONE, t.gear).join() === '0,1,2',
+    `wornBy should name all three wearers, got [${wornBy('armor', LODESTONE, t.gear).join()}]`);
+
+  // THE MANTLE ON ALL THREE. scr_armorinfo allows it for everyone; the
+  // renderer's wearer tag (K S R) is what tells a player who has it, in
+  // place of the old filter's silence.
+  for (let c = 0; c < 3; c++) {
+    while (eq.char !== c) tap(t, 'right');
+    tap(t, 'confirm');
+    while (eq.row !== 1) tap(t, 'down');
+    tap(t, 'confirm');
+    const want = pocketOf('armor', t.gear).indexOf(MANTLE);
+    while (eq.pocket !== want) tap(t, 'down');
+    tap(t, 'confirm');
+    tap(t, 'cancel');
+  }
+  check(t.gear.every((g) => g.armor[0] === MANTLE),
+    `the ShadowMantle should go on all three, got ${JSON.stringify(t.gear.map((g) => g.armor))}`);
+  check(wornBy('armor', MANTLE, t.gear).length === 3, 'wornBy should count all three mantle wearers');
+  check(wornBy('armor', 0, t.gear).length === 0, 'the empty slot is worn by nobody');
+  check(wornBy('weapon', t.gear[1].weapon, t.gear).join() === '1',
+    "Susie's weapon is worn by Susie alone");
 }
 
 // ---- THE ITEMS PAGE: any item, any of the twelve slots --------------------

@@ -102,8 +102,10 @@ const gamepad = bindGamepad();
 // THE TOUCH OVERLAY — a d-pad and Z/X/R, shown only where the primary
 // pointer is coarse (the CSS media query owns visibility; binding it
 // everywhere costs nothing on a desktop). X carries the keyboard's
-// two-jobs mapping: held is the slow modifier, tapped is cancel. R calls
-// the same reset() as the key.
+// two-jobs mapping: held is the slow modifier, tapped is cancel. R has two
+// jobs too, split by duration: a TAP is the key's reset(), a HOLD (~0.6 s)
+// is Escape's exitRun() — the overlay has no room for a fourth button
+// (input/touch.js has the timing).
 // A link the touch handler already opened, so the loop's own open (from the
 // same latched confirm, one frame later) can be swallowed instead of opening
 // the page twice.
@@ -116,6 +118,7 @@ const touch = bindTouch({
     { el: document.getElementById('btnR'), actions: ['reset'] },
   ],
   onReset: () => reset(),
+  onExit: () => exitRun(),
   // LINKS MUST OPEN INSIDE THE GESTURE. The credits page's confirm returns an
   // href that the frame loop passes to window.open — fine for a keyboard,
   // where the keydown's user-activation is still fresh when the 30Hz step
@@ -221,6 +224,9 @@ try {
   }
   if (typeof saved?.shake === 'boolean') title.shake = saved.shake;
   if (saved?.scaling === 'fit' || saved?.scaling === 'pixel') title.scaling = saved.scaling;
+  // TOUCH BUTTONS (the Z/X swap). A missing field is simply false — no `v`
+  // bump needed, nothing older can have set it.
+  if (typeof saved?.swapZX === 'boolean') title.swapZX = saved.swapZX;
 } catch { /* a corrupt entry falls back to the defaults */ }
 
 // ?cfg=<token> — A SHARED SETUP, and it WINS over the saved settings.
@@ -386,15 +392,62 @@ state.spriteRate = renderer.spriteRate;
   acc = 0;
 }
 
-// R RESTARTS, and it is the only key the page binds beyond movement.
+/**
+ * LEAVE THE RUN FOR THE TITLE — the inverse of startRun(), and the ONE path
+ * back. There was none: the only writes of `title.mode = null` were the two
+ * end-of-fight branches (a won run's TV-off and the game over's GO FORWARD),
+ * and ENDLESS and HITLESS restart on death while SINGLE cannot die at all,
+ * so three of the four modes had no way out short of reloading the page —
+ * three separate reports. Escape, a pad's Start and a HELD touch R all land
+ * here, and those two branches call it too, so there is exactly one exit
+ * and it cannot drift.
+ *
+ * reset() does not clear the driver-side sequences (it is a restart; they
+ * belong to the run being left), so they are nulled here first. Its
+ * audio.stopAll() then kills mus_knight / the drone / the wind, and its
+ * maskHeldInput() eats the exit press — the still-held Escape/Start is
+ * masked until released, so the title cannot read it as a cancel and back
+ * out of a page. A no-op on the title, so a second press there is nothing.
+ * `hitlessDeaths` is left alone on purpose: nothing resets it today either.
+ */
+function exitRun() {
+  if (title.mode === null) return;
+  over = null;
+  introSeq = null;
+  cutsceneSeq = null;
+  tvOff = null;
+  title.mode = null;
+  title.pickingAttack = false;
+  title.pickingDifficulty = false;
+  reset();
+}
+
+// R RESTARTS AND ESCAPE EXITS — the only keys the page binds beyond movement.
 //
 // The debug affordances that used to live here — P pause, Q music, B copy a
 // replay token, E deal 1000 to the Knight — are gone, along with the `?hud=1`
 // readout, the `?pause=1` freeze and the window.__sim / __intro / __cutscene
 // inspection handles. They were for building the thing, not for playing it,
 // and a practice tool should not offer the player a key that skips the fight.
+//
+// `!e.repeat`, and it is not optional: the DOM re-fires keydown for as long
+// as a key is held (~30/s after the OS delay) and reset() is unconditional —
+// a full rebuild with a fresh seed on every call. A 2 s hold of R delivered
+// 47 keydowns and 47 restarts, the run starting over every ~33 ms until
+// release; reported from play as R "retrying again and again". The binder in
+// input/keyboard.js was never the problem (its Set latch gives ONE press edge
+// for the same train) — this raw listener was. Measured, repro-C4: 47 -> 1.
+//
+// REGISTRATION ORDER IS LOAD-BEARING. bindKeyboard(window) at the top of the
+// file registered its keydown FIRST, so on an Escape it has already latched
+// `cancel` by the time this runs; exitRun -> reset -> maskHeldInput() then
+// drains that latch and masks the held key, and the title sees nothing.
+// Registered the other way round the title would see a 3-frame cancel and
+// back out of whatever page it was on (repro-C4-review). Keep this below it.
 window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
   if (e.code === 'KeyR') reset();
+  if (e.code === 'Escape') exitRun();
 });
 
 /** Push the settings at the things that consume them. No storage. */
@@ -406,6 +459,12 @@ function applySettings() {
     scalingMode = title.scaling;
     fitCanvas();
   }
+  // TOUCH BUTTONS: the Z/X swap is a CSS class on the overlay (web/index.html
+  // `#touch.swap`), so the binder's actions and the sim's input are identical
+  // either way — only where the two buttons sit changes. Runs at load too
+  // (applySettings is called below), so a saved swap is in place before the
+  // first tap.
+  document.getElementById('touch')?.classList.toggle('swap', title.swapZX);
 }
 
 function persistSettings() {
@@ -413,7 +472,7 @@ function persistSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       v: 1, // see the load above: pre-`v` entries hold the old 100 default
       gear: title.gear, bag: title.bag, volumes: title.volumes,
-      shake: title.shake, scaling: title.scaling,
+      shake: title.shake, scaling: title.scaling, swapZX: title.swapZX,
     }));
   } catch { /* private mode etc. — the session still works, unsaved */ }
   applySettings();
@@ -555,12 +614,15 @@ function frame(now) {
   const elapsed = now - last;
   last = now;
 
-  // Select resets, mirroring R. Start no longer pauses — the pause went with
-  // the rest of the debug keys. Polled here because the Gamepad API has no
-  // events.
+  // Select resets, mirroring R; Start EXITS to the title, mirroring Escape.
+  // (Start was a `pause` edge the binder computed and nothing read, since
+  // the pause went with the rest of the debug keys.) Polled here because the
+  // Gamepad API has no events; edge-gated in the binder, so a held Start
+  // exits once.
   {
     const pe = gamepad.driverEdges();
     if (pe.reset) reset();
+    if (pe.exit) exitRun();
   }
 
 
@@ -723,14 +785,9 @@ function frame(now) {
       if (tvOff.done) break;
     }
     drawTvTurnoff(ctx, tvOff, renderer.sprites);
-    if (tvOff.done) {
-      tvOff = null;
-      title.mode = null;
-      title.pickingAttack = false;
-      title.pickingDifficulty = false;
-      maskHeldInput();
-      reset();
-    }
+    // Back to the menu by the same door Escape uses — exitRun() nulls tvOff
+    // and masks whatever is held (it used to do all of that inline here).
+    if (tvOff.done) exitRun();
     requestAnimationFrame(frame);
     return;
   }
@@ -758,11 +815,9 @@ function frame(now) {
           // GO FORWARD (MOVE ON) — in the original this leaves the fight
           // behind for the rest of the chapter. Here there is nothing past
           // the fight, so it goes back to the mode menu, which is the same
-          // gesture: stop fighting this thing.
-          title.mode = null;
-          title.pickingAttack = false;
-          title.pickingDifficulty = false;
-          reset();
+          // gesture: stop fighting this thing. The same exitRun() Escape
+          // uses; `over` is already null so it has only the title to clear.
+          exitRun();
         }
         break;
       }

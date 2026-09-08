@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "knight-sim",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "python",
       "runtimeArgs": [
         "tools/devserver.py"
       ],
@@ -12,7 +12,7 @@
     },
     {
       "name": "knight-dev",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "python",
       "runtimeArgs": [
         "tools/devserver.py",
         "8179"

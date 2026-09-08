@@ -6,11 +6,12 @@
 // chapter 1, 140 in 2, 150 in 3 and 160 in 4, all in one switch case, and
 // grabbing the wrong branch is a silent 10-point error.
 
-import { createState } from '../sim/index.js';
+import { createState, stepFrame } from '../sim/index.js';
 import {
   ITEMS, useItem, freshInventory, INVENTORY_SIZE, applyHeal,
 } from '../sim/items.js';
-import { PARTY } from '../sim/damage.js';
+import { PARTY, scrDead } from '../sim/damage.js';
+import { buildPracticeScene } from '../sim/scenes/practice.js';
 import { stepMenu, openMenu, createMenu, bagOf, BUTTONS } from '../sim/menu.js';
 import { MAX_TENSION } from '../sim/tension.js';
 
@@ -198,10 +199,90 @@ if (s.inventory.length !== n0 - 1) failures.push('a used item stayed in the bag'
   }
 }
 
+// ---- A CANCELLED ITEM MUST NOT FIRE ----------------------------------------
+//
+// Kris picks a ReviveMint for a fallen Ralsei, Susie backs out (X), Kris
+// DEFENDs instead — and the mint used to resolve anyway, for free, with both
+// of them defending for TP ("lets you revive Ralsei while still defending",
+// reported from play). scr_prevhero undoes a choice with
+// `global.charaction[global.charturn] = 0` and that is enough in the game,
+// because obj_attackpress collects its casters BY charaction; this sim's
+// resolver iterates the pending queues instead, so prevHero has to clear
+// state.pendingItem[c] alongside the action — and before e024644 it restored
+// the bag, zeroed charaction and left the effect queued. verify-spells guards
+// the same leak for a cancelled SPELL only; this is the item half, in the
+// shape of that block and of repro-C9.
+//
+// NOT keepAlive: under it sim/index.js scr_revives all three every frame,
+// which would stand Ralsei back up and hide the whole thing.
+{
+  const REVIVE_MINT = 2;
+  const mints = (st) => st.inventory.filter((i) => i === REVIVE_MINT).length;
+  const button = (want, c) => BUTTONS.findIndex(
+    (b) => (typeof b.name === 'function' ? b.name(c) : b.name) === want,
+  );
+  const run = (label, script) => {
+    const st = createState({ seed: 3 });
+    buildPracticeScene(st, { seed: 3 });
+    let g = 0;
+    while (!st.menu?.open && g++ < 3000) stepFrame(st, {});
+    if (!st.menu?.open) { failures.push(`${label}: the fight never opened its menu`); return null; }
+    // Ralsei down the way the game does it — the five globals, plus the HP.
+    st.partyHp[2] = -30;
+    scrDead(st, 2);
+    const tap = (key) => { stepFrame(st, { [key]: true }); for (let i = 0; i < 3; i++) stepFrame(st, {}); };
+    const before = mints(st);
+    script(st, tap);
+    if (st.menu.open) { failures.push(`${label}: the menu stayed open after the last character acted`); return null; }
+    // obj_attackpress fires items at maxdelaytimer 10; forty frames is past
+    // that and short of any bullet that could move the number.
+    for (let i = 0; i < 40 && !st.menu.open; i++) stepFrame(st, {});
+    return { st, before, after: mints(st) };
+  };
+  const pickMint = (st, tap) => {
+    st.menu.selected[0] = button('ITEM', 0);
+    tap('confirm');
+    const slot = bagOf(st).indexOf(REVIVE_MINT);
+    st.menu.gridIndex = slot;
+    st.menu.itemIndex = slot;
+    tap('confirm');            // -> the target picker
+    tap('down'); tap('down');  // Ralsei
+    tap('confirm');            // -> Susie's turn
+  };
+
+  // The exploit as reported.
+  const a = run('cancelled mint', (st, tap) => {
+    pickMint(st, tap);
+    if (!st.pendingItem?.[0]) failures.push('choosing the mint should queue it for the resolve phase');
+    tap('cancel');             // Susie X -> scr_prevhero -> back to Kris
+    if (st.menu.charturn !== 0) failures.push(`X should hand the turn back to Kris, got charturn ${st.menu.charturn}`);
+    if (st.pendingItem?.[0]) failures.push('cancel left the item QUEUED — it will fire for free');
+    st.menu.selected[0] = button('DEFEND', 0); tap('confirm');
+    st.menu.selected[1] = button('DEFEND', 1); tap('confirm'); // Ralsei is down: the turn ends
+  });
+  if (a) {
+    if (a.st.partyHp[2] !== -30) failures.push(`the cancelled ReviveMint revived Ralsei (hp ${a.st.partyHp[2]})`);
+    if (a.st.chardead?.[2] !== 1) failures.push('the cancelled ReviveMint stood Ralsei up');
+    if (a.after !== a.before) failures.push(`the cancelled ReviveMint was consumed (${a.before} -> ${a.after})`);
+  }
+
+  // The control: no cancel, and the mint must land and be spent — or the
+  // block above passes because nothing fires at all.
+  const c = run('control mint', (st, tap) => {
+    pickMint(st, tap);
+    st.menu.selected[1] = button('DEFEND', 1); tap('confirm');
+  });
+  if (c) {
+    if (c.st.partyHp[2] <= 0) failures.push(`the control's ReviveMint did not revive Ralsei (hp ${c.st.partyHp[2]})`);
+    if (c.after !== c.before - 1) failures.push(`the control's ReviveMint was not consumed (${c.before} -> ${c.after})`);
+  }
+}
+
 console.log(`bag: ${Object.entries(count).map(([k, v]) => `${k} x${v}`).join(', ')}`);
 console.log('Spincake 150 all · ExecBuffet 100 all · DeluxeDinner 140 one');
 console.log('ReviveMint -> full · ReviveDust -> quarter max · TensionMax fills TP');
 console.log('heals reach the FALLEN; crossing zero floors at ceil(maxhp/6)');
+console.log('a cancelled ReviveMint stays in the bag and revives nobody; the control fires');
 
 if (failures.length) {
   console.log('');

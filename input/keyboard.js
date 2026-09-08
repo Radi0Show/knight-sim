@@ -42,6 +42,17 @@ const KEYMAP = {
   Enter: ['confirm'],
   // Not a game binding either, kept because a keyboard without X is a real
   // thing and being unable to back out of a menu is worse than an extra key.
+  //
+  // INSIDE A RUN THE DRIVER TAKES ESCAPE FIRST. web/main.js binds a raw
+  // keydown for Escape that EXITS the run to the title (there was no way to
+  // leave ENDLESS, HITLESS or SINGLE short of reloading the page). This
+  // binder still latches `cancel` on that same keydown — it registers before
+  // the driver's listener — but the exit's reset() calls maskHeldInput(),
+  // which drains the latch and masks the still-held key, so the title never
+  // sees the press as a cancel. On the title itself the exit is a no-op and
+  // Escape backs out of settings pages exactly as before. Measured: with the
+  // binder registered first the title sees cancel on 0 of the following
+  // frames; with the order flipped it would see 3 (repro-C4-review).
   Escape: ['cancel'],
   // button 3, which `global.flag[13] == 1` gives the third character on the
   // attack bar. Unused at flag 13 == 0 (the default, one button).

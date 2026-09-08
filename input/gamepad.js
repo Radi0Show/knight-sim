@@ -15,8 +15,9 @@
 //                                button, two jobs; see input/keyboard.js)
 //   buttons 2/3 (X/Y, square/triangle)  button 3     (keyboard C)
 //   shoulders 4/5                SLOW only           (the Shift alias)
-//   button 9 (start)             pause  — a DRIVER key, not sim input
-//   button 8 (select/back)       reset  — likewise
+//   button 9 (start)             exit   — a DRIVER key, not sim input: leaves
+//                                the run for the title (keyboard Escape)
+//   button 8 (select/back)       reset  — likewise (keyboard R)
 //
 // The stick threshold is 0.5: menus and dodging both want a digital read,
 // and a low threshold turns stick drift into a cursor that walks by itself.
@@ -62,7 +63,14 @@ export function bindGamepad() {
       return createInput(over);
     },
 
-    /** Rising edges for the driver keys (start -> pause, select -> reset). */
+    /**
+     * Rising edges for the driver keys (start -> exit, select -> reset).
+     *
+     * `exit` was `pause` — computed every frame and read by nothing since the
+     * debug pause went. Start now does what Escape does: leave the run.
+     * Edge-gated, so a held Start exits once, exactly like the `!e.repeat`
+     * guard on the keyboard handler it mirrors.
+     */
     driverEdges() {
       let start = false;
       let select = false;
@@ -70,7 +78,7 @@ export function bindGamepad() {
         if (p.buttons?.[9]?.pressed) start = true;
         if (p.buttons?.[8]?.pressed) select = true;
       }
-      const edges = { pause: start && !startWas, reset: select && !selectWas };
+      const edges = { exit: start && !startWas, reset: select && !selectWas };
       startWas = start;
       selectWas = select;
       return edges;

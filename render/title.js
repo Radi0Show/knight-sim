@@ -15,7 +15,7 @@ import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { VERSION } from '../web/version.js';
 import {
   MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER, GEAR_PAGES,
-  pocketOf, previewStats,
+  pocketOf, previewStats, wornBy,
 } from '../sim/modes.js';
 import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
@@ -158,9 +158,20 @@ export function drawTitle(ctx, title, sprites, attacks) {
     }
   }
 
+  // WASD has always been in the binder (input/keyboard.js); the hint just
+  // never said so, and it was asked for as if it were missing. Moved up 8px
+  // from 448 to make room for the line under it.
   centred(ctx, font, title.pickingAttack
     ? 'Z  choose      X  back'
-    : 'arrows  move      Z  choose', 448, DIM, 0.75);
+    : 'arrows / WASD  move      Z  choose', 440, DIM, 0.75);
+
+  // THE WAY OUT, and that there is one. R restarts; Escape, a pad's Start
+  // or a HELD touch R (a tap restarts) leave a run for this screen — and
+  // none of that is discoverable by pressing things mid-dodge, which is how
+  // three people asked for an exit that was not there. Same row and size
+  // as the version number, so it reads as the screen's small print.
+  centred(ctx, font, 'R  restart      ESC / START  exit      touch: hold R  exit',
+    462, DIM, 0.6);
 
   // The build number, bottom-left. Small and dim: it is for bug reports
   // ("which version are you on?"), not decoration — the replay-token
@@ -357,6 +368,11 @@ function drawSettings(ctx, title, sprites, font) {
     const rows = [
       { name: 'SCREEN SIZE', value: title.scaling === 'fit' ? 'FULL' : 'SMALL' },
       { name: 'SCREEN SHAKE', value: title.shake ? 'ON' : 'OFF' },
+      // The on-screen Z/X layout (sim/modes.js `swapZX`), shown as the order
+      // the two buttons sit in. Drawn on every device — the page has no way
+      // to know about the pointer and a row that vanished would be stranger
+      // than one that does nothing on a desktop.
+      { name: 'TOUCH BUTTONS', value: title.swapZX ? 'X / Z' : 'Z / X' },
     ];
     for (let i = 0; i < rows.length; i++) {
       const y = 190 + i * 60;
@@ -461,13 +477,27 @@ function drawSettings(ctx, title, sprites, font) {
       const name = id === 0 ? '(Nothing)' : table[id]?.name ?? '?';
       const ok = id === 0 || canEquip(kind, id, eq.char);
       if (on && heart) drawSpriteExt(ctx, heart, 0, 370 + bob, y + 4, 1, 1, 0, null, 1);
-      // `min(1, 200 / width)` — the item menu's squeeze, never a clip.
+      // WHO HAS IT ON, as DIM initials right of the name — K, S, R for the
+      // three slots. Worn pieces used to leave the list entirely (the "take
+      // out already equipped items" request), which also made the
+      // ShadowMantle vanish for everyone; the list is whole again and says
+      // who wears what instead, so a second LodeStone reads as a choice.
+      // Right-aligned inside the box; the name yields to it.
+      const tag = wornBy(kind, id, title.gear).map((c) => 'KSR'[c]).join(' ');
+      const tagW = tag ? textWidth(font, tag) * 0.7 : 0;
+      const tagX = 612 - tagW;
+      // `min(1, 200 / width)` — the item menu's squeeze, never a clip; the
+      // room is what is left before the tag.
       const w = textWidth(font, name) * 0.85;
-      const squeeze = Math.min(1, 200 / w);
+      const room = tag ? Math.min(200, tagX - 8 - 400) : 200;
+      const squeeze = Math.min(1, room / w);
       drawText(ctx, font, name, 400, y, {
         color: rgb(on ? HILITE : (ok ? c_white : DIM)),
         xscale: 0.85 * squeeze, yscale: 0.85,
       });
+      if (tag) {
+        drawText(ctx, font, tag, tagX, y + 2, { color: rgb(DIM), xscale: 0.7, yscale: 0.7 });
+      }
     }
     // The selected piece's stats, under the list.
     const selId = pocket[eq.pocket];
