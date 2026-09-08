@@ -142,18 +142,34 @@ export const BATTLEBG_MASK = build(raw.battlebg);
  *     south 214   (row-17 pixel: 231 free, 232 blocked)
  *     north 109   (row-2 pixel: 111 free, 110 blocked)
  *
- * Six inequalities, and under the calibrated floor-sampling model they all
- * select a border ONE SOURCE PIXEL THINNER than the stored mask — free
- * interior [3..71] — while the stored [4..70] misses east by a pixel in one
- * direction and north by a pixel in the other, and no alternative sampling
- * (round, ceil, pixel-centre, interval overlap, nearest-neighbour
- * pre-rasterisation — all tried) reconciles the stored mask with the
- * measurements. So the EFFECTIVE mask ships, with the deviation recorded:
- * fitted at scale 2.24 x 1.76 only; the corners are unmeasured (drawn square
- * here, rounded in the stored data); the sword tunnel's snapped 2.9866...
- * box will exercise it at a second scale and the whole-fight diff will say
- * if the fit holds. Default scale-2 boxes keep spr_battlebg_0's mask, whose
- * [2..72] interior is T3-verified — this entry does not touch them.
+ * THAT DEVIATION IS RETIRED, AND THIS MASK IS NOW UNUSED. The six
+ * inequalities above were fitted with the wrong SOUL: they assumed the heart
+ * shape's [2..17] bbox where the fight's soul is the spr_dodgeheart 20x20
+ * rect ([0..19]) — see HEART_RECT. Re-derived with the true rect, every one
+ * of them lands on the STORED spr_battlebg_0 ring's [2..72], so
+ * sim/battlebox.js gives custom boxes `BATTLEBG_MASK` and nothing reads this
+ * entry. It is kept because it is the sprite the GML names, and because the
+ * measurement below is worth being able to repeat.
+ *
+ * A FOURTH SCALE CONFIRMS IT. The kaizo tok3 recording's crescent turn runs a
+ * narrow tall arena — gt (148, 170), snapped scale 0.8 x 2.0, frames
+ * 368..656 — and the soul rests at x 120 (81 frames) and 156 (147), y 100
+ * (77) and 222 (113). Walking the soul out from the box centre:
+ *
+ *     stored  [2..72]   W 120   N 100   S 222   E 157
+ *     stretch [3..71]   W 121   N 102   S 220   E 157
+ *
+ * Three of the four recorded rests are wall rests and the stored ring hits
+ * all three exactly, while this sprite's own [3..71] misses each by one
+ * source pixel in the tightening direction. (East is not a wall rest at this
+ * scale: the box's End Step clamp, `rborder - 22` = 156, is tighter than
+ * either mask's 157, so both agree there and it discriminates nothing.) The
+ * same walk at the Stars box reproduces the three rests quoted above —
+ * E 381 / N 109 / S 214 under the stored ring, 379 / 111 / 212 under this
+ * one. Two scales, six discriminating rests, one answer.
+ *
+ * Still unmeasured either way: the CORNERS (square in the stored ring,
+ * rounded in this sprite's data). No rest on record touches one.
  */
 export const BATTLEBG_STRETCH_HITBOX_MASK = build(raw.battlebgStretchHitbox);
 /**
@@ -731,8 +747,53 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   // between the two — the suites all pass either way — because a bullet
   // crossing at several px/frame rarely puts the marginal pixel inside the
   // [.5, 1) fraction window on the exact touching frame.
-  const px = Math.round(bx);
-  const py = Math.round(by);
+  //
+  // ...FOR THE UNROTATED PATH ONLY. A ROTATED B keeps its RAW position.
+  // Six exact-pose receipts, two recordings, both precise-A (the mod's
+  // spr_dodgeheart_smaller_2px_mask) x rotated precise-B, measured 2026-09-02:
+  //
+  //   _tok3 f2252     fan  (spr_diamondbullet_form) at (324.1668, 111.9299)
+  //                   angle 58.75 vs soul (324, 96): the game MISSES (hits f2253)
+  //   _tok3 f2343     fan at (361.44, 240.5539) angle 152.5 vs (342, 226): HITS
+  //   _probeall f860  obj_sword_vortex at (246.8093, 191.4039) angle -253.699
+  //                   vs (246, 180): MISSES
+  //   _probeall f861  sword at (245.8415, 184.2041) angle -259.157 vs (246, 184): HITS
+  //   _probeall f921  sword at (383.6642, 214.2169) angle -484.781 vs (376, 218): MISSES
+  //   _probeall f922  sword at (379.7919, 220.5237) angle -490.198 vs (376, 214): HITS
+  //
+  // ROUND (the unrotated rule) gets f2343 and f921 wrong; FLOOR gets f2252 and
+  // f861 wrong (each moved the byte gate the wrong way: _tok3 f2343 -> f2252,
+  // the probe fight f921 -> f861). A search over position quantiser x inverse
+  // map x sample point x bbox rule x trig (704 combinations, scratch
+  // pFit-rotated.mjs) leaves two families at 6/6: RAW position with corner
+  // sampling and a floor inverse -- this routine's own sampling with the
+  // quantiser removed -- or round + centre sampling, which is the same
+  // geometry shifted by half a pixel. Raw is the convention masksOverlapRectA
+  // already measured for rotated B (30,976 place_meeting points), so the
+  // rule unifies: a ROTATED mask is never quantised, on either A kind; the
+  // unrotated precise path rounds (verify21j f9093). Bbox pre-check and trig
+  // flavour do not discriminate on these six.
+  // TEN RECEIPTS (2026-09-02, final): the six above, the _probeall tunnel
+  // swords f1736 MISS ((381, 230) angle 90, yscale 0.7725 vs soul (352, 178))
+  // and f1737 HIT ((356, 230) angle 90, yscale 0.8203 vs (352, 174)), and the
+  // _tok3 Rising Abyss fans f2204 MISS ((375.122, 211.9025) angle 58.75 vs
+  // (376, 206)) and f2205 HIT ((377.197, 208.4829) vs (376, 202)). Of 704
+  // combinations (position quantiser x inverse map x sample point x bbox
+  // rule x trig) exactly one family scores 10/10: RAW position, CORNER
+  // sampling, and an inverse map that hands an EXACT cell boundary to the
+  // lower cell -- ceil(v) - 1, which is floor(v) everywhere except on
+  // integers. That boundary case is the tunnel blade: at angle 90 from an
+  // integer position its top edge maps to u = 94.0 exactly, one past the last
+  // ink column under floor and ON it under ceil - 1. The runners-up: round +
+  // corner + floor (the unrotated rule) 7/10; raw + corner + floor 9/10
+  // (misses f1737); round + centre 9/10 (misses f2205, which cost the trace
+  // gate f2591 -> f2205 for one chain). Position conventions per path are
+  // now: rect-A x rotated-B raw (masksOverlapRectA), precise-A x unrotated-B
+  // round + corner + floor, precise-A x rotated-B raw + corner + ceil-1.
+  const rotated = ((bangle % 360) + 360) % 360 !== 0;
+  const px = rotated ? bx : Math.round(bx);
+  const py = rotated ? by : Math.round(by);
+  const invMap = rotated ? (v) => Math.ceil(v) - 1 : Math.floor;
   const [al, at, ar, ab] = maskA.bbox;
   const [bl, bt, br, bb] = maskB.bbox;
 
@@ -798,9 +859,9 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
       const u = dx * cos - dy * sin;
       const v = dx * sin + dy * cos;
 
-      const sx = Math.floor(u / bsx + maskB.originX);
+      const sx = invMap(u / bsx + maskB.originX);
       if (sx < 0 || sx >= maskB.w) continue;
-      const sy = Math.floor(v / bsy + maskB.originY);
+      const sy = invMap(v / bsy + maskB.originY);
       if (sy < 0 || sy >= maskB.h) continue;
 
       if (maskB.px[sy][sx]) return true;

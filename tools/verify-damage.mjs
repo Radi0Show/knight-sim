@@ -29,6 +29,7 @@ import { createState, stepFrame } from '../sim/index.js';
 import { buildSingleAttackScene } from '../sim/scenes/single.js';
 import { ATTACK_MENU } from '../sim/scenes/single.js';
 import { collidebulletOther15 } from '../sim/bullets/regularbullet.js';
+import { knightCrescent } from '../sim/attacks/swordslash.js';
 import { scrDamageCalculation } from '../sim/damage.js';
 
 // scr_bullet_init's value. Not a magic number — the whole point of the check.
@@ -60,6 +61,33 @@ const EXPECTED = new Map([
   // number here would be inventing one the dump does not contain.
   ['obj_bullet_stream_diamond', PLACEHOLDER],
 ]);
+
+// ── THE ONE LITERAL THIS FILE PINS EXACTLY ────────────────────────────────
+//
+// The loop below answers "is this bullet still holding scr_bullet_init's 10?".
+// 206 and 153 pass that identically, so a bullet running the WRONG FIGHT's
+// damage was invisible here — the same shape as the two wiki rows CLAUDE.md
+// retracted, where --keep-alive made damage TAKEN uncomparable.
+// kaizo/attacks/crescent-slash.js now carries the mod's `damage = 153`
+// (gml_Object_obj_bullet_knightcrescent_Create_0.gml:2 in the kaizo dump);
+// this is the vanilla side of that delta, and it is what stops a later pass
+// from "unifying" the two copies onto one number.
+//
+// Asserted through a DIRECT Create rather than the scene loop because the
+// SINGLE-mode swordslash bench runs at the Knight's Create-time
+// damagereduction of 0.04, so its crescents take the `damage = 50` branch and
+// the 206 never reaches the loop. That is faithful, and the loop prints it.
+{
+  const probe = {};
+  knightCrescent.create(probe, { knight: { damagereduction: 0.2 }, entities: [] });
+  if (probe.damage !== 206) {
+    console.log(`  FAIL sim/attacks/swordslash.js knightCrescent: damage=${probe.damage},`
+      + ' the v1.03 dump says 206 (obj_bullet_knightcrescent Create_0:2).'
+      + ' The mod\'s 153 belongs in kaizo/attacks/crescent-slash.js and nowhere else.');
+    process.exit(1);
+  }
+  console.log('  ok   sim/attacks/swordslash.js knightCrescent: damage=206 (the vanilla literal)');
+}
 
 function damagingEntities(state) {
   const out = [];

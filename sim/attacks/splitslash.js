@@ -36,9 +36,30 @@
 // modelling them is closer to the real thing than skipping them. The oracle
 // scene replays recorded values and is unaffected either way.
 //
-// STILL NOT TRANSLATED: the slashmarker dark marker and the black->red
-// merge_color tint. The telegraph itself IS drawn (render/canvas.js) from
-// this object's `timer`, `flip` and `angleoffset`.
+// THE SLASHMARKER IS MODELLED (2026-08-29). It used to be listed here as a
+// deliberate visual-only omission, together with the black->red merge_color
+// tint; the kaizo recording turned the omission into a NUMBER and the decision
+// was re-taken with that number in view.
+//
+//   MEASURED (knight-research/kaizo-mod/oracle/traces/kaizo_oracle_seq_deep.csv,
+//   grouped by kaizo_playing): obj_marker counts per turn are 10 / 12 / 10 for
+//   atk_Splitter1 / 2 / 3. The organism's two flame markers are two of them;
+//   the other 8 / 10 / 8 are exactly one per obj_roaringknight_splitslash. The
+//   recording logs each slashmarker ONE FRAME after its slash — the frame the
+//   slash's own first Step runs the `!init` block — at the slash's own (x, y),
+//   at image_xscale/yscale 2, carrying the slash's image_angle (0 horizontal,
+//   90 / 270 vertical, 45 / 315 diagonal: the f32-narrow-then-wrap of -90/-45).
+//
+// It is in the VANILLA GML, unchanged by the mod: Step_0 line 7 here and line 7
+// of the kaizo dump are the same `scr_dark_marker(x, y, spr_rk_quickslash_upper)`
+// call, so it belongs in this module and not only in the kaizo copy. It costs
+// NO RNG (see scrDarkMarker below), so the shared stream is unmoved.
+//
+// The black->red merge_color tint comes with it, because the per-frame sync
+// (Step_0 40-51) copies `image_blend` onto the marker — leaving the tint out
+// would have made that line propagate `undefined`. The telegraph BAR is still
+// drawn by render/canvas.js from this object's `timer`, `flip` and
+// `angleoffset`; the tint is instance state, not a draw local.
 //
 // ORIGINAL BUG preserved: `slice_delay = 5` is assigned in Create and read
 // nowhere in the entire dump. The delay that actually governs the cut is the
@@ -46,7 +67,10 @@
 
 import { spawn, destroy } from '../entity.js';
 import { scrDamageMaxhp } from '../damage.js';
-import { clamp01, lerp, lengthdirX, lengthdirY, scrEaseOut, sign } from '../gml.js';
+import {
+  clamp01, lerp, lengthdirX, lengthdirY, scrEaseOut, sign,
+  mergeColor, BLACK, RED, WHITE,
+} from '../gml.js';
 import { scrBulletInit, scrBulletInherit } from '../bullets/regularbullet.js';
 import { QUICKSLASH_SHAPE, scrPreciseHitRotatedRect } from '../masks.js';
 import { splitGrowtangle } from './split-growtangle.js';
@@ -70,6 +94,61 @@ function box(state) {
   return state.entities.find((e) => e.alive && e.type.name === 'obj_growtangle');
 }
 
+/**
+ * `obj_marker` — the game's GENERIC one-shot sprite stamp, not anything
+ * knight-specific. It is used all over DELTARUNE.
+ *
+ * IT HAS NO CODE ENTRIES ANYWHERE IN THE DUMP. A whole-dump listing of
+ * `gml_Object_obj_marker_*` returns only the DERIVED variants (`_jitter`,
+ * `_wobble`, `_animateOnce`, `_blendmode`, `_palette`); the base object has no
+ * Create, no Step, no Draw. So it is inert: nothing steps it, nothing draws
+ * itself with RNG in it, and creating one CONSUMES NO DRAWS. That matters more
+ * than the visual — a create that burned a draw would shift every stream
+ * position after it (CLAUDE.md, "A visual's draws are still draws").
+ *
+ * Everything it does here is done TO it by obj_roaringknight_splitslash: it is
+ * positioned, rotated, tinted and faded from the slash's Step and deleted with
+ * the slash (CleanUp_0 `safe_delete(slashmarker)`).
+ */
+export const slashMarker = {
+  name: 'obj_marker',
+};
+
+/**
+ * `scr_dark_marker(x, y, sprite)`, line for line
+ * (gml_GlobalScript_scr_dark_marker.gml):
+ *
+ *     thismarker = instance_create(arg0, arg1, obj_marker);
+ *     with (thismarker) { sprite_index = arg2; image_speed = 0;
+ *                         image_xscale = 2; image_yscale = 2; }
+ *     return thismarker;
+ *
+ * The "dark" in the name is the DOUBLE SCALE — `scr_marker` is the same script
+ * without the two scale lines. The recording confirms the 2 x 2 on every
+ * slashmarker row.
+ */
+export function scrDarkMarker(state, x, y, sprite) {
+  const m = spawn(state, slashMarker, { x, y });
+  m.sprite_index = sprite;
+  m.image_speed = 0;
+  m.image_xscale = 2;
+  m.image_yscale = 2;
+  return m;
+}
+
+/**
+ * `obj_growtangle.depth + N`. The box's own depth lives in the OBJECT
+ * DEFINITION, not in any event, so no grep of the code dump can find it —
+ * CLAUDE.md, "The OBJECT DEFINITION holds more than the sprite", where the same
+ * hole turned this organism's `depth + 10` into NaN. Falling back to 0 keeps
+ * the RELATIVE order the code states, which is the part the dump gives us;
+ * split-growtangle.js's baseDepth() does exactly this for the flame markers.
+ */
+function boxDepth(state) {
+  const gt = box(state);
+  return gt && typeof gt.depth === 'number' ? gt.depth : 0;
+}
+
 export const splitslash = {
   name: 'obj_roaringknight_splitslash',
 
@@ -82,6 +161,9 @@ export const splitslash = {
     e.slash = false;
     e.destroyonhit = false;
     e.thickness = 10;
+    // Create l.9 `image_blend = c_black` — the FLOOR of the telegraph ramp in
+    // Step, and the value the slashmarker's sync copies before the cut.
+    e.image_blend = BLACK;
     e.xdir = 0;
     e.ydir = 0;
     e.xdraw = 250;
@@ -103,6 +185,9 @@ export const splitslash = {
     e.yoffset = 0;
     e.angleoffset = 0;
     e.difficulty = 0;
+    // Create l.24 `slashmarker = -4` — GML's `noone`. Replaced on the first
+    // Step by the scr_dark_marker call below; nothing reads it before then.
+    e.slashmarker = null;
     e.slice_delay = 5; // ORIGINAL BUG: never read anywhere
     e.hurt_delay = 15;
     e.diagonal = false;
@@ -118,6 +203,26 @@ export const splitslash = {
 
     if (!e.init) {
       e.init = true;
+
+      // Step_0 7-10, in the GML's own order and BEFORE the angleoffset draw:
+      //
+      //     slashmarker = scr_dark_marker(x, y, spr_rk_quickslash_upper);
+      //     slashmarker.depth = obj_growtangle.depth + 50;
+      //     slashmarker.image_speed = 0;
+      //     slashmarker.image_alpha = 0;
+      //
+      // AT THE SLASH'S OWN (x, y) — this is not the organism's marker and it is
+      // not at the box centre by construction, it is at the centre because the
+      // slash is dropped there. The recording separates the three markers a
+      // turn makes by position (the organism's flames are at its own
+      // (x + 2, y - 1) and (x, y + 2)), so a marker parked anywhere else would
+      // be counted as the wrong thing.
+      //
+      // Consumes no RNG, so it can sit here without moving the stream.
+      e.slashmarker = scrDarkMarker(state, e.x, e.y, 'spr_rk_quickslash_upper');
+      e.slashmarker.depth = boxDepth(state) + 50;
+      e.slashmarker.image_speed = 0;
+      e.slashmarker.image_alpha = 0;
 
       const rec = state.slashParams ? state.slashParams[state.slashIndex++] : null;
       e.angleoffset = rec ? rec.angleoffset : gmlRandomRange(state.gmlRng, -12, 12);
@@ -140,6 +245,37 @@ export const splitslash = {
         // direction and NO image_angle, so both stay 0.
         e.yoffset = rec ? rec.yoffset : gmlRandomRange(state.gmlRng, -8, 8) * 2;
       }
+
+      // Step_0 30, the LAST line of the init block: the marker takes the angle
+      // the branch above just assigned — 0 for a horizontal cut, +-90 for a
+      // vertical one, +-45 for a diagonal. Set ONCE and never again: the
+      // `image_angle += angleoffset` tilt at timer 30 is NOT propagated, so the
+      // marker keeps the untilted heading for its whole life. The recording
+      // agrees — its slashmarker rows carry 0 / 45 / 90 / 270 / 315 exactly
+      // (270 and 315 being -90 and -45 narrowed to f32 and then wrapped).
+      e.slashmarker.image_angle = e.image_angle;
+    }
+
+    // Step_0 36-39: the telegraph charges black -> red over 20 frames. Carried
+    // now because the sync below copies it onto the marker. (The
+    // `image_alpha < 1 && !slash` ramp above it in the GML is dead — Create
+    // pins image_alpha to 1 — so it is still not carried.)
+    if (!e.slash) {
+      e.image_blend = mergeColor(BLACK, RED, clamp01(e.timer / 20));
+    }
+
+    // Step_0 40-51: the marker is a PASSIVE COPY of the slash. Hidden while the
+    // telegraph charges, then locked onto the slash's position, animation frame,
+    // tint and alpha for the four frames of the cut — it is the UPPER half of
+    // the slash sprite, drawn above the arena at growtangle.depth + 50.
+    if (!e.slash) {
+      e.slashmarker.image_alpha = 0;
+    } else {
+      e.slashmarker.x = e.x;
+      e.slashmarker.y = e.y;
+      e.slashmarker.image_index = e.image_index;
+      e.slashmarker.image_blend = e.image_blend;
+      e.slashmarker.image_alpha = e.image_alpha;
     }
 
     if (e.timer <= 15) {
@@ -153,6 +289,10 @@ export const splitslash = {
       e.image_angle += e.angleoffset;
       e.x += e.xoffset;
       e.y += e.yoffset;
+      // Step_0 74: the cut itself is WHITE — the red is the warning, not the
+      // blade. It is the line that ends the telegraph ramp, and the sync above
+      // hands it to the slashmarker on the next step.
+      e.image_blend = WHITE;
       e.active = true;
       e.slash = true;
 
@@ -251,6 +391,12 @@ export const splitslash = {
     // Animation End. spr_rk_quickslash is 4 frames at image_speed 1, started
     // at timer 30, so it wraps on timer 34.
     if (e.slash && e.timer >= 34 && !e.playerstrike) {
+      // CleanUp_0 is one line — `safe_delete(slashmarker)` — and this engine has
+      // no CleanUp hook, so it is carried at each site that destroys the slash.
+      // Without it the marker outlives its slash holding image_alpha 1 and the
+      // cut's last animation frame, and the arena keeps a frozen slash on it
+      // until the end-of-turn sweep.
+      if (e.slashmarker) destroy(e.slashmarker);
       destroy(e);
       return;
     }
@@ -279,6 +425,8 @@ export const splitslash = {
       // post-decrement the trace shows (11 at f1094, not 12) comes from the
       // soul's inv decrement living in the motion phase — see sim/soul.js.
       state.invTimer = state.invc * 30;
+      // CleanUp_0: `safe_delete(slashmarker)` — see the other destroy site.
+      if (e.slashmarker) destroy(e.slashmarker);
       destroy(e);
     }
   },

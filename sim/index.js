@@ -298,7 +298,18 @@ function runCollisions(state) {
 
   for (const pass of ['old', 'new']) {
     const want = pass === 'old' ? (b) => !bornNow(b) : bornNow;
-    for (const b of [...state.entities].sort((a, z) => a.seq - z.seq)) {
+    // NEWEST INSTANCE FIRST within a pass. MEASURED: the recorder's graze log
+    // (obj_grazebox's collision event, one row per firing) lists a frame's
+    // contacts in DESCENDING instance order -- kaizo _tok3 f884: sword 112609,
+    // blade 112600, blade 112576 -- and obj_heart's collision event is the
+    // same mechanism: the newest bullet, the sword, dealt that frame's hit and
+    // the blades' events then saw global.inv already at 12. Iterating oldest
+    // first handed the hit to a blade -- a target-4 bullet, one extra
+    // scr_randomtarget_old draw -- and desynced the stream from there. The
+    // same newest-first rule already holds for with() and the step phase
+    // (sim/entity.js, STATUS.md "with iterates newest first"). Vanilla
+    // whole-fight: unchanged (60/60) either way; kaizo byte gate: f900 -> f1142.
+    for (const b of [...state.entities].sort((a, z) => z.seq - a.seq)) {
       if (!want(b)) continue;
       if (!b.alive || !b.isBullet || !b.type.other15) continue;
     if (b.maskOff) continue; // mask_index = spr_nomask
@@ -325,6 +336,16 @@ function runCollisions(state) {
         continue;
       }
       state.counters.collisionChecks += 1;
+    }
+    // KNIGHT_PAIR_DEBUG=obj_x KNIGHT_PAIR_FRAMES=a-b prints the pair test's exact
+    // inputs (both masks, positions, angle, scales) and its answer for one
+    // bullet type -- the sim-side mirror of a recording's hit for the offline
+    // reproduction in sim/masks.js (the f921/f2343 receipts). Env-gated and
+    // guarded like KNIGHT_HIT_DEBUG below; the browser build never sees it.
+    // one bullet type -- KNIGHT_PAIR_DEBUG=obj_x, frames a-b via KNIGHT_PAIR_FRAMES.
+    if (typeof process !== 'undefined' && process.env?.KNIGHT_PAIR_DEBUG && b.type.name === process.env.KNIGHT_PAIR_DEBUG) {
+      const [pa, pb] = (process.env.KNIGHT_PAIR_FRAMES ?? '0-0').split('-').map(Number);
+      if (state.frame >= pa && state.frame <= pb) console.error(`[pair] f=${state.frame} ${b.type.name} seq=${b.seq} b=(${b.x}, ${b.y}) a=${b.image_angle} xs=${b.image_xscale} ys=${b.image_yscale} sprite=${b.sprite_index} maskOff=${b.maskOff} heart=(${heart.x}, ${heart.y}) heartMask=${heart.mask?.name ?? '(default)'} hit=${hit}`);
     }
     if (hit) {
       state.counters.collisionHits += 1;
@@ -441,6 +462,17 @@ export function stepFrame(state, input) {
   runMotion(state);
   runCollisions(state);
   runPhase(state, 'endStep');
+  // THE DRAW SLOT. GameMaker runs every Draw event after every End Step, and
+  // some objects do STATE work in Draw that everything else reads a frame
+  // later: obj_knight_enemy's bob (`siner2++; y = ystart + cos(siner2/8)*8`,
+  // Draw_0:1-4) is the one that mattered. With the bob in endStep, an
+  // entity that sorts after the knight there -- the kaizo director -- launched
+  // an attack at the knight's ALREADY-BOBBED y, where the mod's Step created
+  // it at the previous Draw's. Measured (kaizo_oracle_probe f791/f792 against
+  // the sim's launch): the swordfall manager was born 0.5414 px low, and
+  // every sword it made carried that. Types that need Draw-time state
+  // declare `draw(e, state)`; nothing visual happens here.
+  runPhase(state, 'draw');
 
   // THE FRAME'S END SLOT — the dmg writers' draw pass. Their one-shot throw
   // roll must land after every end-step consumer of the same frame (the

@@ -104,19 +104,11 @@ export const knightActor = {
       // `obj_knight_enemy.siner2 = 0` on every one of its frames, and the
       // Draw then ticks it to 1. Incremented during the knight's own step it
       // raced that pin and the bob kept swinging where the game holds it.
-      if (e.visible !== false
-        && !state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2')) {
-        e.siner2 += 1;
-      }
-      const drawRuns = kb
-        && e.visible !== false
-        && kb.chargeupcon !== 2
-        && !state.entities.some(
-          (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
-        );
-      if (drawRuns && (kb.animState === 0 || kb.animState === 3)) {
-        e.y = e.ystart + Math.cos(e.siner2 / 8) * 8;
-      }
+      // THE BOB LIVES IN draw() NOW. It is Draw_0 work in the GML (siner2++ and
+      // the y write, lines 1-4), and anything that reads the knight's y during
+      // Step or End Step must see the PREVIOUS Draw's value -- the kaizo
+      // director's launch did not, and every knight-anchored spawn sat
+      // 0.5414 px low. `kb` (the knight's battle record) is re-read there.
     }
     if (state.currentAc !== 0) return;
     if (!state.soul || !state.soul.alive) return;
@@ -140,6 +132,27 @@ export const knightActor = {
     e.aetimer = 0;
     e.ystart = KNIGHT.ystart;
     e.isActor = true;
+  },
+  // obj_knight_enemy Draw_0:1-4 -- the bob. `!i_ex(obj_knight_roaring2) ||
+  // (i_ex(...) && turntimer < 5)` gates siner2++; an invisible instance draws
+  // nothing, so the warp-out windows hold the count (measured: the recording
+  // holds f12-246 and the sim holds the same frames). Runs in the engine's
+  // draw slot, after every End Step: Step/End-Step readers see last frame's y.
+  draw(e, state) {
+    const kb = state.knight;
+    if (e.visible !== false
+      && !state.entities.some((x) => x.alive && x.type.name === 'obj_knight_roaring2')) {
+      e.siner2 += 1;
+    }
+    const drawRuns = kb
+      && e.visible !== false
+      && kb.chargeupcon !== 2
+      && !state.entities.some(
+        (x) => x.alive && x.type.name === 'obj_knight_swordtunnelanim',
+      );
+    if (drawRuns && (kb.animState === 0 || kb.animState === 3)) {
+      e.y = e.ystart + Math.cos(e.siner2 / 8) * 8;
+    }
   },
   step(e, state) {
     const k = state.knight;

@@ -202,10 +202,21 @@ export const rotatingSlash = {
         e.turn_type !== 'start' &&
         e.turn_type !== 'short start' &&
         e.turn_type !== 'short mid';
-      const bullets = state.entities.filter(
-        (x) => x.alive && x.isBullet && x.type.name !== 'obj_heart',
-      ).length;
-      if (closing && bullets < 2) {
+      // `scr_bulletparent_count() < 2` — CORRECTED 2026-08-28. The script
+      // counts instances whose object_index is EXACTLY obj_bulletparent
+      // (`with (obj_bulletparent) if (object_index == obj_bulletparent)`),
+      // and in the knight fight nothing ever creates a bare obj_bulletparent
+      // (the only creators in the whole dump are a Tasque Manager attack and
+      // overworld rain) — so the test is ALWAYS TRUE here, exactly as
+      // underbox.js already documents for its own copy of the same line.
+      // This used to be translated as "alive bullet entities < 2", which is
+      // a DIFFERENT predicate: equivalent in every vanilla scenario (nothing
+      // else is alive when a rotating-slash turn ends), but it deadlocked
+      // the turn the moment a schedule layered the rotating slash over a
+      // long-lived sibling (the kaizo lane's rotating+vortex pairing — the
+      // vortex's six orbiting swords held the count at 6 and the clock at
+      // 999999 forever). Vanilla-neutral by the full trace diff.
+      if (closing) {
         const knight = state.entities.find(
           (x) => x.alive && x.type.name === 'obj_knight_enemy',
         );

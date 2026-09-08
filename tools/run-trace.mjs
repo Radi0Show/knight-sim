@@ -7,6 +7,7 @@
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { createState, stepFrame, traceHeader } from '../sim/index.js';
 import { makeInputTable } from '../input/state.js';
@@ -99,4 +100,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// URL-to-URL entry guard (the string form never matched on Windows; see
+// tools/diff-trace.mjs).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

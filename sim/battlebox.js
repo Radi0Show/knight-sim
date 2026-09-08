@@ -226,21 +226,65 @@ export const battlebox = {
   },
 
   // obj_growtangle End Step: while the box is MOVING (path_speed or speed
-  // nonzero, or megakeep), the heart is clamped to the interior. Static box
-  // (the T3 case) never runs this branch. Translated now, exercised never —
-  // do not trust it until a moving-box attack gets an oracle diff.
+  // nonzero, or megakeep), the heart is clamped to the interior. A static
+  // vanilla box (the T3 case) never runs this branch — `keep` is 0 on every
+  // box the vanilla fight builds — so this whole clamp is KAIZO-ONLY in
+  // practice: kaizo/scenes/kaizo-mod-launcher.js is the only thing that sets
+  // `keep`/`megakeep`, on the mod's narrow ac-0 and ac-101 arenas.
+  //
+  // THE MOD MOVED THE NEAR EDGES IN. `obj_growtangle`'s Step_2 is one of the
+  // kaizo deltas — vanilla vs gml_kaizo_dump, the only four lines that differ
+  // in that entry:
+  //
+  //     vanilla   if (obj_heart.x < (lborder + 5)) obj_heart.x = lborder + 5;
+  //     kaizo     if (obj_heart.x < (lborder + 1)) obj_heart.x = lborder + 1;
+  //     vanilla   if (obj_heart.y < (uborder + 5)) obj_heart.y = uborder + 5;
+  //     kaizo     if (obj_heart.y < (uborder + 1)) obj_heart.y = uborder + 1;
+  //
+  // The `- 22` far edges are UNCHANGED in both. So the mod loosens the west
+  // and north clamps by four pixels and leaves east and south alone.
+  //
+  // Four rests in the tok3 recording's crescent turn settle it, at a box the
+  // fitted six never covered (gt 148,170, scale 0.8 x 2.0 — a narrow tall
+  // arena). Oracle soul_x 120..156, soul_y 100..222 across frames 368..656:
+  //
+  //   west   120  the WALL (stored spr_battlebg_0 ring, free interior
+  //               [2..72]); mod clamp 119 is looser, vanilla clamp 123 is
+  //               TIGHTER and is exactly what the sim was resting on
+  //   east   156  the CLAMP, rborder - 22 = 156.0000004 -> f32 156; the wall
+  //               alone would allow 157
+  //   north  100  the WALL; vanilla's uborder + 5 coincides at 100, which is
+  //               why soul_y stayed bit-identical and hid this for a turn
+  //   south  222  the WALL; the clamp's dborder - 22 = 223 is looser
+  //
+  // Two of the four are decided by the clamp and two by the wall, in both
+  // directions, so the pair is pinned rather than merely consistent — and the
+  // west one is the f488 divergence: oracle 120, sim 123, three pixels.
+  //
+  // The same rests also settle the "effective border one source pixel
+  // thinner" deviation CLAUDE.md still records for custom boxes: it stays
+  // RETIRED. Walked out from this box's centre the stored spr_battlebg_0
+  // ring gives W 120 / N 100 / S 222, the recording's three wall rests
+  // exactly; the stretch sprite's own [3..71] gives 121 / 102 / 220, one
+  // source pixel tighter on each. So the custom box collides as the stored
+  // ring here too, exactly as `e.mask` above already says — a fourth scale,
+  // and the same answer. See BATTLEBG_STRETCH_HITBOX_MASK in sim/masks.js.
   endStep(e, state) {
     if (e.keep === 1) {
       const heart = state.soul;
       if (heart && heart.alive) {
         if (e.path_speed !== 0 || e.speed !== 0 || e.megakeep === 1) {
+          // `state.kaizo` is the mod marker (kaizo/scenes/kaizo-fight.js
+          // stamps it before the scene is built); sim/attacks/combination.js
+          // already reads it the same way. Vanilla keeps its own 5.
+          const near = state.kaizo ? 1 : 5;
           const lborder = e.x - (e.mask.w * e.image_xscale) / 2;
           const rborder = e.x + (e.mask.w * e.image_xscale) / 2;
           const uborder = e.y - (e.mask.h * e.image_yscale) / 2;
           const dborder = e.y + (e.mask.h * e.image_yscale) / 2;
-          if (heart.x < lborder + 5) heart.x = lborder + 5;
+          if (heart.x < lborder + near) heart.x = lborder + near;
           if (heart.x > rborder - 22) heart.x = rborder - 22;
-          if (heart.y < uborder + 5) heart.y = uborder + 5;
+          if (heart.y < uborder + near) heart.y = uborder + near;
           if (heart.y > dborder - 22) heart.y = dborder - 22;
         }
       }

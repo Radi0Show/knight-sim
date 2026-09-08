@@ -13,6 +13,15 @@ oracle/
 # ...except the curated sprite set the browser build ships. CLAUDE.md accepts
 # bundling sprites (free, non-commercial). 96 sprites / 271 frames / ~1.1 MB,
 # only what the fight code references.
+
+# THE PWA ICONS ARE NOT EXTRACTED GAME ART, and the blanket *.png above was
+# silently eating them. web/index.html, web/kaizo.html and
+# web/manifest.webmanifest all reference icon-180/192/512, so without this
+# carve-out the repo ships a manifest pointing at files it does not contain -
+# the install icon and the iOS home-screen icon just 404. They survived only
+# in thedevice's vendored copy until a vendor mirror with --delete removed
+# them from there too.
+!web/icon-*.png
 !assets/sprites/*.png
 # The battle UI draws item and ACT names with a REAL font asset (fnt_mainbig),
 # not the digit-only sprite fonts. Same posture as the sprites: extracted from
@@ -26,6 +35,12 @@ oracle/
 node_modules/
 /build/
 /output/
+
+# The stripped served copy, written by `npm run build:web` (tools/build-web.mjs).
+# Rebuilt from scratch every run and derived entirely from the source tree, so
+# there is nothing here git needs to know about. The SOURCE keeps every comment;
+# only this copy has them removed.
+/_site/
 
 # macOS
 .DS_Store

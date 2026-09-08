@@ -146,9 +146,83 @@ function drawScreenGhost(ctx, e, state, deps) {
   return true;
 }
 
-export async function createRenderer(canvas) {
+/**
+ * THE DRAW OVERRIDE SEAM.
+ *
+ * `createRenderer(canvas, { overrides })` takes an optional map from OBJECT
+ * NAME to a Draw function, `fn(ctx, e, state, helpers)`. The kaizo page
+ * (web/kaizo.js) is the one caller: EnderCat8's mod changed 24 objects' Draw
+ * events, and those translations live under kaizo/render/ where the isolation
+ * contract puts them (kaizo/HANDOFF.md §2 — render/ must not import from
+ * kaizo/, so the mod's Draws are HANDED IN, never looked up).
+ *
+ * WHERE IT IS CONSULTED. The depth-sorted pass picks how to draw an entity by
+ * `e.type.name` in exactly one place — the top of its loop — and an override
+ * for that name runs INSTEAD OF the vanilla DRAW_EVENTS entry (which for
+ * obj_knight_enemy is the knightDrawCalls path, render/knightdraw.js). It has
+ * the same return contract a DRAW_EVENTS handler has: TRUE means "I drew the
+ * object entirely"; FALSY means `draw_self()` still follows — the vanilla
+ * tail runs after it (the cut box's surfaces, the splitslash telegraph, the
+ * generic sprite/mask blit with its frame-seeded split-tooth jitter). That
+ * tail is `drawTail` below, extracted from the loop body verbatim so it can
+ * be shared with `helpers.drawTail` — its code did not change, only its
+ * address.
+ *
+ * WHAT IT CANNOT CHANGE. Depth order: overrides run inside the same sorted
+ * pass at the entity's own depth, and an object whose kaizo Create/Step sets a
+ * different depth has that on its kaizo attack module, not here. Visibility:
+ * an instance with `visible === false` is filtered out BEFORE the loop, so no
+ * override sees it — GameMaker simply does not run a Draw event for an
+ * invisible instance (see knightDrawCalls' first test). The soul, the graze
+ * counter, the party panels, the menu: none is an entity in this loop and
+ * none is overridable.
+ *
+ * THE ONE LATE PASS THAT IS AN OBJECT'S DRAW. `drawHellSurface` — the
+ * boxsplitter's 142x142 additive telegraph, obj_roaringknight_boxsplitter_
+ * attack's Draw_0 — is drawn after the loop ("above the arena, below the
+ * soul"), not at that object's depth. It keeps running exactly as today
+ * whether or not the object is overridden, because a stub that delegates to
+ * the vanilla drawer must render exactly as today — and the pass is keyed on
+ * the PENDING SLASHES, not on the manager being alive (whether a slash's
+ * 30 pending frames can outlast the manager's `local_turntimer < 0` teardown
+ * was not measured, and an override that runs only while its instance is
+ * alive could not restore the pass in that case either way). A port that
+ * draws the surface itself, at the object's real depth, declares that with
+ * `fn.ownsHellSurface = true` on its override function and the late pass
+ * steps aside. `roaringCover` needs no such flag: only drawRoaring arms it.
+ *
+ * `helpers` is everything the vanilla drawers reach — blit/tinted/fogged, the
+ * sprite Map (each entry's `.meta` is its manifest row: ox/oy/w/h/playback),
+ * SPRITE_FOR, the collision masks, the scratch surfaces, the box rect, the
+ * GameMaker colour helpers — plus `vanilla(name)` (the DRAW_EVENTS handler
+ * the override displaced), `drawVanilla(e, state)` (the whole vanilla chain
+ * for that entity, what a stub delegates to), `drawSelf(e, state)`
+ * (`draw_self()` alone) and `defer(fn)` (run after the depth pass, before
+ * the hell surface and the soul). It is frozen: a drawer that stashes state
+ * on the shared helper bag would couple every other drawer to it, and the
+ * vanilla drawers keep theirs in module-level WeakMaps for that reason.
+ *
+ * WITH NO OVERRIDES the map is empty and every entity takes the vanilla path
+ * it always took: the seam adds one own-property lookup per entity and
+ * nothing else. The overrides are validated ONCE, at construction: a value
+ * that is not a function throws here rather than drawing nothing, silently,
+ * for the rest of the fight — a silent no-op is the exact class of failure
+ * tools/verify-render-smoke.mjs exists for.
+ */
+export async function createRenderer(canvas, { overrides = null } = {}) {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+
+  const overrideMap = overrides && typeof overrides === 'object' ? overrides : {};
+  for (const [name, fn] of Object.entries(overrideMap)) {
+    if (typeof fn !== 'function') {
+      throw new TypeError(`createRenderer: overrides.${name} must be a function, got ${typeof fn}`);
+    }
+  }
+  /** Own properties only — a plain object's `constructor` is a function too. */
+  const overrideFor = (name) => (
+    Object.prototype.hasOwnProperty.call(overrideMap, name) ? overrideMap[name] : undefined
+  );
 
   let sprites = new Map();
   try {
@@ -664,8 +738,17 @@ export async function createRenderer(canvas) {
     // the SIM FRAME, not advanced per paint, so it runs at 30Hz on any
     // monitor and a paused inspection redraws identically.
     if (name === 'obj_roaringknight_split_bullet') {
-      sx += (frandCanvas(simFrame, e.seq * 2 + 1) - 0.5) * 0.2;
-      sy += (frandCanvas(simFrame, e.seq * 2 + 2) - 0.5) * 0.2;
+      // A kaizo tooth carries the GAME'S jitter: its draw slot drew the two
+      // random_range on the stream (kaizo/attacks/flurry-split-bullet.js draw()),
+      // so the picture uses those values. The vanilla tooth carries none and
+      // keeps the frame-seeded stand-in below.
+      if (e.drawJitterXs !== undefined) {
+        sx += e.drawJitterXs;
+        sy += e.drawJitterYs;
+      } else {
+        sx += (frandCanvas(simFrame, e.seq * 2 + 1) - 0.5) * 0.2;
+        sy += (frandCanvas(simFrame, e.seq * 2 + 2) - 0.5) * 0.2;
+      }
     }
 
     const entry = sprites.get(e.sprite_index ?? e.sprite ?? SPRITE_FOR[name]);
@@ -699,7 +782,86 @@ export async function createRenderer(canvas) {
     return false;
   }
 
+  /**
+   * THE VANILLA TAIL — what follows a DRAW_EVENTS handler (or an override)
+   * that returned falsy, i.e. GML's `draw_self()` and the three objects whose
+   * default draw is not a sprite blit. This is the loop body of `draw` as it
+   * stood before the override seam, moved here verbatim (each `continue`
+   * became a `return`) so that `helpers.drawTail` can run the same code; the
+   * loop still runs it for every entity exactly as before.
+   */
+  function drawTail(e, name, state) {
+    if (name === 'obj_knight_split_growtangle') {
+      // The cut box draws itself out of surfaces; obj_growtangle is parked
+      // offscreen for the duration.
+      if (splitBox) splitBox.draw(ctx, e, state.frame);
+      return;
+    }
+
+    if (name === 'obj_roaringknight_splitslash' && !e.slash) {
+      drawTelegraph(e, state);
+      return;
+    }
+
+    if (name === 'obj_roaringknight_slash') {
+      // Drawn in the original as a tapering wedge built from triangles, not
+      // from its sprite; a line along its angle reads the same at a glance.
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, e.width / 24);
+      ctx.strokeStyle = COLORS.slash;
+      ctx.lineWidth = Math.max(1, e.width / 3);
+      ctx.translate(e.x, e.y);
+      ctx.rotate((-e.image_angle * Math.PI) / 180);
+      ctx.beginPath();
+      ctx.moveTo(-320, 0);
+      ctx.lineTo(320, 0);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    drawEntity(e, name, state.frame ?? 0);
+  }
+
+  /**
+   * The whole vanilla chain for one entity: its DRAW_EVENTS handler if it has
+   * one, then the tail unless the handler claimed the draw. This is what the
+   * loop runs when no override is registered for the name, and what a kaizo
+   * STUB delegates to through `helpers.drawVanilla` — so a stubbed object
+   * renders byte-for-byte as it did before the seam existed.
+   */
+  function drawVanillaEntity(e, name, state) {
+    const custom = DRAW_EVENTS[name];
+    if (custom && custom(ctx, e, state, drawDeps)) return true;
+    drawTail(e, name, state);
+    return true;
+  }
+
+  /**
+   * Draws queued by `helpers.defer` — flushed after the depth-sorted pass and
+   * before the hell surface and the soul, in the order they were queued.
+   * Per frame: `draw` empties it before the loop, so a throw mid-frame cannot
+   * leave last frame's closures to run over this one.
+   */
+  let deferred = [];
+
+  /** What an override receives as its fourth argument. See the seam header. */
+  const helpers = Object.freeze({
+    ctx, sprites, SPRITE_FOR, SPRITE_MASKS, MASK_FOR, bakeMask, baked, COLORS,
+    VIEW_W, VIEW_H,
+    blit, tinted, fogged, rgbOf, C_WHITE_GM, frandCanvas,
+    scratch, boxRect, deps: drawDeps,
+    knightDrawCalls, roaringOwnsIt, roaringCover, drawRoaringCover, resetScreenCut,
+    splitBox, tintedPixel, drawTelegraph, drawHellSurface,
+    vanilla: (name) => DRAW_EVENTS[name] ?? null,
+    drawVanilla: (e, state) => drawVanillaEntity(e, e.type.name, state),
+    drawSelf: (e, state) => drawEntity(e, e.type.name, state.frame ?? 0),
+    drawTail: (e, state) => drawTail(e, e.type.name, state),
+    defer: (fn) => { deferred.push(fn); },
+  });
+
   function draw(state) {
+    deferred = [];
     // The deferred roaring composite is per-frame: drawRoaring re-registers
     // it if the attack is still on. Left set, the last composite would sit
     // over the menu for the rest of the fight.
@@ -751,43 +913,32 @@ export async function createRenderer(canvas) {
     for (const e of ordered) {
       const name = e.type.name;
 
-      const custom = DRAW_EVENTS[name];
-      if (custom && custom(ctx, e, state, drawDeps)) continue;
-
-      if (name === 'obj_knight_split_growtangle') {
-        // The cut box draws itself out of surfaces; obj_growtangle is parked
-        // offscreen for the duration.
-        if (splitBox) splitBox.draw(ctx, e, state.frame);
+      // THE OVERRIDE SEAM (see createRenderer's header): an override for this
+      // name stands in for the DRAW_EVENTS entry, with the same contract —
+      // true claims the draw, falsy hands the entity to the vanilla tail
+      // (`draw_self()`). Consulted FIRST so obj_knight_enemy's knightDrawCalls
+      // path and the special-cased tail objects are overridable too.
+      const override = overrideFor(name);
+      if (override) {
+        if (override(ctx, e, state, helpers)) continue;
+        drawTail(e, name, state);
         continue;
       }
 
-      if (name === 'obj_roaringknight_splitslash' && !e.slash) {
-        drawTelegraph(e, state);
-        continue;
-      }
-
-      if (name === 'obj_roaringknight_slash') {
-        // Drawn in the original as a tapering wedge built from triangles, not
-        // from its sprite; a line along its angle reads the same at a glance.
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, e.width / 24);
-        ctx.strokeStyle = COLORS.slash;
-        ctx.lineWidth = Math.max(1, e.width / 3);
-        ctx.translate(e.x, e.y);
-        ctx.rotate((-e.image_angle * Math.PI) / 180);
-        ctx.beginPath();
-        ctx.moveTo(-320, 0);
-        ctx.lineTo(320, 0);
-        ctx.stroke();
-        ctx.restore();
-        continue;
-      }
-
-      drawEntity(e, name, state.frame ?? 0);
+      drawVanillaEntity(e, name, state);
     }
 
+    // `helpers.defer` — after every entity, before the late passes.
+    for (const fn of deferred) fn();
+    deferred = [];
+
     // The boxsplitter's surface telegraph sits above the arena, below the soul.
-    drawHellSurface(state);
+    // A kaizo port of obj_roaringknight_boxsplitter_attack that draws this
+    // surface itself says so with `ownsHellSurface` (seam header); otherwise
+    // the pass runs exactly as it always has.
+    if (overrideFor('obj_roaringknight_boxsplitter_attack')?.ownsHellSurface !== true) {
+      drawHellSurface(state);
+    }
 
     // Soul last so a bullet never hides it.
     const soul = state.soul;

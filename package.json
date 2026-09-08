@@ -9,6 +9,8 @@
   },
   "scripts": {
     "verify": "node tools/verify-all.mjs",
+    "build:web": "node tools/build-web.mjs",
+    "test:strip": "node tools/test-strip-comments.mjs",
     "trace": "node tools/run-trace.mjs",
     "diff": "node tools/diff-trace.mjs",
     "serve": "python3 -m http.server 8177",

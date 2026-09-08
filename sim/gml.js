@@ -106,6 +106,21 @@ export function gmlEq(a, b) {
  * diverged the rest of the run. verify21j never showed it because its turns
  * happened to land on exact values.
  */
+/**
+* GML `a < b` on reals: the runner applies the SAME epsilon to the ordering
+* comparisons as to `==` -- `a < b` is false when the two are within
+* GML_EPSILON of each other. MEASURED (_probeall f992->f993, the Vortex
+* falling sword): `speed < 0` with speed = -0.0000012249 took the FALSE branch
+* in the game (kaizo obj_fallingsword Step_0:43-46 chose speed_gain over the
+* 0.4 rear-back gain), while `sign(speed)` stayed -1 -- sign() is exact. Use
+* this for any translated `<`/`>` whose operand is an accumulated real that
+* can land within a hair of the threshold; integers and literal-assigned
+* values are safe with `<`.
+*/
+export function gmlLt(a, b) {
+  return a < b - GML_EPSILON;
+}
+
 export function gmlLte(a, b) {
   return a <= b + GML_EPSILON;
 }

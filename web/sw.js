@@ -10,7 +10,15 @@
 // KEEP IN LOCKSTEP WITH web/version.js — the worker cannot import modules,
 // so the link is by convention: every release bumps both, and the new cache
 // name is what makes an installed PWA pick up the new build.
-const CACHE = 'blackknife-1.0.2';
+//
+// THE PREFIX IS THE SEPARATION (2026-09-02). Cache Storage is PER ORIGIN, not
+// per path, and GitHub project pages share one origin -- so the old activate,
+// which deleted every cache that was not this one, would have evicted a
+// sibling game's cache on every launch and been evicted by it in turn. The
+// kaizo recreation now lives in its own repo with its own worker (prefix
+// kaizoknight-); this one deletes ONLY its own prefix, and so does that one.
+const PREFIX = 'blackknife-';
+const CACHE = PREFIX + '1.0.15';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -21,7 +29,9 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(
+        keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k)),
+      ))
       .then(() => self.clients.claim()),
   );
 });
@@ -37,7 +47,29 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE).then((c) => c.put(e.request, copy));
           return r;
         })
-        .catch(() => caches.match(e.request).then((m) => m ?? caches.match('./index.html'))),
+        // THE SHELL MAY ONLY STAND IN FOR ITSELF.
+        //
+        // This used to end `?? caches.match('./index.html')` for EVERY failed
+        // navigation, which is the right reflex for a single-page app and
+        // wrong the moment the site has two pages. There are two now, and a
+        // request for kaizo.html that failed — a flaky connection, a slow dev
+        // server, genuinely offline — was answered with the VANILLA title
+        // screen: the wrong game, silently, with the URL still saying kaizo.
+        // Observed as the tab flipping between the two.
+        //
+        // A cached copy of the page actually asked for is always right. Past
+        // that, only a request for the root or index may be handed the shell;
+        // anything else gets an honest failure, because showing someone a
+        // different application is worse than showing them an error.
+        .catch(() => caches.match(e.request).then((m) => {
+          if (m) return m;
+          const isShell = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+          if (isShell) return caches.match('./index.html');
+          return new Response(
+            'Offline, and this page is not cached.',
+            { status: 503, headers: { 'Content-Type': 'text/plain' } },
+          );
+        })),
     );
     return;
   }

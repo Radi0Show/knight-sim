@@ -137,11 +137,41 @@ export const crescentSlashAnim = {
   },
 
   step(e, state) {
-    e.image_index += e.image_speed;
-    if (e.image_index > 7) {
-      destroy(e);
-      return;
-    }
+    // NO `image_index += image_speed` HERE, and never again. The GML Step
+    // (gml_Object_obj_knight_crescentslash_slashinganimation_Step_0.gml, mod
+    // and vanilla alike) does not touch image_index at ALL — GameMaker's own
+    // animation pass advances it, and sim/index.js runAnimation() already does
+    // that for every entity with a nonzero image_speed. spr_knight_crescentslash
+    // is playbacktype FramesPerGameFrame at playback 1, so the rate multiplier
+    // is 1 and a second advance here was a straight DOUBLING.
+    //
+    // WHAT THE RECORDING MEASURED: in the mod's deep and side-B recordings,
+    // every wave puts the marker pair exactly TWO frames after the telegraph
+    // (kaizo_oracle_seq_*.csv, grouped by kaizo_playing = atk_CrescentSlash;
+    // markers +2, crescents +4). Doubled, `image_index == 1` fired on the
+    // animation's FIRST Step and the markers landed at +1, and the animation
+    // died after 8 frames instead of the 15 that image_speed 0.5 across eight
+    // sprite frames gives. check-oracle-crescent section 5 asserts the +2.
+    // `if (image_index > 7) { instance_destroy(); }` — AND NOTHING ELSE. There
+    // is no `exit` in the GML, and GameMaker's instance_destroy() does not end
+    // the event: the Destroy event runs, the instance is marked, and the REST
+    // OF THIS STEP STILL EXECUTES. So the frame the telegraph dies it still
+    // tints itself black and still lays down one last `scr_afterimage()`.
+    // Returning here dropped that last one.
+    //
+    // MEASURED on the KAIZO side, and it transfers: a diff of
+    // gml_Object_obj_knight_crescentslash_slashinganimation_Step_0.gml across
+    // the two dumps is TWO LINES, both the `slash_snd` handle, so this object's
+    // control flow is the same object in both games. In the mod's whole-fight
+    // recording (kaizo_oracle_seq_tok3.csv, turn 2) the first telegraph is born
+    // at frame 377 and its afterimages run 378..392 — FIFTEEN, the last on 392,
+    // which is exactly the frame image_index passes 7 (0.5 * (392 - 377) = 7.5).
+    // The next is born 392 and lays 393..407, again fifteen, again one on its
+    // own death frame. Vanilla ac 0 is unreachable content with no oracle of its
+    // own (CLAUDE.md, "the SELECTOR decides what is real"), so this is the only
+    // recording that can settle it — and it settles it for both.
+    if (e.image_index > 7) destroy(e);
+
     if (e.image_index >= 5) e.image_blend = [153, 153, 153];
     if (e.image_index >= 6) e.image_blend = [51, 51, 51];
     if (e.image_index >= 7) e.image_blend = [0, 0, 0];
@@ -195,6 +225,30 @@ export const crescentMarker = {
 
 export const crescentGenerator = {
   name: 'obj_bullet_knight_crescentGenerator',
+
+  // AFTER THE BOX, because the one thing this object reads off the board is
+  // read ONCE, mid-grow, and a stale frame there moves every lane 10px.
+  //
+  // sim/battlebox.js gives obj_growtangle `stepOrder: 0.5` — hoisted out of the
+  // plain oldest-first order for the SOUL's benefit (three verify21g receipts
+  // that the newborn soul must test its walls against the box's PRE-step ring).
+  // That hoist puts the box after every 0-order entity, so a 0-order generator
+  // reading `box.sprite_height` gets the PREVIOUS frame's scale.
+  //
+  // MEASURED on the KAIZO side, where the same object has a recording: the
+  // mod's crescents come out on lanes 20px apart (y 115..225 in tens), so
+  // `boxheight` was 140 — obj_growtangle's image_yscale of 1.8666666746, the
+  // board's value on the very frame of the con-0 -> con-1 flip. Its previous
+  // frame reads 1.7333333492, which gives 130 and spaces the lanes 18.57 apart.
+  // Matching `stepOrder` puts this object in the box's bucket, where the tie
+  // breaks on spawn order — and the box, created at the top of the turn, is the
+  // older of the two, exactly as in the game. Same compensation family as
+  // sword-vortex's and knightlines' `stepOrder: -1`.
+  //
+  // Nothing reads the generator back, so moving it later costs nothing: its
+  // crescents, markers and telegraphs are pure spawn targets, and the turn
+  // clock it gates on is turnClock's (stepOrder -100), earlier either way.
+  stepOrder: 0.5,
 
   create(e, state) {
     e.image_speed = 0;
@@ -274,15 +328,43 @@ export const crescentGenerator = {
       e.moverate = e.shootrate - 5;
 
       // `if (box == -1) with (obj_growtangle) other.box = id; else { ...; init = 1 }`
-      // — so it takes a WHOLE EXTRA FRAME to start: the frame it finds the box
+      // — so it takes a WHOLE EXTRA FRAME to find the box: the frame it finds it
       // only records it, and `init` is set on the next pass.
       if (e.box === -1) {
         if (box) e.box = box;
       } else {
         e.init = 1;
       }
-      return;
     }
+
+    // THE ARMING FRAME IS NOT A LOST FRAME. The GML is three CONSECUTIVE
+    // top-level `if`s:
+    //
+    //     if (init == 0) { ...; else { ...; init = 1; } }
+    //     if (init)      { con 0 -> con 1 -> the shoot clock }
+    //     if (createslash) { ... }
+    //
+    // No `else`, no early exit, so the pass that SETS `init = 1` falls straight
+    // into the `if (init)` block on that same Step — con flips 0 -> 1,
+    // `boxheight` is read, and (the con-0 and con-1 tests being consecutive
+    // `if`s too) `shoottimer` takes its first tick. This module had a bare
+    // `return` standing in for the `if (init)` guard, which cost the generator
+    // ONE WHOLE EXTRA STEP before it started counting.
+    //
+    // MEASURED on the KAIZO side — vanilla ac 0 is unreachable content with no
+    // oracle, and the generator Step's only two deltas between the dumps are
+    // `damage = 153` and the [20,50] arm below, neither of them here. In the
+    // mod's whole-fight recording the turn launches at frame 364, the generator
+    // is created at 365, and its first telegraph is at 377 — twelve Steps after
+    // the birth, which only works if the arming Step also ticks the clock.
+    // With the `return` the whole wave train ran a frame late: telegraph 378,
+    // markers 380, crescents 382 against the recording's 377 / 379 / 381.
+    //
+    // `return` when `init` is still 0 is exact rather than approximate: the
+    // trailing `if (createslash)` block sits OUTSIDE the GML's `if (init)`, but
+    // `createslash` is only ever written inside the con blocks, so it is still
+    // its Create value of 0 on every frame this exits early.
+    if (!e.init) return;
 
     if (e.con === 0) {
       e.timer += 1;

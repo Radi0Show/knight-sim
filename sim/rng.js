@@ -93,12 +93,12 @@ export function gmlCreate(seed) {
 /** One raw 32-bit draw (WELL512 step). */
 export function gmlU32(r) {
   r.draws = (r.draws ?? 0) + 1;
-  globalThis.__draws = (globalThis.__draws ?? 0) + 1;  // TEMP
-  if (globalThis.__trap) {
-    const e = new Error();
-    const site = e.stack.split('\n').slice(2, 5).map((l) => l.trim().replace(/^at /, '')
-      .replace(/\(.*\/(sim|tools)\//, '(')).join(' <- ');
-    console.error(`DRAW f=${globalThis.__simFrame} n=${r.draws} ${site}`);
+  // DEBUG (env-gated by the kaizo tracer's KAIZO_TRAP=a-b; see
+  // kaizo/STRATEGY.md "trap logger"): print the translated site of every draw
+  // while the trap is armed. Never armed outside the tracer.
+  if (globalThis.__trap === true) {
+    const site = (new Error().stack ?? '').split(String.fromCharCode(10)).slice(2).find((l) => !l.includes('rng.js')) ?? '';
+    console.error('DRAW ' + globalThis.__simFrame + ' #' + r.draws + ' ' + site.trim().replace(new RegExp('^at '), '').replace(new RegExp('file:///[^ )]*/(sim|kaizo)/'), '$1/'));
   }
   const st = r.state;
   let a = st[r.idx];
@@ -179,9 +179,25 @@ export function gmlRandomsign(r) {
  * number that diff does not depend on.
  */
 export function gmlShuffle(rng, list) {
-  for (let i = 0; i < list.length * 16; i++) gmlU32(rng);
+  // SIXTEEN PER ELEMENT, AND NOT ONE MORE. The measurement is a total, not a
+  // prefix: 64 draws for a 4-element list, 96 for 6, 208 for 13, constant
+  // across seeds (traces/shuffle-probe.csv). This function used to burn 16n
+  // and THEN draw its own Fisher-Yates indices, n - 1 draws the game never
+  // makes -- caught by the whole-fight audit on the kaizo lane the moment a
+  // caller started using it live: two rotating-slash managers shuffling a
+  // two-element list on the same frame cost 33 each where the game costs 32
+  // (probe recording, oracle f2620).
+  //
+  // The permutation therefore comes from the draws ALREADY burned. The real
+  // algorithm is unsolved (CLAUDE.md, "ds_list_shuffle -- measured, not
+  // solved": a search over index formulas peaked at chance), and the order is
+  // re-rolled every playthrough in the real game, so it is not a fidelity
+  // property -- the stream POSITION is, and that is what this pins. Any
+  // verification that needs a particular order pins it on both sides instead.
+  const burned = [];
+  for (let i = 0; i < list.length * 16; i++) burned.push(gmlU32(rng));
   for (let i = list.length - 1; i > 0; i--) {
-    const j = gmlU32(rng) % (i + 1);
+    const j = burned[i * 16 - 1] % (i + 1);
     const t = list[i];
     list[i] = list[j];
     list[j] = t;

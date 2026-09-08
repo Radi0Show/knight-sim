@@ -97,7 +97,12 @@ export function stepGraze(state, grazes, only = null) {
     let rowActive = null;
     if (state.grazeReplay) {
       const rows = state.grazeReplay.get(state.frame);
-      const match = rows?.find((r) => !r.used && r.type === e.type.name
+      // The feed names the GAME'S object. A sim type whose name is its own
+      // (the underbox fans are `obj_knight_weird_fan` here and bare
+      // obj_regularbullet instances in the mod) declares `gmlName`; without
+      // it no row ever matched those bullets and their grazes -- burst and
+      // trickle -- were never paid (_tok3 f2153, the Rising Abyss orbs).
+      const match = rows?.find((r) => !r.used && r.type === (e.type.gmlName ?? e.type.name)
         && Math.abs(r.x - e.x) <= 0.05 && Math.abs(r.y - e.y) <= 0.05);
       if (match) {
         match.used = true;
@@ -146,6 +151,23 @@ export function stepGraze(state, grazes, only = null) {
     // `if (!other.active && other.object_index != obj_sword_tunnel_sword) exit;`
     // A replayed row's own active flag wins over the sim's — see rowActive.
     const gateActive = rowActive !== null ? rowActive === 1 : active;
+    // THIS LINE IS VANILLA AND MUST STAY VANILLA — the kaizo mod deleted the
+    // exception, and a reader comparing the two dumps will be tempted to
+    // "correct" it here. Do not.
+    //
+    //   vanilla  if (!other.active && other.object_index != obj_sword_tunnel_sword)
+    //   kaizo    if (!other.active)
+    //     — gml_Object_obj_grazebox_Collision_obj_collidebullet.gml:1, both dumps
+    //
+    // `sim/` is the v1.03 translation and its whole-fight diff is byte-exact
+    // with the exception present; taking it out to match the mod would make
+    // VANILLA wrong to fix a lane that does not need fixing. It costs the kaizo
+    // lane NOTHING: the mod also deleted `active = 0` from
+    // obj_sword_tunnel_sword's Create and both `active = 1/0` from its Step, so
+    // the sword is permanently active there and the exception can never be
+    // reached. Measured as zero frames on _tok3. If a kaizo case ever does need
+    // the other form it belongs behind a `state.kaizo.hooks.*` seam, the same
+    // way `knightTarget` does it — never by editing this line.
     if (!gateActive && e.type.name !== 'obj_sword_tunnel_sword') continue;
 
     if ((rowInv ?? state.invTimer) >= 0) continue;

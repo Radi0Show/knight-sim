@@ -275,7 +275,95 @@ export function scrRevive(state, slot) {
 export function knightTarget(state, target, opts = {}) {
   if (opts.aoe || opts.truedamage) return target;
 
+  // ── THE KAIZO SEAM, and it is INERT unless a scene installs the hook ─────
+  //
+  // The mod does not tweak this block, it DELETES it: kaizo's
+  // `gml_GlobalScript_scr_damage.gml:88-91` is
+  //
+  //     chartarget = 3;
+  //     if (global.chapter == 3 && i_ex(obj_knight_enemy) && truedamage == 0)
+  //         scr_kaizo_target();
+  //
+  // where v105 has the ~75 lines translated below (diffed
+  // `kaizo-mod/gml_vanilla_v105` against `kaizo-mod/gml_kaizo_dump`, the
+  // MATCHING-VERSION pair, so this is a kaizo delta and not a build
+  // difference). `scr_kaizo_target` — kaizo_settings_init.gml:412-497 — is a
+  // different policy AND A DIFFERENT DRAW COUNT: an HP-weighted
+  // `random_range(0, 2)` at :463 gates the `choose(1, 2)` at :476, so a hit
+  // spends 0, 1 or 2 draws where this block spends 1 or 2. After the first
+  // hit of a turn every RNG-derived value downstream sits at a different
+  // stream position, which is why a targeting difference shows up as bullet
+  // positions and populations rather than as HP.
+  //
+  // `sim/` must not import `kaizo/` (the isolation contract), so the kaizo
+  // lane hands its translation in on the STATE, exactly like
+  // `state.kaizo.hooks.comboChainNext` in sim/attacks/combination.js.
+  //
+  // TWO PROPERTIES, both load-bearing:
+  //
+  //   * NO HOOK -> this function is byte-identical to what it was. Nothing in
+  //     sim/ ever sets `state.kaizo`, so the six vanilla whole-fight diffs
+  //     cannot see this line.
+  //   * The hook is consulted AFTER the aoe/truedamage guard, so it inherits
+  //     both gates rather than restating them. That matches the mod, which
+  //     puts `truedamage == 0` OUTSIDE the call and `aoedamage == false`
+  //     INSIDE the script (where it returns `target` untouched).
+  const hook = state.kaizo?.hooks?.knightTarget;
+  if (hook) return hook(state, target, opts);
+
   let t = target;
+
+  // BEFORE the chapter-3 block, scr_damage runs two target rules of its own
+  // (vanilla scr_damage:33-61, byte-identical in the mod):
+  //
+  //     if (target < 3 && global.hp[global.char[target]] <= 0) { scr_randomtarget_old(); target = mytarget; }
+  //     if (target == 4) {
+  //         scr_randomtarget_old(); target = mytarget;                 // choose(0,1,2), rolled again while charcantarget[slot] == 0
+  //         if (hp/maxhp < scr_party_hpaverage() / 2) { ...again }    // twice
+  //         if (target == 0 && hp/maxhp < 0.35) { ...again }
+  //     }
+  //
+  // Four is the knight's `mytarget` (scr_randomtarget's chapter-2+ tail),
+  // which scr_bulletspawner stamps on every controller and scr_bullet_inherit
+  // hands down to the managers and their bullets -- so in the game every
+  // inherited bullet ROLLS FOR A SLOT ON EVERY HIT. The vanilla sim never
+  // gave its managers a target (the whole-fight diff is exact without this,
+  // and that contradiction is recorded as OPEN in the kaizo ledger); the
+  // kaizo lane does (kaizo-mod-launcher.js dcInheritable), and its hook
+  // above carries the same rules. This copy is what a kaizo scene WITHOUT
+  // the hook -- the Weird Route -- runs: without it a target of 4 reached
+  // scrDamageCalculation and statFor and threw. scr_party_hpaverage is
+  // floor(total hp / total max hp): 1 with everyone full, else 0.
+  const cantarget = (slot) => (state.charcantarget ? state.charcantarget[slot] : 1);
+  const rtOld = () => {
+    const any = [0, 1, 2].some((i) => cantarget(i));
+    if (!any) return 3;
+    let m = opts.choose ? opts.choose(0, 1, 2) : 0;
+    let guard = 0;
+    while (!cantarget(m) && guard++ < 64) m = opts.choose ? opts.choose(0, 1, 2) : 0;
+    return m;
+  };
+  const maxhpOf = (slot) => (state.partyMaxhp ? state.partyMaxhp[slot] : PARTY[slot].maxhp);
+  const ratio = (slot) => (slot >= 0 && slot < 3 ? state.partyHp[slot] / maxhpOf(slot) : 1);
+  const hpaverage = () => {
+    let hp = 0;
+    let mx = 0;
+    for (let i = 0; i < 3; i++) { hp += state.partyHp[i]; mx += maxhpOf(i); }
+    return hp > 0 ? Math.floor(hp / mx) : 0;
+  };
+  // scr_randomtarget_old answers 3 when NOBODY can be targeted -- a wiped
+  // party, which the game never damages again (scr_gameover has run). The
+  // suites that hammer damage without the HP pin do reach it, and a slot of
+  // 3 has no stats to look up; the target is left as the caller passed it.
+  const pick = (fallback) => { const m = rtOld(); return m === 3 ? fallback : m; };
+  if (t < 3 && t >= 0 && state.partyHp[t] <= 0) t = pick(t);
+  if (t === 4) {
+    t = pick(0);
+    if (ratio(t) < hpaverage() / 2) t = pick(t);
+    if (ratio(t) < hpaverage() / 2) t = pick(t);
+    if (t === 0 && ratio(t) < 0.35) t = pick(t);
+  }
+
   // 1. The Kris redirect.
   if (t === 0) {
     const susie = state.partyHp[1] > 0;

@@ -61,13 +61,21 @@ check(comboSequence()[2] === 'obj_knight_tunnel_slasher_2_revised',
 
   const b = gmlCreate(12345);
   gmlShuffle(b, [2, 3, 4, 5]);
-  // 4 elements x 16 = 64 burned, then Fisher-Yates takes 3 more (n-1).
+  // the cost is the MEASURED TOTAL, 16 u32 per element and nothing after it
+  // (traces/shuffle-probe.csv: 64 for n=4, 96 for n=6, 208 for n=13, constant
+  // across seeds, against a zero-draw control). This used to assert 64 + 3,
+  // pinning the extra draws gmlShuffle took for its OWN permutation -- harmless
+  // while every caller replayed a pinned order, and wrong the moment the kaizo
+  // lane shuffled live: two rotating-slash managers shuffling a two-element list
+  // on one frame cost 33 each against the game's 32 (probe recording, oracle
+  // f2620). Removing the extra draws moved the kaizo whole-fight byte gate
+  // f2632 -> f3709, which is the receipt that 16n is the whole cost.
   const after = [];
   for (let i = 0; i < 10; i++) after.push(gmlU32(b));
-  const expectedAt = 64 + 3;
+  const expectedAt = 4 * 16;
   check(after[0] === before[expectedAt],
     `after shuffling 4 elements the stream should sit at draw ${expectedAt};`
-    + ' the 16-per-element count is the measured half of ds_list_shuffle');
+    + ' 16 per element is the WHOLE measured cost, not a prefix');
 }
 
 // AND THE RESULT IS DISCARDED. Different seeds shuffle differently and the

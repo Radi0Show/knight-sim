@@ -115,9 +115,44 @@ export const COMBO_ORDER = { first: 4, second: 2, third: 3, power: 1 };
  * which is the two-attack form. The three-attack form is what `composition`
  * selects, by starting at segment 0.
  *
+ * `siteName` is the OPT-IN for the kaizo seam below and is ignored by every
+ * line of the vanilla body. Callers inside sim/ pass two arguments.
+ *
  * Returns the new segment, or null when the id has no translation yet.
  */
-export function chainNext(state, self) {
+export function chainNext(state, self, siteName) {
+  // ── THE KAIZO SEAM, and it is INERT unless the caller opts in ────────────
+  //
+  // The V-C recreation needs this same handoff to resolve kaizo/attacks/
+  // modules instead of the registry above, and it cannot do that by importing:
+  // kaizo/ imports one-way FROM sim/, and this registry exists precisely
+  // because the segment modules and this file already form a cycle (see the
+  // COMBO_ATTACKS comment). So the kaizo lane passes its handoff SITE NAME and
+  // reads the replacement off the STATE — the same shape as
+  // `state.kaizo.hooks.vortexendHandoff`, which kaizo/attacks/rotating-slash.js
+  // already uses for the B-Side's cross-module vortex seam.
+  //
+  // TWO conditions, not one, and the second is what keeps vanilla vanilla:
+  //
+  //   * no hook  -> this function is byte-identical to what it was. The
+  //     whole-fight diff covers that, and nothing in sim/ ever sets
+  //     `state.kaizo`.
+  //   * a hook but NO SITE NAME -> still vanilla. Every call inside sim/
+  //     passes two arguments, so a sim module can never be redirected even in
+  //     a kaizo scene that has the hook set. That matters during a half-landed
+  //     wiring: a sim segment still on the chain runs the vanilla body it was
+  //     always going to run, instead of half of each, and the ledger row that
+  //     confesses the vanilla body stays true.
+  //
+  // The hook is handed the site name because the kaizo handoff sites are NOT
+  // interchangeable — the mod's five `with (new_knight)` blocks differ in
+  // their offsets, their warps and their successor seeds, and each kaizo
+  // module names its own.
+  if (siteName !== undefined) {
+    const hook = state.kaizo?.hooks?.comboChainNext;
+    if (hook) return hook(state, self, siteName);
+  }
+
   if (self.next_up === -999 || self.next_up === -1 || self.next_up === undefined) {
     return null;
   }

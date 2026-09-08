@@ -21,7 +21,7 @@
 // Knight does), and phase 4 is entered on the real `monsterhp <= maxhp * 0.8`
 // gate at the end of any turn rather than on a turn count.
 
-import { spawn } from '../entity.js';
+import { spawn, destroy } from '../entity.js';
 import { BATTLEBG_MASK } from '../masks.js';
 import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
@@ -741,9 +741,17 @@ const SURVIVES_TURN = new Set([
  */
 export function clearTurn(state) {
   state.currentAc = undefined;
-  for (const e of state.entities) {
-    if (e.alive && !SURVIVES_TURN.has(e.type.name)) e.alive = false;
-  }
+  // `with (obj_bulletparent) instance_destroy()` (obj_battlecontroller
+  // Step_0:1477-1481) -- a with() iterates NEWEST FIRST, and each
+  // instance's CleanUp runs as it goes, so the turn's oldest attack object
+  // is cleaned up last with everything younger already gone. The
+  // boxsplitter's CleanUp (`global.turntimer = -1`) is the one that shows:
+  // _tok3 f1472 reads -1 in the recording. No vanilla type declares a
+  // cleanUp, so the vanilla fights kill the same set as before.
+  const dying = state.entities
+    .filter((e) => e.alive && !SURVIVES_TURN.has(e.type.name))
+    .sort((a, b) => b.seq - a.seq);
+  for (const e of dying) destroy(e, state);
 
   // THE SOUL IS NOT RESURRECTED HERE. It used to be, as stand-in machinery for
   // ROARING — whose finale cuts the screen and obj_heart with it.

@@ -137,8 +137,21 @@ export const splitGrowtangle = {
 
   create(e, state) {
     const gt = box(state);
-    e.image_xscale = gt ? gt.xscale : 2;
-    e.image_yscale = gt ? gt.yscale : 2;
+    // `image_xscale`, NOT `xscale`. obj_knight_split_growtangle's Create is
+    // `image_xscale = obj_growtangle.image_xscale`, and the box has ONLY the
+    // built-in pair — sim/battlebox.js deleted a second `xscale`/`yscale` pair
+    // on purpose because nothing kept the two in step (see the note there;
+    // ROARING is where that divergence broke worst).
+    //
+    // This read outlived that deletion and had been assigning `undefined`,
+    // which the f32 accessor then stored as NaN. Nothing threw: entity fields
+    // take any value, and the box splitter's oracle diff traces `con`, `timer`,
+    // `distance` and the teeth — never the organism's own scale — so 60 green
+    // suites and a row-exact splitter diff all passed over it. Found by holding
+    // the recording of the kaizo mod against the sim: the mod records the
+    // organism at 2.0000000000 x 2.0000000000.
+    e.image_xscale = gt ? gt.image_xscale : 2;
+    e.image_yscale = gt ? gt.image_yscale : 2;
     // THE FLAMES IN THE GAP. Two obj_markers carrying `spr_rk_split_flame_big`,
     // created facing OPPOSITE ways (image_angle 180 and 0) at double scale and
     // animating at image_speed 0.5. They are repositioned every frame onto the
@@ -217,11 +230,28 @@ export const splitGrowtangle = {
     e.old_distance = e.distance;
 
     if (e.con === 1) {
-      // THE CUT EFFECT, on the first frame of the split — the screen-tear and
+      // THE CUT EFFECT, on the first frame of EVERY split — the screen-tear and
       // flash (sim/fx.js). It carries the cut's geometry so it can slide the
       // halves along the right normal.
-      if (e.timer <= 1 && !e.effectSpawned) {
-        e.effectSpawned = true;
+      //
+      // ONCE A SPLIT, NOT ONCE A TURN. This test used to carry an
+      // `&& !e.effectSpawned` latch (with `e.effectSpawned = true` inside) that
+      // has NO counterpart in the GML: Step_0 12-24 is a bare `if (timer <= 1)`
+      // nested in `if (con == 1)`, and there is no flag anywhere in the object.
+      // The latch was not a harmless guard either, because
+      // obj_roaringknight_splitslash RE-ARMS the organism on every cut —
+      // `obj_knight_split_growtangle.con = 1; obj_knight_split_growtangle.timer
+      // = 0;` at its Step_0 98-99 — so `timer <= 1` is already exactly once per
+      // re-entry, and the effect destroys itself ten frames later
+      // (splitGrowtangleEffect's endStep in sim/fx.js), so nothing could ever
+      // stack. What it did instead was delete every cut flash after the first.
+      //
+      // MEASURED, on the kaizo recording that exposed it
+      // (kaizo_oracle_seq_deep.csv, grouped by kaizo_playing): one
+      // obj_knight_split_growtangle_effect per splitslash — 8 / 10 / 8 for
+      // atk_Splitter1 / atk_Splitter2 / atk_Splitter3 — against the latched
+      // sim's 1 for a whole turn. Do not reintroduce it.
+      if (e.timer <= 1) {
         const fx = spawn(state, splitGrowtangleEffect, { x: e.x, y: e.y });
         fx.angle = e.angle;
         fx.diagonal = e.diagonal;
@@ -329,6 +359,14 @@ export const splitGrowtangle = {
             ? spawn(state, splitBullet, { x: e.x, y: e.y })
             : spawn(state, splitBullet, { x: xstart, y: ystart });
 
+          // ORIGINAL BUG (preserved): NEGATIVE FRICTION. Step_0 127 is
+          // `_b.friction = (_speed == 1) ? -0.2 : -0.05`, and GameMaker applies
+          // friction to the speed MAGNITUDE — so a negative value ACCELERATES
+          // the tooth every frame instead of slowing it, up to `top_speed`.
+          // Whatever was meant, this is what the game does: verified row-exact
+          // against the real game by tools/verify-splitter.mjs (x, y AND
+          // image_angle of the first four teeth over frames 4..193). The sign
+          // is load-bearing; do not "correct" it.
           b.friction = speedClass === 1 ? -0.2 : -0.05;
           const topspeed = speedClass === 1 ? 4 : 2;
           b.top_speed = topspeed + gmlRandomRange(state.gmlRng, -0.2, 0.2);

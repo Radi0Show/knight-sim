@@ -352,7 +352,19 @@ export function drawMenu(ctx, state, sprites) {
   ctx.fillRect(-10, top - 3, 710, 1);
   ctx.fillRect(-10, top + 34, 710, 2);
 
-  for (let c = 0; c < 3; c++) {
+  // THE ROSTER IS NOT ALWAYS THE SAME THREE. `scr_charbox` walks
+  // `chartotal` panels and reads each one's character out of `global.char`,
+  // so a party of two draws two panels — the mod's own settings sign offers
+  // exactly that, and its Weird Route fields Kris and Noelle.
+  //
+  // These three reads are the only places this row assumed the vanilla
+  // trio. They now take an OPTIONAL override off `state`, defaulting to the
+  // hardcoded tables — so the main page is byte-identical (it sets none of
+  // them) and render/ still knows nothing about who might set them. That
+  // matters: render/ must not import from kaizo/ (kaizo/HANDOFF.md §2), and
+  // reading a plain state field is not a dependency.
+  const panels = state.partySprites?.length ?? 3;
+  for (let c = 0; c < panels; c++) {
     const chunk = CHUNK[c];
     const mmy = menu.mmy[c];
     const color = CHAR_COLOR[c];
@@ -399,14 +411,14 @@ export function drawMenu(ctx, state, sprites) {
     // The player report was exact: "during selecting attacks the icons and
     // menu stuff disappear".
 
-    const stats = PARTY_SPRITES[c];
+    const stats = state.partySprites?.[c] ?? PARTY_SPRITES[c];
     const head = sprites.get(stats.head);
     const name = sprites.get(stats.name);
     if (head) drawSpriteExt(ctx, head, 0, chunk + 13, B_OFFSET + mmy, 1, 1, 0, null, 1);
     if (name) drawSpriteExt(ctx, name, 0, chunk + 51, B_OFFSET + 3 + mmy, 1, 1, 0, null, 1);
 
     const hp = state.partyHp?.[c] ?? 0;
-    const maxhp = PARTY[c].maxhp;
+    const maxhp = state.partyMaxhp?.[c] ?? PARTY[c].maxhp;
 
     // THE NUMBERS. `draw_set_halign(fa_right)` covers BOTH — the current value's
     // right edge at x+160 and the max's at x+205 — so they grow leftward and

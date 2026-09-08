@@ -453,10 +453,12 @@ export const roaring2 = {
     // (0.1/1.5 clears 0.5 alpha in 8 frames; 0.1/3.9 takes 20), so the echoes
     // pile deeper the closer he gets to roaring.
     if (e.timer % 3 === 0 && e.intensity < 3.9) {
-      const g = spawn(state, afterimageScreen, {
-        x: state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30),
-        y: state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30),
-      });
+      // y jitter first: GML evaluates call arguments RIGHT-TO-LEFT (measured on
+      // the kaizo swordfall, kaizo/attacks/swordfall.js dropSword). Same draw
+      // count, so no trace moves -- only where the echo lands.
+      const ay = state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30);
+      const ax = state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30);
+      const g = spawn(state, afterimageScreen, { x: ax, y: ay });
       g.faderate = 0.1 / e.intensity;
       g.draw_end = true;
       g.xrate = -0.01;
@@ -826,10 +828,12 @@ export const roaring2 = {
         // shorter-lived than the wind-up's, and OUTWARD. This runs alongside
         // the star fans below; it is not gated on them.
         if (e.roaring_timer % 3 === 0) {
-          const g = spawn(state, afterimageScreen, {
-            x: state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30),
-            y: state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30),
-          });
+          // y jitter first: GML evaluates call arguments RIGHT-TO-LEFT (measured on
+          // the kaizo swordfall, kaizo/attacks/swordfall.js dropSword). Same draw
+          // count, so no trace moves -- only where the echo lands.
+          const ay = state.view.y + e.fake_y + 55 + gmlIrandomRange(state.gmlRng, -30, 30);
+          const ax = state.view.x + e.fake_x + gmlIrandomRange(state.gmlRng, -30, 30);
+          const g = spawn(state, afterimageScreen, { x: ax, y: ay });
           g.xrate = 0.015;
           g.yrate = 0.015;
           g.faderate = 0.025;

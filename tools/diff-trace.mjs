@@ -8,6 +8,7 @@
 // match, 1 on a divergence, 2 on a usage error.
 
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 function load(path) {
   // Oracle CSVs come from GML file_text_writeln, which emits CRLF.
@@ -75,4 +76,7 @@ function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// The entry guard compares URLs, not a hand-built string: on Windows
+// process.argv[1] is `D:...` and the string form never matched, so this
+// tool ran NOTHING and exited 0 -- a green that meant nothing (2026-09-02).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

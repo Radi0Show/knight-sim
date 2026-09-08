@@ -11,8 +11,11 @@
 //   Other_10 ("full")  local_turntimer = 324, alarm[5] = 4
 //   Alarm 5            he shrinks out — image_xscale -> 0 and x -> x + 110,
 //                      both over 8 frames "out" — then alarm[0] = 8
-//   Alarm 0            HIS OWN SWORD falls: one obj_fallingsword at his
-//                      centre with a seven-stage image_yscale wobble
+//   Alarm 0            HIS OWN SWORD falls, at `x + (sprite_width * 0.5)`,
+//                      `(y + (sprite_height * 0.5)) - 30` — BOTH TERMS LIVE.
+//                      Alarm 5 has already lerped image_xscale to 0 by now,
+//                      so the x term VANISHES and the y term is a full +115.
+//                      It carries a seven-stage image_yscale wobble
 //                      (0 -> -3 -> 0 -> 2.5 -> 0 -> -2.25 -> 0 -> 2), scaling
 //                      1.5 -> 2 across 49 frames, `nosfx` so it uses
 //                      snd_heavy_passing instead of the swordfall cue
@@ -24,8 +27,9 @@
 //   the finish         once `local_turntimer < turn_time (160)` it stops
 //                      spawning, arms alarm[1] (the FINAL sword: speed_gain
 //                      0.3, grazepoints 30, aimed at the box centre, and
-//                      `speed += 2.4` every frame on top of the ramp) and
-//                      alarm[2] (his return)
+//                      `speed += 2.4` every frame on top of the ramp ONCE
+//                      `speed > 0.5` — GML truthiness, so NOT while it is
+//                      still rearing back) and alarm[2] (his return)
 //   Alarm 2            he comes back on spr_roaringknight_sword_ol, dips
 //                      through three chained y lerps, becomes
 //                      spr_roaringknight_attack_ol_center at +9, and
@@ -40,10 +44,18 @@
 // attack's chaining (ac 7, also unreachable) and are not translated: this
 // launches as "full", the standalone form.
 //
-// VERIFICATION STATUS: translated from the dump, not oracle-diffed — the
-// attack is unreachable in a real fight, so there is nothing to record it
-// against. Mechanics line-for-line; the trail render is in
-// render/draw/swordfall.js.
+// VERIFICATION STATUS: translated from the dump and never oracle-diffed as a
+// WHOLE — ac 10 is unreachable in the vanilla fight, so no vanilla recording
+// can reach it. TWO of its expressions are now measured, though, and they came
+// from the other side: EnderCat8's Kaizo mod DOES reach this object (controller
+// type 108, dispatched by its ac 2 and ac 102), and the events involved —
+// Alarm_0, Alarm_5 and obj_fallingsword's `if (speed && finalsword)` — are
+// byte-identical between gml_vanilla_v105 and gml_kaizo_dump, so what the
+// recording measures about them is evidence about this module too. Both were
+// wrong here and both are fixed; see alarm 0 and fallingSword.step, and
+// kaizo/tools/checks/check-oracle-vortex.mjs blocks D-1 and D-2.
+//
+// Mechanics line-for-line; the trail render is in render/draw/swordfall.js.
 
 import { spawn, destroy } from '../entity.js';
 import { scrApproach, pointDirection, clamp } from '../gml.js';
@@ -125,7 +137,29 @@ export const fallingSword = {
     if (!(e.alarm[0] > 0.5)) {
       e.speed = scrApproach(e.speed, 18, 0.6 + e.speed_gain * Math.sign(e.speed));
     }
-    if (e.speed && e.finalsword) e.speed += 2.4;
+    // gml_Object_obj_fallingsword_Step_0.gml: `if (speed && finalsword)
+    // speed += 2.4;` — and the test is `speed > 0.5`, NOT `speed !== 0`.
+    //
+    // GameMaker converts a real to a bool with `> 0.5`. It is the same rule
+    // that makes `!alarm[0]` TRUE for an idle -1 (CLAUDE.md, learned at T4;
+    // sim/attacks/underbox.js:182 spells it out), and translating it with JS
+    // truthiness instead handed the boost to a sword that is still REARING
+    // BACK at a negative speed. The finalsword is supposed to creep backwards
+    // on the approach ramp alone and only rocket once it has turned over.
+    //
+    // MEASURED — kaizo_oracle_seq_deep.csv logs atk_Vortex1's finalsword on
+    // its creation frame with `speed` still the -6 its alarm assigned, while
+    // its position has already moved (+4 in y) and its lerps have already
+    // written (image_yscale -0.25, image_angle +35.286). The sim logged
+    // -3.5999999046 = -6 + 2.4. Asserted by
+    // kaizo/tools/checks/check-oracle-vortex.mjs, block D-2.
+    //
+    // That row was first read as evidence about the ENGINE — "an instance
+    // spawned from an alarm must not run its own Step on that frame". It is
+    // not: obj_lerpvar, created by the same `with` block on the same frame,
+    // demonstrably DID step, which no per-phase list freeze could allow. Both
+    // instances stepped; only this predicate was wrong.
+    if (e.speed > 0.5 && e.finalsword) e.speed += 2.4;
   },
 
   collides(e, heart) {
@@ -138,8 +172,15 @@ export const fallingSword = {
 
 /** Aim + wobble shared by every sword the Step drops. */
 function dropSword(state, e, box) {
-  const x = box.x - 110 + gmlRandom(state.gmlRng, 220);
+  // THE Y DRAW COMES FIRST. GML evaluates a call's arguments RIGHT-TO-LEFT (the
+  // VM pushes them in reverse), so in `instance_create(bx + random(220),
+  // by + random(30), obj_fallingsword)` the random(30) is drawn before the
+  // random(220). MEASURED on kaizo_oracle_seq_tok3 (Vortex 1, anchor n=4):
+  // four consecutive swords at draws (8,9) (18,19) (27,28) (37,38), y-draw
+  // first, after undoing the one built-in motion step the end-of-frame seq row
+  // carries. Drawing x first put every sword on the wrong column and row.
   const y = box.y - 110 + gmlRandom(state.gmlRng, 30);
+  const x = box.x - 110 + gmlRandom(state.gmlRng, 220);
   const s = spawn(state, fallingSword, { x, y });
   // `clamp((gt.x + 95) - random(190), x - 40, x + 40)` — the target wanders
   // across the box but can never be more than 40px either side of the
@@ -173,8 +214,15 @@ function dropSword(state, e, box) {
  * `scr_script_delayed(scr_lerpvar, n, ...)` — a lerp that starts n frames
  * later. Carried on the target itself so it survives without a scheduler.
  */
-function delayedLerp(state, target, delay, varname, from, to, dur) {
-  (target.pendingLerps ??= []).push({ delay, varname, from, to, dur });
+// `scr_script_delayed(scr_lerpvar, delay, var, from, to, dur[, easetype, ease])`.
+// The trailing two are FORWARDED, not defaulted here: scr_lerpvar with fewer
+// than six arguments hands scr_lerpvar_instance only four and the instance
+// defaults apply (easetype 0, "out" -- sim/lerpvar.js mirrors them), while a
+// six-argument call sets both. The swordfall Alarm_0 chain alternates
+// "out" / "in" and every one of its "in" legs ran as "out" until this carried
+// the ease; the Alarm_1 chain passes NONE and was being handed easetype 1.
+function delayedLerp(state, target, delay, varname, from, to, dur, easetype, easeinout) {
+  (target.pendingLerps ??= []).push({ delay, varname, from, to, dur, easetype, easeinout });
 }
 
 /** Runs the pending list; called from both objects' steps. */
@@ -184,9 +232,77 @@ function tickDelayed(state, e) {
   const due = e.pendingLerps.filter((p) => p.delay <= 0);
   e.pendingLerps = e.pendingLerps.filter((p) => p.delay > 0);
   for (const p of due) {
-    scrLerpvar(state, spawn, e, p.varname, p.from, p.to, p.dur, 1);
+    scrLerpvar(state, spawn, e, p.varname, p.from, p.to, p.dur, p.easetype, p.easeinout);
   }
 }
+
+/**
+ * spr_roaringknight_idle's UNSCALED size, from the extracted sprite table
+ * (assets/sprites/manifest.json: `"w": 117, "h": 115`; the mod's own
+ * kaizo/assets/sprites/manifest.json carries the same dimensions, so this
+ * constant is identical on both sides).
+ *
+ * GML's `sprite_width` / `sprite_height` are these numbers TIMES the LIVE
+ * `image_xscale` / `image_yscale`, so they are derived at the read site and
+ * never baked in — see alarm 0 for what baking them cost. Neither scale is
+ * ever negative on this object (scr_darksize sets both to 2 and alarm 5 only
+ * lerps xscale DOWN to 0), so GameMaker's signed-vs-abs ambiguity for
+ * `sprite_width` cannot arise here.
+ *
+ * The manager wears this sprite for the whole of alarm 0's life: Other_10
+ * swaps sprite_index only on the "start" / "short start" / "short mid" arms,
+ * and none of those arms alarm 5 — which is the only thing that arms alarm 0.
+ */
+/**
+ * obj_knight_swordfall's DESTROY EVENT — `gml_Object_obj_knight_swordfall_
+ * Destroy_0.gml`, in full:
+ *
+ *     if (turn_type != "start" && turn_type != "short start"
+ *         && turn_type != "short mid" && scr_bulletparent_count() < 2)
+ *     {
+ *         with (obj_knight_enemy) { image_alpha = 1; }
+ *         global.turntimer = -1;
+ *     }
+ *
+ * THE MANAGER ENDS THE TURN WHEN IT DIES, and this was not translated at all.
+ * The engine has no Destroy event, so — as `sword-tunnel-revised.js` already
+ * does with its `cleanUp` — it is an explicit call at every site that destroys
+ * the manager.
+ *
+ * MEASURED COST OF THE OMISSION: `atk_Vortex1` (ac 2, difficulty 5) arms type
+ * 108, and the mod's turn lasts 350 frames while the sim's ran 622 — +272, by
+ * far the largest single divergence in the whole-fight diff, and every later
+ * turn inherited the offset. Without this write the sim's clock simply runs
+ * down to the armed 600.
+ *
+ * `scr_bulletparent_count() < 2` is ALWAYS TRUE here, for the reason
+ * rotating-slash.js documents at length: the script counts instances whose
+ * object_index is EXACTLY `obj_bulletparent`, and nothing in the knight fight
+ * ever creates a bare one. Translating it as "live bullets < 2" is a DIFFERENT
+ * predicate and is what once deadlocked the rotating slash at 999999 forever.
+ * So it is written as the constant it is, with the reason, rather than as a
+ * count that would be wrong the moment a schedule layers a long-lived sibling.
+ *
+ * VANILLA-NEUTRAL BY CONSTRUCTION: ac 10 is never assigned by the vanilla
+ * selector (checked in the dump), so the vanilla fight never runs this attack
+ * and the whole-fight diff cannot move. The kaizo route reaches it through
+ * ac 2 d5 -> type 108.
+ */
+export function swordfallDestroy(e, state) {
+  const closing =
+    e.turn_type !== 'start' &&
+    e.turn_type !== 'short start' &&
+    e.turn_type !== 'short mid';
+  if (!closing) return;
+  const knight = state.entities.find(
+    (k) => k.alive && k.type.name === 'obj_knight_enemy',
+  );
+  if (knight) knight.image_alpha = 1;
+  state.turntimer = -1;
+}
+
+const KNIGHT_IDLE_SPRITE_W = 117;
+const KNIGHT_IDLE_SPRITE_H = 115;
 
 export const knightSwordfall = {
   name: 'obj_knight_swordfall',
@@ -257,9 +373,43 @@ export const knightSwordfall = {
   alarm: {
     /** The Knight's OWN sword, with its seven-stage wobble. */
     0(e, state) {
+      // gml_Object_obj_knight_swordfall_Alarm_0.gml:1 — BOTH TERMS ARE LIVE:
+      //
+      //     instance_create(x + (sprite_width * 0.5),
+      //                     (y + (sprite_height * 0.5)) - 30, obj_fallingsword)
+      //
+      // THIS WAS FROZEN AS `x + 75, y - 30`, AND BOTH HALVES WERE WRONG.
+      // Alarm 5 always runs first, and it takes exactly as long as it delays
+      // this alarm — `scr_lerpvar("image_xscale", image_xscale, 0, 8, 1,
+      // "out")`, `scr_lerpvar("x", x, x + 110, 8, 1, "out")`, `alarm[0] = 8`
+      // — so by the time alarm 0 fires `image_xscale` has reached 0.
+      // `sprite_width` is therefore 0 and the whole x TERM VANISHES, leaving
+      // alarm 5's own +110 slide as the entire horizontal offset. Meanwhile
+      // `image_yscale` is untouched at 2 (scr_darksize), so
+      // `sprite_height * 0.5` is a full 115 — the old `y - 30` had dropped
+      // that term altogether.
+      //
+      // MEASURED, not reasoned — kaizo_oracle_seq_deep.csv and
+      // kaizo_oracle_seq_sideb.csv, grouped by kaizo_playing, FOUR
+      // independent launches across both routes:
+      //   deep  atk_Vortex1   mgr (425, 83.8656005859) sword (535, 172.8656005859)
+      //   deep  atk_Frenzy2B  mgr (425, 71.0049285889) sword (535, 160.0049285889)
+      //   sideb atk_Vortex1   mgr (425, 84.0428771973) sword (535, 173.0428771973)
+      //   sideb atk_Frenzy2B  mgr (425, 74.9304122925) sword (535, 163.9304199219)
+      // dx = +110 and dy = +89 = (115 - 30) + 4, the +4 being the single
+      // frame of built-in motion the recorder's Draw-time log always carries
+      // (speed -4 along direction 90). The frozen constants gave +185 / -26:
+      // 75px too far right and 115px too high. Asserted by
+      // kaizo/tools/checks/check-oracle-vortex.mjs, block D-1.
+      //
+      // DO NOT RE-FREEZE THESE. +110 and +89 are merely what these
+      // expressions evaluate to at THIS scale; what the mod ships is the
+      // arithmetic, not the numbers.
+      const spriteWidth = KNIGHT_IDLE_SPRITE_W * e.image_xscale;
+      const spriteHeight = KNIGHT_IDLE_SPRITE_H * e.image_yscale;
       const s = spawn(state, fallingSword, {
-        x: e.x + 75, // sprite_width * 0.5 at scale 2 (spr_roaringknight_idle)
-        y: e.y - 30,
+        x: e.x + (spriteWidth * 0.5),
+        y: (e.y + (spriteHeight * 0.5)) - 30,
       });
       s.alarm[0] = 1;
       s.image_angle = -90;
@@ -274,19 +424,20 @@ export const knightSwordfall = {
       scrLerpvar(state, spawn, s, 'image_xscale', 1.5, 2, 49, 1);
       // The seven-stage yscale chain, delays and durations verbatim.
       scrLerpvar(state, spawn, s, 'image_yscale', 0, -3, 4, 1);
-      delayedLerp(state, s, 4, 'image_yscale', -3, 0, 5);
-      delayedLerp(state, s, 9, 'image_yscale', 0, 2.5, 6);
-      delayedLerp(state, s, 15, 'image_yscale', 2.5, 0, 7);
-      delayedLerp(state, s, 22, 'image_yscale', 0, -2.25, 8);
-      delayedLerp(state, s, 30, 'image_yscale', -2.25, 0, 9);
-      delayedLerp(state, s, 39, 'image_yscale', 0, 2, 10);
+      delayedLerp(state, s, 4, 'image_yscale', -3, 0, 5, 1, 'in');
+      delayedLerp(state, s, 9, 'image_yscale', 0, 2.5, 6, 1, 'out');
+      delayedLerp(state, s, 15, 'image_yscale', 2.5, 0, 7, 1, 'in');
+      delayedLerp(state, s, 22, 'image_yscale', 0, -2.25, 8, 1, 'out');
+      delayedLerp(state, s, 30, 'image_yscale', -2.25, 0, 9, 1, 'in');
+      delayedLerp(state, s, 39, 'image_yscale', 0, 2, 10, 1, 'out');
     },
 
     /** The FINAL sword — faster, worth far more graze, aimed at the centre. */
     1(e, state) {
       const box = boxOf(state);
-      const x = box.x - 55 + gmlRandom(state.gmlRng, 110);
+      // y before x: GML call arguments evaluate right-to-left (see dropSword).
       const y = box.y - 110 + gmlRandom(state.gmlRng, 30);
+      const x = box.x - 55 + gmlRandom(state.gmlRng, 110);
       const s = spawn(state, fallingSword, { x, y });
       s.image_angle = pointDirection(x, y, box.x, box.y);
       s.direction = s.image_angle;
@@ -321,6 +472,7 @@ export const knightSwordfall = {
      */
     3(e, state) {
       chainNext(state, e);
+      swordfallDestroy(e, state);
       destroy(e);
     },
 
@@ -328,6 +480,7 @@ export const knightSwordfall = {
     4(e, state) {
       if (state.knight) state.knight.siner2 = e._siner;
       e.done = true;
+      swordfallDestroy(e, state);
       destroy(e);
     },
 
@@ -369,6 +522,7 @@ export const knightSwordfall = {
     e.countdown -= 1;
     if (e.countdown !== 0) return;
 
+    // (the Destroy event lives at swordfallDestroy, below the type)
     // THE FINISH. `ex` is 30 at difficulty 1, so the harder version stops
     // raining earlier and gets to its final sword sooner.
     const ex = e.difficulty === 1 ? 30 : 0;

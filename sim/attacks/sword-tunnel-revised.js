@@ -102,7 +102,22 @@ export const diamondSwordBullet = {
   init(e, state) {
     e.shakeme = false;
     e.play_passing_sfx = false;
-    const heart = state.soul;
+    // THE SOUL'S PRE-STEP POSITION (state.soulPrev). The volley is fired from
+    // the tunnel's own Step, and the runner steps NEWEST-FIRST: the slasher
+    // and its blades are minutes younger than obj_heart, so every one of them
+    // aims at the soul as it stood BEFORE it moved this frame. This engine
+    // steps oldest-first, so the heart has already moved by the time the
+    // volley runs, and `scr_at_player()` came out one frame ahead.
+    //
+    // MEASURED on _tok3 f3866, the frame all eight blades begin their turn.
+    // Their f3865 poses are identical on both sides, so the only free term is
+    // the aim: solving each blade's first lerp step for the easing fraction
+    // gives ONE constant (0.159722, spread 3e-6 across the eight) when the
+    // game is aimed at the f3864 soul and the sim at the f3865 soul, and a
+    // spread three orders of magnitude worse under any other pairing. Same
+    // compensation as the older tunnel's swept probe (sim/attacks/
+    // sword-tunnel.js) and the rotating slash's aim.
+    const heart = state.soulPrev ?? state.soul;
     const atPlayer = heart
       ? pointDirection(e.x, e.y, heart.x + 10, heart.y + 10)
       : 180;
@@ -519,8 +534,16 @@ export const tunnelSlasher2 = {
       const gt = boxOf(state);
       const b = fireBlade(state, e, {
         x: getBox(state, 0) + 40,
+        // `choose(-1, 1)`, NOT `choose(1, -1)` -- Step_0:348 of the vanilla
+        // object, and the two orders are BOTH used in this one event (the two
+        // dorifto sites above are `choose(1, -1)`). gmlChoose indexes by parity,
+        // so a reversed list draws the same u32 and mirrors every decoy through
+        // the board's centre line: invisible to any count audit, visible only
+        // against a recorded position. Found in the kaizo copy of this site,
+        // where the recording pins both draws exactly (that file's note), and
+        // corrected here because the vanilla GML reads the same way.
         y: (gt ? gt.y : mbox)
-          + gmlRandomRange(state.gmlRng, 20, 70) * gmlChoose(state.gmlRng, [1, -1]),
+          + gmlRandomRange(state.gmlRng, 20, 70) * gmlChoose(state.gmlRng, [-1, 1]),
         speed: 0.35, angle: 90, len: y3 * 0.75, startScale: 0,
         drift: dorifto * 2, fake: true,
       });

@@ -61,7 +61,7 @@ export function regularbulletCreate(e, state) {
   e.spinspeed = 0;
   e.image_alpha = 1;
   if (!state.soul || !state.soul.alive) {
-    destroy(e);
+    destroy(e, state);
   }
   e.wall_destroy = 1;
   e.bottomfade = 0;
@@ -74,11 +74,36 @@ export function regularbulletCreate(e, state) {
 }
 
 export function regularbulletStep(e, state) {
+  // destroy() TAKES THE STATE. Without it the type's Destroy event and
+  // CleanUp never run (sim/entity.js gates both on `state`), and a bullet
+  // dying offscreen here drew no death ghost -- obj_bullet_knightcrescent's
+  // Destroy_0 random_range -- while the game did: the probe recording's
+  // Crescent turn lost one u32 per wall death from f431, and the kaizo byte
+  // gate fell from f2591 to f481 the moment the ghost moved from an ad hoc
+  // call into the hook (2026-09-02). Every destroy in this file passes it.
+  //
+  // THE SHAKEN CAMERA IS NOT READ HERE, and the attempt is worth recording.
+  // The probe recording's POPULATION front at f2229 IS a shake: a bare
+  // obj_regularbullet leaving the arena sits at y -76.19 on f2228 with both
+  // sides agreeing, a hit lands that frame, and the game culls it on f2229
+  // against a line moved to view.y + 4 - 80 while the sim, reading the
+  // unshaken view, held it to f2231. Routing this test through
+  // sim/shake.js viewFor(state, e) does move that front (f2229 -> f2660).
+  //
+  // IT ALSO BREAKS THE VANILLA WHOLE-FIGHT DIFF at f982, and the instrumented
+  // run named the case: obj_roaringknight_split_bullet seq 473 at x 762.67 --
+  // just past the right edge, view.x + 760 -- which the sim then KEEPS
+  // because the shaken line is 764, while the game culls it. viewFor applies
+  // the offset only for a reader OLDER than a shake that has not stepped
+  // (`sh.seq > e.seq`), so the game's tooth must have been NEWER than its
+  // shake where the sim's is older: the rule is right and the SIM'S SHAKE IS
+  // CREATED AT A DIFFERENT POINT IN THE ORDER than the game's. That is the
+  // thing to fix -- not this test. Reverted 2026-09-02; both fronts stand.
   if (e.wall_destroy === 1) {
-    if (e.x < state.view.x - 80) destroy(e);
-    if (e.x > state.view.x + 760) destroy(e);
-    if (e.y < state.view.y - 80) destroy(e);
-    if (e.y > state.view.y + 580) destroy(e);
+    if (e.x < state.view.x - 80) destroy(e, state);
+    if (e.x > state.view.x + 760) destroy(e, state);
+    if (e.y < state.view.y - 80) destroy(e, state);
+    if (e.y > state.view.y + 580) destroy(e, state);
   }
   if (e.updateimageangle === 1) {
     e.image_angle = e.direction;
@@ -123,7 +148,7 @@ export function collidebulletOther15(e, state) {
       }
     }
     if (e.destroyonhit === 1 || e.destroyonhit === true) {
-      destroy(e);
+      destroy(e, state);
     }
   }
 }
