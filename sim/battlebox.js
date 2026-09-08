@@ -204,8 +204,11 @@ export const battlebox = {
     // `(1 - image_alpha) + 0.1` — the INVERSE of the box's own, so the echo is
     // strongest while the box is faint and has almost gone by the time it is
     // solid. Its scale is `sizer * growscale`, not the box's image_xscale, so
-    // it stays square while the box takes its 2.25 x 1.75 shape. Both were
-    // invented here before and read as a flicker.
+    // on a 2x2 box it stays square. (On a CUSTOM arena the game's echo is
+    // `spr_custom_box` — the baked rectangle, so it carries the arena's
+    // 2.24 x 1.76 aspect; this one is still the square spr_battlebg_0, an
+    // open cosmetic gap.) Both were invented here before and read as a
+    // flicker.
     if (e.visible !== false) {
       const d = spawn(state, afterimage, { x: e.x, y: e.y });
       d.sprite_index = e.sprite_index ?? 'spr_battlebg_0';
@@ -216,6 +219,13 @@ export const battlebox = {
       d.image_alpha = 1 - e.image_alpha + 0.1;
       d.image_speed = 0;
       d.depth = e.depth - 1;
+      // `d.image_blend = image_blend;` — obj_growtangle Step_0 line 63. The
+      // echo is the arena's GREEN, on every turn; without this the generic
+      // blit (render/canvas.js, `e.image_blend` undefined -> untinted) drew
+      // every grow-in echo WHITE. Render-only data on an fx entity —
+      // sim/trace.js records no image_blend column — but it is under sim/,
+      // so the whole-fight regen/verify still has to say zero delta.
+      d.image_blend = e.image_blend;
     }
 
     if (e.timer >= e.maxtimer && e.growcon === 1) {

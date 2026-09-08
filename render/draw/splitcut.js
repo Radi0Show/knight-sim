@@ -24,8 +24,23 @@ import { drawSpriteExt, clamp01, ldx, ldy, c_white } from './gm.js';
 const W = 640;
 const H = 480;
 
-/** One snapshot per effect instance, taken on its first drawn frame. */
-const snapshots = new WeakMap();
+/**
+ * ONE snapshot canvas, re-armed per effect instance on its first drawn frame.
+ *
+ * This was a WeakMap of one fresh 640x480 canvas per effect — collectable,
+ * so not a leak, but Flurry cuts the arena on every splitslash (8-10 a turn)
+ * and each cut allocated ~1.2 MB and copied the screen into it: ~12 MB of
+ * churn per turn, on top of the split box's own (render/splitbox.js). The
+ * effect is one-at-a-time by construction — obj_roaringknight_splitslash
+ * re-arms the organism per cut and the effect destroys itself ten frames
+ * later (sim/attacks/split-growtangle.js) — so the same `lastOrganism`
+ * pattern the split box uses serves here: remember which entity the copy
+ * belongs to, and retake it when a new one appears. Same picture (the copy
+ * is taken at the same moment, into a canvas of the same size), no
+ * allocation after the first cut of the session.
+ */
+let snap = null;
+let snapOf = null;
 
 export function drawSplitCut(ctx, e, state, deps) {
   const { sprites } = deps;
@@ -33,15 +48,20 @@ export function drawSplitCut(ctx, e, state, deps) {
   const fade = (10 - timer) / 10;
   if (fade <= 0) return true;
 
-  let snap = snapshots.get(e);
-  if (!snap) {
-    snap = document.createElement('canvas');
-    snap.width = W;
-    snap.height = H;
+  if (snapOf !== e) {
+    snapOf = e;
+    if (!snap) {
+      snap = document.createElement('canvas');
+      snap.width = W;
+      snap.height = H;
+    }
     const g = snap.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
     g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, W, H);
     g.drawImage(ctx.canvas, 0, 0);
-    snapshots.set(e, snap);
   }
 
   const xmul = ldx(1, e.angle);

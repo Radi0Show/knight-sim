@@ -92,8 +92,42 @@ export function createSplitBox(sprites) {
   if (!bg || bg.frames.length < 2) return null;
 
   // source_surf: the box art, drawn twice (frame 1 under frame 0) at scale 2.
+  //
+  // TINTED HERE, AT BUILD TIME — not at draw time. The original draws the
+  // surfaces plain and applies `image_blend` on the way out
+  // (`draw_surface_ext(source_surf, ..., image_blend, 1)` and the same for
+  // each half), and this used to do exactly that: `tinted(source, blend)`
+  // every frame the box was whole and `tinted(halfA/halfB, blend)` every
+  // frame it was split. But those are CANVASES, which tinted() cannot cache
+  // (no `.src`), so each call minted a fresh 170x170 canvas and ran three
+  // composite passes — measured 1 per whole-box frame and 2 per split frame,
+  // ~720 canvases per 600-frame Flurry, every rAF, for the whole of every
+  // box-splitter turn. That was the frame drop AT the box splitter.
+  //
+  // Multiplying by a constant colour is linear per channel and leaves alpha
+  // alone, so it commutes with everything that happens to the picture
+  // afterwards — the half-plane clip (an alpha mask), the shear's copies and
+  // source-over (both linear in colour), the seam's source-atop (a coverage
+  // lerp, so it commutes provided the seam grey is multiplied too; see
+  // shearSource). Tinting the two SOURCE FRAMES once therefore gives the
+  // same box, and the frames are <img>s, so tinted() caches them: two
+  // entries for the organism's life, zero per-frame allocation. The blend is
+  // set once at the organism's Create (copied off obj_growtangle) and never
+  // changes; `draw` still re-checks it, defensively.
   const source = makeCanvas();
-  function resetSource() {
+  let blendKey = null; // the blend the surfaces were built with
+  let seamColor = 'rgb(64,64,64)';
+  function resetSource(blend) {
+    blendKey = blend ? blend.join(',') : null;
+    // The seam is painted onto the ALREADY-TINTED surface, so its grey has to
+    // carry the same multiply the original's draw-time blend would have
+    // applied over it: rgb(64,64,64) x blend/255 (rounded, +/-1 per channel
+    // against the browser's own multiply rounding — invisible). Forgetting
+    // this is the one way to make the split box look different: the seam
+    // would come out a lighter grey than today's, instead of dark green.
+    seamColor = blend
+      ? `rgb(${Math.round(64 * blend[0] / 255)},${Math.round(64 * blend[1] / 255)},${Math.round(64 * blend[2] / 255)})`
+      : 'rgb(64,64,64)';
     const g = source.getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, SURF, SURF);
@@ -103,11 +137,11 @@ export function createSplitBox(sprites) {
       g.save();
       g.translate(HALF, HALF);
       g.scale(2, 2);
-      g.drawImage(bg.frames[f], -ox, -oy);
+      g.drawImage(blend ? tinted(bg.frames[f], blend) : bg.frames[f], -ox, -oy);
       g.restore();
     }
   }
-  resetSource();
+  resetSource(null);
 
   // `source_surf` is created PER INSTANCE in the original (`if
   // (!surface_exists(source_surf))` inside the object's own Draw), and the
@@ -165,11 +199,13 @@ export function createSplitBox(sprites) {
     g.drawImage(halfA, -xmul * deviation, -ymul * deviation);
     g.drawImage(halfB, xmul * deviation, ymul * deviation);
 
-    // The seam: `merge_color(c_black, c_white, 0.25)` is rgb(64,64,64).
+    // The seam: `merge_color(c_black, c_white, 0.25)` is rgb(64,64,64) —
+    // pre-multiplied by the organism's blend, because the surface it lands on
+    // is already tinted (see resetSource).
     const abs = HALF + Math.abs(deviation);
     g.save();
     g.globalCompositeOperation = 'source-atop';
-    g.strokeStyle = 'rgb(64,64,64)';
+    g.strokeStyle = seamColor;
     g.lineWidth = 1;
     g.beginPath();
     g.moveTo(HALF + xoffset - xmul * abs, HALF + yoffset - ymul * abs);
@@ -219,9 +255,17 @@ export function createSplitBox(sprites) {
    * @param e      the live obj_knight_split_growtangle entity
    */
   function draw(ctx, e, simFrame = 0) {
-    if (e !== lastOrganism) {
+    // EVERY half is drawn with `image_blend`, which Create copies off
+    // obj_growtangle — so the cut box stays the arena's green. Drawing it
+    // plain turned it white for the whole split, which is precisely the moment
+    // the box has the player's attention. The blend is baked into the
+    // surfaces (resetSource), so a changed blend is a rebuild — it never
+    // changes in practice, but a rebuild is the correct answer if it did.
+    const blend = e.image_blend;
+    const key = blend ? blend.join(',') : null;
+    if (e !== lastOrganism || key !== blendKey) {
       lastOrganism = e;
-      resetSource();
+      resetSource(blend);
       vChange = 0;
       hChange = 0;
       // ARMED, not cleared. The original's `update_box` starts false and is set
@@ -252,17 +296,11 @@ export function createSplitBox(sprites) {
     const xoffset = e.xoffset ?? 0;
     const yoffset = e.yoffset ?? 0;
 
-    // EVERY half is drawn with `image_blend`, which Create copies off
-    // obj_growtangle — so the cut box stays the arena's green. Drawing it
-    // plain turned it white for the whole split, which is precisely the moment
-    // the box has the player's attention.
-    const blend = e.image_blend;
-
     if (distance === 0) {
-      // Whole box: the source surface, drawn straight. `update_box = true` is
-      // set here and ONLY here.
+      // Whole box: the source surface, drawn straight — already tinted, so no
+      // per-frame tint here. `update_box = true` is set here and ONLY here.
       updateBox = true;
-      ctx.drawImage(blend ? tinted(source, blend) : source, e.x - HALF, e.y - HALF);
+      ctx.drawImage(source, e.x - HALF, e.y - HALF);
       return;
     }
 
@@ -293,14 +331,14 @@ export function createSplitBox(sprites) {
     const jx2 = distance > 0 ? shake() : 0;
     const jy2 = distance > 0 ? shake() : 0;
 
-    const tA = blend ? tinted(halfA, blend) : halfA;
-    const tB = blend ? tinted(halfB, blend) : halfB;
+    // The halves were cut from the tinted source, so they are drawn as they
+    // are — no per-frame tinted() on a canvas (see resetSource).
     if (diagonal && vertical) {
-      ctx.drawImage(tA, e.x - splid - HALF + jx, e.y + dist - HALF + jy);
-      ctx.drawImage(tB, e.x + splid - HALF + jx2, e.y - dist - HALF + jy2);
+      ctx.drawImage(halfA, e.x - splid - HALF + jx, e.y + dist - HALF + jy);
+      ctx.drawImage(halfB, e.x + splid - HALF + jx2, e.y - dist - HALF + jy2);
     } else {
-      ctx.drawImage(tA, e.x - splid - HALF + jx, e.y - dist - HALF + jy);
-      ctx.drawImage(tB, e.x + splid - HALF + jx2, e.y + dist - HALF + jy2);
+      ctx.drawImage(halfA, e.x - splid - HALF + jx, e.y - dist - HALF + jy);
+      ctx.drawImage(halfB, e.x + splid - HALF + jx2, e.y + dist - HALF + jy2);
     }
 
     // The burning cut faces — GATED TWICE, and the sim had neither gate.

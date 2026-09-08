@@ -152,6 +152,68 @@ try {
   }
 }
 
+// THE CUSTOM ARENA'S NINE-SLICE PATH. The fight smoke above cannot reach it:
+// the fake entry has ONE frame and drawGrowtangle falls back to the plain
+// spr_battlebg_0 path when spr_battlebg_stretch_hitbox has fewer than two.
+// So drive it directly, with a two-frame entry, through every state the
+// grow-in passes: born at scale 0 (must draw nothing, not hand drawImage a
+// zero width), a box smaller than its 4px guides (corners clamp, edges hit
+// zero), the grow-in (growcon 1, the baked custom box), steady (growcon 2)
+// and the collapse (growcon 3) — plus a bare drawSpriteExtNineSlice at
+// negative scale, which must simply return.
+{
+  const { drawGrowtangle, drawSpriteExtNineSlice } = await import('../render/draw/gm.js');
+  const twoFrames = { frames: [fakeImg, { ...fakeImg, src: 'stub://frame1' }], meta: { ox: 37, oy: 37, w: 75, h: 75 } };
+  const sprites = new Map([['spr_battlebg_0', twoFrames], ['spr_battlebg_stretch_hitbox', twoFrames]]);
+  // The counting stub swallows anything; a browser's drawImage does not throw
+  // on a zero-width slice either — it silently draws nothing, or worse,
+  // draws the wrong region from a negative one. So this context is STRICT:
+  // a non-finite or non-positive size in the nine-argument form is a failure.
+  const inner = mkCtx();
+  const ctx3 = new Proxy(inner, {
+    get(t, p) {
+      if (p !== 'drawImage') return t[p];
+      return (...a) => {
+        const r = a.slice(1);
+        if (r.some((v) => !Number.isFinite(v))) throw new Error(`drawImage got ${r.join(',')}`);
+        if (r.length === 8 && (r[2] <= 0 || r[3] <= 0 || r[6] <= 0 || r[7] <= 0)) {
+          throw new Error(`nine-slice drawImage with a non-positive size: ${r.join(',')}`);
+        }
+        return t.drawImage(...a);
+      };
+    },
+    set(t, p, v) { t[p] = v; return true; },
+  });
+  let step = 'nine-slice at scale 0 / negative';
+  try {
+    drawSpriteExtNineSlice(ctx3, twoFrames, 0, 0, 0, 0, 0, 0, null, 1, 4);
+    drawSpriteExtNineSlice(ctx3, twoFrames, 1, 0, 0, -2, 2, 45, [0, 192, 0], 0.5, 4);
+    drawSpriteExtNineSlice(ctx3, twoFrames, 0, 10, 10, 0.02, 0.02, 90, [0, 192, 0], 1, 4);
+    const box = (over) => ({
+      x: 320, y: 240, customBox: true, maxxscale: 2.24, maxyscale: 1.76, growscale: 2,
+      maxtimer: 15, image_blend: [0, 192, 0], image_alpha: 1, image_angle: 0, ...over,
+    });
+    const cases = [
+      ['born at 0', box({ growcon: 1, timer: 0, image_xscale: 0, image_yscale: 0 })],
+      ['tinier than the guides', box({ growcon: 1, timer: 1, image_xscale: 2.24 / 15, image_yscale: 1.76 / 15, image_angle: 192 })],
+      ['mid grow-in', box({ growcon: 1, timer: 7, image_xscale: 2.24 * 7 / 15, image_yscale: 1.76 * 7 / 15, image_angle: 264 })],
+      ['landed', box({ growcon: 2, timer: 15, image_xscale: 2.24, image_yscale: 1.76 })],
+      ['collapsing', box({ growcon: 3, timer: 3, image_xscale: 2.24 * 3 / 15, image_yscale: 1.76 * 3 / 15 })],
+      ['stale flag on a 2x2 tween', box({ growcon: 2, timer: 15, maxxscale: 2, maxyscale: 2, image_xscale: 9.5, image_yscale: 7.1 })],
+    ];
+    for (const [name, e] of cases) {
+      step = name;
+      const handled = drawGrowtangle(ctx3, e, sprites, 'spr_battlebg_0');
+      const custom = e.maxxscale !== 2 || e.maxyscale !== 2;
+      if (handled !== custom) {
+        failures.push(`drawGrowtangle(${name}) returned ${handled}; a custom arena must return true (drawn entirely) and a 2x2 box false (draw_self follows)`);
+      }
+    }
+  } catch (err) {
+    failures.push(`the custom-arena draw threw at "${step}": ${err.message}`);
+  }
+}
+
 if (failures.length) {
   console.log('');
   for (const x of failures) console.log(`→ FAILURE  ${x}`);

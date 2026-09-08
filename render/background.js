@@ -41,7 +41,7 @@
 // `sin(siner / 20)` and `sin(siner / 13)`, deliberately coprime periods, so the
 // two sets never line up and the column never looks like it is pulsing.
 
-import { drawSpriteExt, rgb, mergeColor, c_black } from './draw/gm.js';
+import { drawSpriteExt, tintInto, rgb, mergeColor, c_black } from './draw/gm.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
 
 const c_purple = [128, 0, 128];
@@ -92,24 +92,57 @@ function tiled(ctx, img, ox, oy, xs, ys, color, alpha, w, h) {
   ctx.restore();
 }
 
+// The parallax sheets' tint. Only ever called with c_purple, so this map
+// holds one entry; the recipe itself is gm.js's tintInto.
 const tintCache = new Map();
 function tint(img, color) {
   const key = `${img.src}|${color}`;
   let c = tintCache.get(key);
   if (c) return c;
-  c = document.createElement('canvas');
-  c.width = img.width;
-  c.height = img.height;
-  const g = c.getContext('2d');
-  g.imageSmoothingEnabled = false;
-  g.drawImage(img, 0, 0);
-  g.globalCompositeOperation = 'multiply';
-  g.fillStyle = rgb(color);
-  g.fillRect(0, 0, c.width, c.height);
-  g.globalCompositeOperation = 'destination-in';
-  g.drawImage(img, 0, 0);
+  c = tintInto(document.createElement('canvas'), img, color);
   tintCache.set(key, c);
   return c;
+}
+
+/**
+ * THE COLUMN'S SCRATCH — one canvas, re-tinted in place.
+ *
+ * The column is drawn in `blend`, and `blend` moves almost every frame once
+ * the Knight has been hit: it is #27293F mixed toward a hue that sweeps with
+ * `sin(siner / 90)`, by `battleprog / 2`, and battleprog is read off the
+ * Knight's HP. Handing that colour to drawSpriteExt meant tinted() minting a
+ * cache entry per (frame-of-4, colour), and its cache never forgot — measured
+ * 159-523 retained 175x45 canvases per 600 frames at every distinct damaged
+ * HP, none at full HP, growing for the whole session (every player attack
+ * turn and every HITLESS/NORMAL restart reaches new HP values). That was the
+ * "stores the visual effects from previous instances" report.
+ *
+ * So the column owns ONE canvas and a key of (sub-image, colour): when the
+ * frame's pair differs from the last, it is re-tinted in place — the same
+ * three composite ops tinted() runs, ~175x45 — and the five copies are
+ * drawn from it. Cost: at most one small re-tint per frame; retention: one
+ * canvas, forever. The pixels are what tinted() produced, from the same ops.
+ */
+let columnScratch = null;
+let columnKey = null;
+function columnTinted(img, sub, color) {
+  const key = `${sub}|${color[0]},${color[1]},${color[2]}`;
+  if (key !== columnKey || !columnScratch) {
+    columnScratch ??= document.createElement('canvas');
+    tintInto(columnScratch, img, color);
+    columnKey = key;
+  }
+  return columnScratch;
+}
+
+/** drawSpriteExt's geometry (origin, scale 2, no angle) for a pre-tinted copy. */
+function columnBlit(ctx, entry, src, x, y, alpha) {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(x, y);
+  ctx.scale(2, 2);
+  ctx.drawImage(src, -(entry.meta.ox ?? 0), -(entry.meta.oy ?? 0));
+  ctx.restore();
 }
 
 /** `draw_sprite_ext(spr_pxwhite, ...)` — a 1x1 pixel scaled into a rectangle. */
@@ -173,13 +206,16 @@ export function drawBackground(ctx, state, sprites) {
   bar(ctx, shakex + 138 + 50, shakey, 240, 90, mergeColor(blend, c_black, 0.8), af);
 
   const sub = Math.floor(s / 10) % column.frames.length;
+  // Through the column's own scratch, NOT drawSpriteExt(..., blend): see
+  // columnTinted for why a per-frame colour must never reach tinted().
+  const col = columnTinted(column.frames[sub], sub, blend);
   for (let i = 1; i < 3; i++) {
-    drawSpriteExt(ctx, column, sub,
-      shakex + 138 - Math.sin(s / 20) * (i * 12), shakey, 2, 2, 0, blend, (i / 12) * af);
-    drawSpriteExt(ctx, column, sub,
-      shakex + 138 + Math.sin(s / 13) * (i * 6), shakey, 2, 2, 0, blend, (i / 12) * af);
+    columnBlit(ctx, column, col,
+      shakex + 138 - Math.sin(s / 20) * (i * 12), shakey, (i / 12) * af);
+    columnBlit(ctx, column, col,
+      shakex + 138 + Math.sin(s / 13) * (i * 6), shakey, (i / 12) * af);
   }
-  drawSpriteExt(ctx, column, sub, shakex + 138, shakey, 2, 2, 0, blend, 1);
+  columnBlit(ctx, column, col, shakex + 138, shakey, 1);
 
   // 6. The gutters, drawn LAST so they cut the column off cleanly.
   bar(ctx, shakex - 40, shakey, 40, 480, c_black, 1);

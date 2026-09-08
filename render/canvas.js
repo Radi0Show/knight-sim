@@ -413,17 +413,21 @@ export async function createRenderer(canvas, { overrides = null } = {}) {
       // the custom draw and let the DEFAULT one draw the board anyway —
       // the box stayed on screen through the whole command phase.
       if (state.boardVisible === false) return true;
-      drawGrowtangle(ctx, e, deps.sprites, SPRITE_FOR.obj_growtangle);
-      // RETURN FALSY. `drawGrowtangle` draws only the GREEN UNDER-LAYER —
-      // frame 1, the solid interior. The BORDER is frame 0, drawn by
-      // `draw_self()`, which here is the generic blit that runs when an
-      // override declines to handle the entity.
+      // RETURN WHAT drawGrowtangle RETURNS. On an ordinary 2x2 box (and on
+      // ROARING's tween of one) it draws only the GREEN UNDER-LAYER — frame
+      // 1, the solid interior — and returns false: the BORDER is frame 0,
+      // drawn by `draw_self()`, which here is the generic blit that runs when
+      // an override declines to handle the entity. Returning true there
+      // deleted the box's outline and left a black interior on a dark
+      // background: the arena looked like it had stopped appearing at all.
       //
-      // Returning true to suppress the blit therefore deleted the box's
-      // outline and left a black interior on a dark background: the arena
-      // looked like it had stopped appearing entirely. Both layers are
-      // needed, which is what obj_growtangle's own two-line Draw says.
-      return false;
+      // On a CUSTOM arena (Stars, the sword tunnel — obj_growtangle's
+      // `customBox`) it draws BOTH layers itself, nine-sliced from
+      // spr_battlebg_stretch_hitbox the way the game does, and returns true:
+      // the generic blit would put a second, plain-scaled spr_battlebg_0
+      // border on top and bring back exactly the stretched border the
+      // nine-slice exists to remove.
+      return drawGrowtangle(ctx, e, deps.sprites, SPRITE_FOR.obj_growtangle);
     },
 
     /**
