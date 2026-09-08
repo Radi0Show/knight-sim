@@ -40,6 +40,15 @@ const rows = [];
 for (const m of ATTACK_MENU) {
   tick = 0;
   const state = createState({ seed: 12345, traceBulletSlots: 0 });
+  // THE DRILL CAN DIE NOW (single.js's director gates on partyWiped, as the
+  // fight's does), and this scripted square walks a full-HP party into a
+  // wipe mid-run on several attacks — tracking17 lost every graze to it,
+  // because its grazes came from a later run the halted drill never reached.
+  // keepAlive is the engine's own "drive the drill without the party
+  // mattering" path (sim/index.js refills, revives and clears gameOver
+  // before the trace row); graze and TP do not depend on HP, so the rows
+  // are unchanged by it.
+  state.keepAlive = true;
   buildSingleAttackScene(state, { seed: 12345, attack: m.id, difficulty: m.difficulties[0] });
 
   let peak = 0;
@@ -70,6 +79,7 @@ for (const m of ATTACK_MENU) {
 // `frames` came from timepoints.
 tick = 0;
 const g = createState({ seed: 7, traceBulletSlots: 0 });
+g.keepAlive = true; // same reason as above: outlive a wipe
 buildSingleAttackScene(g, { seed: 7, attack: 'vortex', difficulty: 0 });
 let clockStart = null;
 const FRAMES = 200;
@@ -146,6 +156,7 @@ console.log(`\nturn clock: ${spent.toFixed(1)} spent over ${FRAMES} frames — $
 // a bar that caps at 250.
 {
   const s = createState({ seed: 9, traceBulletSlots: 0 });
+  s.keepAlive = true; // same reason as above: outlive a wipe
   buildSingleAttackScene(s, { seed: 9, attack: 'rotating', difficulty: 0 });
   s.damageEnabled = false;
   let tp = 0;

@@ -12,13 +12,13 @@
 // options.
 
 import { spawn, destroy } from '../entity.js';
-import { soul } from '../soul.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate } from '../rng.js';
-import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
-import { launchAttack, openArena, clearTurn, FIGHT_TABLE } from './fight.js';
+import { knightActor, partyActor, PARTY, KNIGHT, BOX } from '../actors.js';
+import { launchAttack, openArena, clearTurn, deliverHeart, FIGHT_TABLE } from './fight.js';
 import { createMenu } from '../menu.js';
-import { freshParty, scrRevive } from '../damage.js';
+import { freshParty, scrRevive, partyWiped } from '../damage.js';
+import { cueLoop } from '../audio.js';
 import { COMBO_ATTACKS } from '../attacks/combination.js';
 
 /** The objects a combination turn can hand itself to. */
@@ -99,6 +99,7 @@ const director = {
     e.elapsed = 0;
     e.owner = null;
     e.runs = 0;
+    e.musicStarted = false;
     // THE SELECTOR PICKS THE ATTACK AT THE TOP OF THE TURN, so anything gated
     // on `myattackchoice` is live from then — not from the board opening and
     // certainly not from the attack object spawning. Swordslash's soul clamp
@@ -109,19 +110,47 @@ const director = {
   },
 
   step(e, state) {
-    // THE REBUILD RUNS IN STEP, NOT ENDSTEP, and the difference is one frame
-    // of clamp. The knight is the scene's oldest entity, so his endStep — the
-    // ac-0 wall clamp among other things — runs before this director's
-    // endStep. A soul spawned there went unclamped until the next frame;
-    // spawned here, the knight's endStep still lies ahead in the same frame
-    // and catches it. verify-swordslash held the line: one violating frame.
+    // THE REBUILD RUNS IN STEP, NOT ENDSTEP — historically for the soul's
+    // sake (a soul spawned in this director's endStep went unclamped by the
+    // knight's ac-0 wall clamp, which runs in HIS endStep, before ours, for
+    // one frame; verify-swordslash held the line). ONLY THE BOARD is rebuilt
+    // here now: the soul is delivered by obj_moveheart at arena-open (below),
+    // and an alarm-created instance steps on its birth frame with the
+    // knight's endStep still ahead of it (sim/entity.js, runPhase's note),
+    // so the clamp ordering holds without anything being spawned here.
+    //
+    // The board is a placeholder: openArena needs a live obj_growtangle to
+    // place and grow, and this is where the fight's growtangle would be
+    // sitting hidden between turns.
     if (e.rebuild) {
       e.rebuild = false;
       settleBox(spawn(state, battlebox, { x: BOX.x, y: BOX.y }));
-      state.soul = spawn(state, soul, { ...SOUL_START });
     }
   },
   endStep(e, state) {
+    // THE DRILL CAN DIE. Same gate as the fight director's (practice.js):
+    // `partyWiped` latches gameOver and everything below stops, so a wipe is
+    // never undone by the between-run refill further down. Reported from
+    // play: "you cannot die in single attack". The driver takes it from
+    // here (the Knight's own game over, then GO BACK rebuilds the drill).
+    //
+    // NOTE the early return also freezes the turn clock, so a headless drill
+    // that must outlive a wipe sets `state.keepAlive` (sim/index.js refills,
+    // revives and clears gameOver every frame on that path) — as
+    // tools/verify-graze.mjs does; its scripted dodge wipes a full-HP party
+    // mid-run on several attacks.
+    if (!state.gameOver && partyWiped(state)) state.gameOver = true;
+    if (state.gameOver) return;
+    // obj_battlecontroller's Create loops `global.batmusic` for every
+    // battle; the drill is one too. Cued on the first STEPPED frame, not at
+    // build, exactly as the fight director does it — a state built under
+    // the title screen is never stepped, so it never sounds, and the
+    // driver's reset() stops the loop before rebuilding. Reported from play:
+    // "no music in single attack".
+    if (!e.musicStarted) {
+      e.musicStarted = true;
+      cueLoop(state, 'mus_knight');
+    }
     if (e.started && state.turntimer > 0) state.turntimer -= 1;
 
     const entry = state.practiceEntry;
@@ -200,10 +229,17 @@ const director = {
       //
       // Destroying and respawning BOTH each run is the fight's own turn
       // cycle, not a patch.
-      // Torn down THIS frame, rebuilt on the NEXT — Alarm 11's frame has no
-      // soul and no board either, and rebuilding in the same endStep left the
-      // fresh soul unclamped for exactly one frame (verify-swordslash caught
-      // it: the ac-0 wall clamp runs in the knight's endStep, before this).
+      // Torn down THIS frame; the board is rebuilt on the NEXT (step, above)
+      // and the soul NOT UNTIL ARENA-OPEN, by obj_moveheart, as the Knight
+      // delivers it. The drill used to respawn the soul with the board, 33
+      // frames early, inside a settled placeholder box — and a soul steered
+      // to that box's wall was outside the ring when openArena collapsed it
+      // to scale 0 at the attack's own arena. Reject-on-entry collision never
+      // pulls a soul back IN, so it walked out of the growing box and dodged
+      // from the free half of the screen. Reported by email: "when the soul
+      // recenters move to a corner; when the box animation plays you get out
+      // of bounds" — and measured wider than a corner: any held direction
+      // did it, single-axis included.
       if (state.soul?.alive) destroy(state.soul);
       state.soul = null;
       const oldGt = state.entities.find(
@@ -237,6 +273,18 @@ const director = {
       // restarts on the launch frame and the twelve frames are given back.
       const gt = state.entities.find((x) => x.alive && x.type.name === 'obj_growtangle');
       if (gt) gt.arenaOpened = state.practiceEntry.ac;
+      // THE SOUL FLIES IN; IT DOES NOT APPEAR — the fight's own delivery,
+      // from the same arena-open block the Knight uses (`scr_moveheart` in
+      // obj_baseenemy's mnfight-1.5 setup): obj_moveheart leaves Kris now
+      // and its alarm creates obj_heart at (gt.x - 10, gt.y - 10) eight
+      // frames later, at grow timer 8, when the ring already encloses the
+      // drop point — four frames before the attack launches. There is no
+      // soul before this, so there is nothing to steer outside the box.
+      // Guard is the Knight's `!i_ex(obj_heart)` (ac is never -1 here).
+      // Measured headlessly (soul centre past the ring's outer edge while
+      // the box is solid): 0 escape frames across 12 attacks x 8 held
+      // directions x 2 runs, against 30-410 per cell before.
+      if (!state.soul) deliverHeart(state, gt, state.practiceEntry.ac);
     }
     if (e.gap > 0) return;
     e.owner = launchAttack(state, state.practiceEntry);
@@ -275,7 +323,10 @@ export function buildSingleAttackScene(state, { seed = 12345, attack = 'stars', 
   }
 
   settleBox(spawn(state, battlebox, { x: BOX.x, y: BOX.y }));
-  state.soul = spawn(state, soul, { ...SOUL_START });
+  // NO SOUL AT BUILD — same as the fight scene. Run 1's arena-open delivers
+  // it via obj_moveheart (director.endStep); building one here gave run 1
+  // the same 33-frame steer-out-of-the-box window every later run had.
+  state.soul = null;
   spawn(state, director);
   return state;
 }

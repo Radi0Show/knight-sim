@@ -44,6 +44,27 @@ export const starsController = {
     e.size = 0;
     e.special = 0;
 
+    // `delay = 0; subdelay = 0;` — the type-98 init block
+    // (obj_dbulletcontroller Step_0 l.1980-1981), the same block whose
+    // `global.turntimer += 30` is paid in step() below. The starchild stagger
+    // chain (`with (obj_dbulletcontroller) { other.delay += delay; ... }`,
+    // obj_knight_pointing_starchild Step) lives on the CONTROLLER in the
+    // game, so every fresh controller — every Stars turn — starts it over at
+    // 25. The sim keeps the pair on state (pointing-starchild.js
+    // chainChildDelay), and nothing reset it between turns: the second
+    // difficulty-2 Stars turn began where the first ended (58, then 108,
+    // 162, 208...), the first homing shard flipped later each turn (launch
+    // +180, +237, +289, +335, +388 with turntimer already negative) and from
+    // the sixth turn nothing homed at all — "the homing stars stop working
+    // once you get past the original phase 3 stars". Measured in the single
+    // drill over eight runs on one state; an R-restart "fixed" it because
+    // web/main.js reset() builds a fresh state. The whole-fight diff could
+    // never see it: tools/fullfight-trace.mjs --shards replays every homing
+    // delay from the recording (which restarts at 25 on each of verify37's
+    // four d2 Stars turns). Byte-identical on all six recorded fights.
+    state.childDelay = 0;
+    state.childSubdelay = 0;
+
     // obj_heart_follower — the soft-following ghost the homing starchildren
     // aim at (they lead the soul rather than tracking it exactly). The type-98
     // controller creates it, which is here.

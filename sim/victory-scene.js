@@ -64,6 +64,10 @@
 // audio pack carries it; camera pans use inout easing (c_pan's curve is the
 // cutscene master's default, not re-derived). X skips the whole scene.
 
+// The typer's blip picker — a pure function of (text, timer); the scene's
+// "zero sim contact" stands, no state crosses this import.
+import { textSoundChar } from './dialogue.js';
+
 const CAM_X = 2230;
 
 export const VICTORY_LINES = [
@@ -506,6 +510,29 @@ export function stepVictoryScene(sc, input, cues) {
     const d = sc.dialogue;
     d.timer += 1;
     const line = VICTORY_LINES[d.line];
+    // THE VOICE. Every ending line is `c_speaker("susie") / ("ralsei")` +
+    // msgsetloc (obj_ch3_PTB02 Step:846-), and scr_speaker in a dark zone
+    // (scr_speaker.gml:92-116, global.darkzone = 1 from PTB02's Create)
+    // picks the typer: Susie 30, Ralsei 31. scr_texttype's cases 30 and 31
+    // are `scr_textsetup(mainbig, c_white, x, y, 33, 0, 1, snd_txtsus |
+    // snd_txtral, 16, 36, 1)` — rate 1, one blip per revealed character,
+    // through scr_textsound from the writer's Alarm 0. The scene cued none
+    // of it; the in-fight balloon has had its blips since 518adb5, so the
+    // ending's silence stood out. NOT typer 6 / snd_text for Ralsei:
+    // flag[30] is Ch1's hood flag (1 = hood, 2 = hat off at Ch1's end), no
+    // Ch3 code sets it to 1, and obj_face picks the nohat face on
+    // `global.chapter > 1`, not on the flag. snd_txtral is not in the audio
+    // pack yet; render/audio.js plays a missing sample as silence, so the
+    // Ralsei lines sound the moment the sample is extracted and listed.
+    // While X is held the writer's `skipme` jumps `pos` to the end and
+    // cancels alarm[0] — the tick that calls scr_textsound — so no blip
+    // sounds (obj_writer Draw:109-118); in this driver X also ends the scene.
+    // (Two literal pushes, not one with a chosen name — verify-audio-coverage
+    // reads cue names off `name: 'snd_...'` and must see both.)
+    if (!input.cancel && textSoundChar(line.text, d.timer)) {
+      if (line.speaker === 'susie') cues.push({ name: 'snd_txtsus', pitch: 1, gain: 1 });
+      else cues.push({ name: 'snd_txtral', pitch: 1, gain: 1 });
+    }
     const typed = d.timer >= line.text.length; // rate 1
     if (typed && confirmPressed) sc.dialogue = null;
     else return; // the script clock pauses on the gate

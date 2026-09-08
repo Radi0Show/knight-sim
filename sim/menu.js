@@ -603,11 +603,15 @@ export function stepMenu(state, input) {
       }
       if (did) {
         menu.lastItem = did;
-        // `state = 4` for an item, `state = 2` for a spell — obj_attackpress's
-        // Draw sets these on a DELAY (`spelldelay`, 10 frames) rather than
-        // instantly, which is why the animation reads as a response to the
-        // turn starting rather than to the button press.
-        heroAct(state, c, p.kind === 'spell' ? HERO_SPELL : HERO_ITEM);
+        // NO POSE HERE. `state = 4` for an item, `state = 2` for a spell are
+        // set by obj_attackpress's Draw on a DELAY (`spelldelay`, 10 frames)
+        // once the turn starts — practice.js translates that entry, and it is
+        // the ONLY entry the game has. This site used to enter the pose too,
+        // and with the pose's real 16-frame exit (obj_heroparent Step:444-461,
+        // sim/heroes.js) that early entry EXPIRED while the menu was still
+        // open, wiping the READY face the setFace below puts up. The ready
+        // pose is faceaction, not state (CLAUDE.md, "faceaction is the subtle
+        // half"), so nothing is lost by not entering the state here.
         menu.pending = null;
         menu.submenu = null;
         state.charaction[c] = 0;
@@ -813,9 +817,9 @@ export function stepMenu(state, input) {
               menu.lastItem = did;
               // Capture WHICH list this came from before clearing it — reading
               // `menu.submenu` after the null always says "item".
-              const wasMagic = menu.submenu === 'magic';
               menu.submenu = null;
-              heroAct(state, c, wasMagic ? HERO_SPELL : HERO_ITEM);
+              // No heroAct here either — see the pending-target site above:
+              // the state is entered once, on obj_attackpress's delay.
               selNoise = true;
               nextHero(menu, state);
               if (!skipFallen(state)) {

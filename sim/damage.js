@@ -48,7 +48,7 @@ export const PARTY_POS = [
   { x: 80, y: 142 },
   { x: 58, y: 190 },
 ];
-import { cue } from './audio.js';
+import { cue, cueStop } from './audio.js';
 
 /** `global.maxhp[1..3]` and the rest, from scr_gamestart's chapter 3 block. */
 export const PARTY = [
@@ -392,10 +392,11 @@ export function knightTarget(state, target, opts = {}) {
   // ARMOR 1 it is the documented two-of-three cycle. Both placements are
   // reachable from the equip menu, so both behaviours ship.
   const gear = gearOf(state);
-  const wearer = gear.findIndex((g) => (g.armor ?? []).includes(23));
+  // Either slot, per character: `chararmor1[i] == 23 || chararmor2[i] == 23`.
+  const wears = (i) => (gear[i]?.armor ?? []).includes(23);
   // state.noMantle: verification-only override (tools/fullfight-trace.mjs,
   // KNIGHT_NO_MANTLE) matching a recording whose party fights bare.
-  const mantle = wearer >= 0 && !state.noMantle;
+  const mantle = (wears(0) || wears(1) || wears(2)) && !state.noMantle;
   // `obj_knight_enemy.myattackchoice != 13` — THE SWORD TUNNEL IS EXEMPT
   // from the brunt (CLAUDE.md's own table). No caller was passing the ac,
   // so the gate compared undefined !== 13 and the brunt choose rolled
@@ -407,7 +408,23 @@ export function knightTarget(state, target, opts = {}) {
     const k = state.knight;
     k.damagecounter = (k.damagecounter ?? 0) + 1;
     if (k.damagecounter < 3) {
-      if (state.partyHp[wearer] > 0) t = wearer;
+      // scr_damage's own walk, verbatim in shape — three INDEPENDENT tests,
+      // not an else-chain, so with more than one wearer standing the LAST
+      // wins:
+      //
+      //     if (hp[1] > 0 && (chararmor1[1] == 23 || chararmor2[1] == 23)) target = 0;
+      //     if (hp[2] > 0 && (chararmor1[2] == 23 || chararmor2[2] == 23)) target = 1;
+      //     if (hp[3] > 0 && (chararmor1[3] == 23 || chararmor2[3] == 23)) target = 2;
+      //
+      // This was a findIndex — the FIRST wearer, standing or not — which is
+      // the same thing for any party with ONE mantle (DEFAULT_GEAR, both
+      // whole-fight tokens, KNIGHT_NO_MANTLE: every trace unchanged) and
+      // diverges the moment there are two, which the equip menu now allows
+      // as the game does: mantles on Kris and Susie, both up, sent the hit
+      // to Kris where the game sends it to Susie, and with Kris down left it
+      // on the incoming target where the game still takes Susie. Measured in
+      // repro-C5 against this walk.
+      for (let i = 0; i < 3; i++) if (state.partyHp[i] > 0 && wears(i)) t = i;
     } else {
       let pick = opts.choose ? opts.choose(0, 1, 2) : 0;
       // `repeat (2)` walking past the fallen, wrapping at 2 -> 0. Not a
@@ -560,7 +577,18 @@ export function scrDamageSingle(state, damage, target, opts = {}) {
   });
   const dealt = scrDamage(state, damage, t, opts);
   state.invTimer = state.invc * 30;
-  if (dealt > 0) cue(state, 'snd_damage');
+  // `with (obj_heart) dmgnoise = 1;` — scr_damage.gml:255-258, inside the
+  // landed-hit block — and obj_heart's Step (:243-248) turns it into
+  // `snd_stop(snd_hurt1); snd_play(snd_hurt1);`. This used to cue
+  // snd_damage, which is the ENEMY-hit sound: `damagenoise` is set only by
+  // obj_basicattack's Create and consumed at obj_battlecontroller
+  // Step:1434-1437. The party being hit sounded like the Knight being hit.
+  // (The game's cue lands one frame later — the heart's Step reads dmgnoise
+  // on the frame after the collision event — which is not modelled.)
+  if (dealt > 0) {
+    cueStop(state, 'snd_hurt1');
+    cue(state, 'snd_hurt1');
+  }
   return dealt;
 }
 
@@ -584,8 +612,15 @@ export function scrDamageAll(state, damage, opts = {}) {
     if (state.partyHp[ti] > 0) total += scrDamage(state, damage, ti, opts);
   }
   state.invTimer = state.invc * 30;
-  // `damagenoise = 1` — one snd_damage for the whole party, not one each.
-  if (total > 0) cue(state, 'snd_damage');
+  // `with (obj_heart) dmgnoise = 1;` — scr_damage.gml:255-258 sets the ONE
+  // heart's flag on every landed hit, and obj_heart Step:243-248 plays
+  // snd_hurt1 once when it reads it: one sound for the whole party, not one
+  // each. Was snd_damage under a `damagenoise = 1` comment — the wrong flag;
+  // see scrDamageSingle.
+  if (total > 0) {
+    cueStop(state, 'snd_hurt1');
+    cue(state, 'snd_hurt1');
+  }
   return total;
 }
 

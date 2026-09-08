@@ -140,15 +140,65 @@ export function createHeroes() {
     hurt: 0,
     index: 0,
     sprite: null,
+    // `itemed` / `spelltimer` — the SPELL and ITEM poses' exit, see stepHero.
+    itemed: false,
+    spelltimer: 0,
   }));
 }
 
 /**
- * One frame for one character. Mirrors the Step's branch order, which matters
- * because `hurt` short-circuits every other state: a character being hit does
- * not carry on with their item animation, they flinch.
+ * One frame for one character: the hp-wrapped pose machine, then the one
+ * block obj_heroparent's Step runs OUTSIDE that wrapper.
  */
 function stepHero(h, spec, down) {
+  stepHeroPose(h, spec, down);
+
+  // THE SPELL AND ITEM POSES END THEMSELVES, sixteen frames after entry.
+  // obj_heroparent Step:444-461, top level — AFTER the `global.hp > 0`
+  // wrapper closes at :444, so it counts down through a flinch and through
+  // a defeat alike:
+  //
+  //     if (spelltimer > 0) {
+  //         spelltimer--;
+  //         if (spelltimer == 0) {
+  //             if (spellframes > 0) global.faceaction[myself] = 0;
+  //             if (scr_monsterpop() > 0) scr_spell(global.charspecial[myself], myself);
+  //             state = 0;
+  //             attacktimer = 0;
+  //         }
+  //     }
+  //
+  // Both the state-2 and the state-4 blocks arm it on entry (`if (itemed ==
+  // 0) { itemed = 1; spelltimer = 16; }`, :118-124 and :149-156), and the
+  // entry frame's own countdown takes it to 15 — so the pose lasts exactly
+  // sixteen Steps, for every character, whatever its frame count. The sim
+  // used to hold ITEM until `attacktimer > itemframes + 8` and SPELL until
+  // `spellframes + 8` — an invented exit that held Susie's item pose 27
+  // frames and her spell 33, Kris's and Ralsei's 29 / 37 (repro: stepped
+  // headlessly from heroAct until state returned to 0). The report asked for
+  // the poses to be KEPT; the game does the opposite, and the sim was
+  // already the one holding too long.
+  //
+  // The scr_spell call is NOT here: the sim resolves castSpell / applyItem
+  // at the delayed entry (practice.js), sixteen frames before the game does.
+  // That is a separate, trace-visible question (HP and TP columns) and is
+  // deliberately left where it is.
+  if (h.spelltimer > 0) {
+    h.spelltimer -= 1;
+    if (h.spelltimer === 0) {
+      if (spec.spellframes > 0) h.faceaction = FACE_IDLE;
+      h.state = HERO_IDLE;
+      h.attacktimer = 0;
+    }
+  }
+}
+
+/**
+ * The pose machine. Mirrors the Step's branch order, which matters because
+ * `hurt` short-circuits every other state: a character being hit does not
+ * carry on with their item animation, they flinch.
+ */
+function stepHeroPose(h, spec, down) {
   // `if (global.hp[global.char[myself]] > 0)` wraps the WHOLE machine. A
   // downed character runs none of it and holds the defeat pose.
   if (down) {
@@ -209,22 +259,25 @@ function stepHero(h, spec, down) {
     }
     return;
   }
-  if (h.state === HERO_SPELL) {
-    run(spec.spellframes, spec.spell);
-    if (spec.spellframes !== 0 && h.attacktimer > spec.spellframes + 8) {
-      h.state = HERO_IDLE;
-      h.attacktimer = 0;
-      h.faceaction = FACE_IDLE;
+  // `if (itemed == 0) { itemed = 1; spelltimer = 16; }` — the first frame
+  // of state 2 (:118-124) and of state 4 (:149-156), inside their `hurt == 0`
+  // gates. The countdown that ends the pose is in stepHero, outside the hp
+  // wrapper, where the GML has it.
+  const arm = () => {
+    if (!h.itemed) {
+      h.itemed = true;
+      h.spelltimer = 16;
     }
+  };
+
+  if (h.state === HERO_SPELL) {
+    arm();
+    run(spec.spellframes, spec.spell);
     return;
   }
   if (h.state === HERO_ITEM) {
+    arm();
     run(spec.itemframes, spec.item);
-    if (h.attacktimer > spec.itemframes + 8) {
-      h.state = HERO_IDLE;
-      h.attacktimer = 0;
-      h.faceaction = FACE_IDLE;
-    }
     return;
   }
   if (h.state === HERO_ACT) {
@@ -272,6 +325,15 @@ export function heroAct(state, c, heroState) {
   h.state = heroState;
   h.attacktimer = 0;
   h.acttimer = 0;
+  // Re-arm the SPELL/ITEM exit. The game enters state 2/4 ONCE, at
+  // obj_attackpress's `maxdelaytimer == spelldelay` (Draw:13-35), and so does
+  // the sim now (practice.js) — sim/menu.js used to enter the pose at the
+  // selection as well, and that early copy expired mid-menu once the exit
+  // counted the game's sixteen frames. Resetting here keeps the count from
+  // whichever entry is the latest. The fade reset in practice.js clears
+  // `itemed` too, as obj_attackpress Draw:225-234 does.
+  h.itemed = false;
+  h.spelltimer = 0;
 }
 
 /** `hurt` — the flinch, which overrides everything for its duration. */

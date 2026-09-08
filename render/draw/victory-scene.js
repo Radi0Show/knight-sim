@@ -245,8 +245,11 @@ export function drawVictoryScene(ctx, sc, sprites) {
     // height 36), shifted right of the face (writingx += 58 * f, f = 2).
     //
     // `special: 1` IS THE SHADOW, and it is not decoration here — c_speaker
-    // in a dark zone selects `global.typer = 6`, whose scr_textsetup call
-    // ends `..., snd_text, 16, 36, 1)`. That last argument is what puts a
+    // in a dark zone selects `global.typer = 30` for Susie and 31 for Ralsei
+    // (scr_speaker.gml:92-116; NOT 6, as this note used to say — 6 is the
+    // hood-flag Ralsei of Ch1), whose scr_textsetup calls end `...,
+    // snd_txtsus | snd_txtral, 16, 36, 1)` — the same metrics as typer 6,
+    // so the drawing was never wrong. That last argument is what puts a
     // dkgray-to-navy copy one pixel down-right of every glyph. Reported from
     // play as the ending's text missing "some kind of shadow background
     // thing"; it was never in the typer table this renderer was reading.

@@ -72,6 +72,12 @@ walk(SIM);
 const OTHER_BOSSES = {
   snd_coin: 'type 32',
   snd_spearappear: 'type 34',
+  // The controller's use is type 77 (another boss), but the sim now cues
+  // snd_laz_c anyway — obj_heroparent Step:53-79 plays it on every FIGHT
+  // swing (sim/scenes/practice.js), which this suite's knight-only scan
+  // cannot see. The excuse is dead while that cue stands (the `excused`
+  // filter needs !simCued) and is kept so the swing cue's removal would
+  // not misreport the controller's type-77 site as the knight's.
   snd_laz_c: 'type 77',
   snd_rimshot: 'type 129',
 };
@@ -106,7 +112,22 @@ const collectPushes = (dir) => {
 };
 collectPushes(SIM);
 const index = JSON.parse(readFileSync(new URL('../assets/audio/index.json', import.meta.url), 'utf8'));
-const unplayable = [...emitted].filter((s) => !index[s]).sort();
+// Cued on purpose BEFORE the sample is in the pack. render/audio.js plays a
+// missing name as silence (a deliberate no-op, not an error), so a cue site
+// can be translated ahead of its extraction and start sounding the moment
+// the file is listed. Each entry here is a known silence, printed below so
+// it cannot be forgotten; an entry whose sample HAS landed must be removed.
+const PENDING_SAMPLES = {
+  // A cue that is in sim/ but not yet in the pack goes here, by name, with
+  // the reason — it prints as a known silence instead of failing the suite.
+  // Empty since snd_txtral (Ralsei's ending typer, 31) was extracted on
+  // 2026-09-08; the mechanism stays for the next one.
+};
+const pending = [...emitted].filter((s) => !index[s] && PENDING_SAMPLES[s]).sort();
+if (pending.length) {
+  console.log(`cued but not yet in the pack (silent until extracted): ${pending.map((s) => `${s} (${PENDING_SAMPLES[s]})`).join(', ')}`);
+}
+const unplayable = [...emitted].filter((s) => !index[s] && !PENDING_SAMPLES[s]).sort();
 if (unplayable.length) {
   console.log(`\n→ FAILURE  ${unplayable.length} cue(s) with no file in assets/audio/index.json (silent):`);
   for (const s of unplayable) console.log(`  ${s}`);

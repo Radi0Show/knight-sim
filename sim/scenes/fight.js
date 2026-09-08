@@ -22,10 +22,10 @@
 // gate at the end of any turn rather than on a turn count.
 
 import { spawn, destroy } from '../entity.js';
-import { BATTLEBG_MASK } from '../masks.js';
+import { BATTLEBG_MASK, HEART_RECT } from '../masks.js';
 import { KNIGHT_AT } from '../knight.js';
 import { soul } from '../soul.js';
-import { SOUL_START } from '../actors.js';
+import { SOUL_START, PARTY } from '../actors.js';
 import { boxsplitterAttack } from '../attacks/boxsplitter-attack.js';
 import { pointingCone } from '../attacks/pointing-cone.js';
 import { starsController } from '../attacks/stars-controller.js';
@@ -228,6 +228,137 @@ export function openArena(state, entry) {
   gt.image_yscale = 0;
   gt.image_angle = 180;
   gt.visible = true;
+}
+
+/**
+ * obj_moveheart — the soul flying to the board. Create aims it and arms
+ * `alarm[0] = flytime` (8); the alarm snaps it to the destination, creates
+ * obj_heart there, and destroys itself. The burst at the launch point is
+ * obj_heartburst, visual only.
+ *
+ * Lifted here from the fight scene (practice.js) unchanged, because the
+ * single-attack drill needs the SAME delivery: it used to spawn its soul
+ * directly, 33 frames before the arena opened, and a soul steered to a wall
+ * of the placeholder box was outside the ring when openArena collapsed it to
+ * scale 0 — reject-on-entry collision never pulls a soul back IN, so it
+ * walked out of the growing box and stayed out for the run. See deliverHeart.
+ */
+const moveheart = {
+  name: 'obj_moveheart',
+  create(e) {
+    // `image_alpha = 0` and the Step's `image_alpha += 0.334` — it FADES IN
+    // over three frames as it leaves Kris. spr_dodgeheart is its own sprite
+    // (object definition, like obj_returnheart's), which is why the alarm can
+    // hand it straight to the new heart: `heart.sprite_index = sprite_index`.
+    e.image_alpha = 0;
+    e.image_speed = 0;
+    e.flytime = 8;
+    e.sprite_index = 'spr_dodgeheart';
+  },
+  /**
+   * `image_alpha += 0.334` — the whole of obj_moveheart's Step. It fades in
+   * over three frames while it travels. The TRAVEL is not here: the spawn
+   * site already gives it builtinMotion with `speed = dist / 8` and the
+   * matching direction, which is `move_towards_point(distx, disty,
+   * dist / flytime)` exactly.
+   */
+  step(e) {
+    e.image_alpha = Math.min(1, (e.image_alpha ?? 0) + 0.334);
+  },
+  alarm: {
+    0(e, state) {
+      e.x = e.distx;
+      e.y = e.disty;
+      if (!state.soul) {
+        state.soul = spawn(state, soul, { x: e.distx, y: e.disty });
+        // No special case for the tunnel's delivery: the newborn soul's
+        // birth step runs everywhere, and ac-13's frozen first frame falls
+        // out of the real mechanics — the soul tests the box's PRE-step
+        // grow state (obj_growtangle's stepOrder note) and at t=7 the
+        // mid-grow ring's true coverage blocks every move and slide
+        // (growmeet probe, 28,000-point rect-A fit).
+        // The original's alarm hands the new heart obj_moveheart's OWN
+        // sprite and mask: `heart.mask_index = mask_index`. obj_moveheart's
+        // definition mask is spr_dodgeheart — a 20x20 AxisAlignedRect — so
+        // the FIGHT soul collides as the full square, not the heart-shaped
+        // spr_dodgeheartmask the tester room's directly-created soul keeps.
+        // Verified by the verify21g hitlog (mask name logged per pairing)
+        // and by all four fight wall rests re-deriving from the stored wall
+        // mask under bbox [0..19]. See HEART_RECT in sim/masks.js.
+        state.soul.mask = HEART_RECT;
+      }
+      e.alive = false;
+    },
+  },
+};
+
+/**
+ * THE SOUL FLIES IN; IT DOES NOT APPEAR. obj_baseenemy's mnfight-1.5 block
+ * calls `scr_moveheart()`, which sets `global.inv = 0` and creates
+ * obj_moveheart at Kris (+10, +40). Its Create aims it at the marker,
+ * `alarm[0] = flytime` with **flytime = 8**, and only when that alarm fires
+ * does `obj_heart` exist:
+ *
+ *     dist = point_distance(x, y, distx, disty);
+ *     move_towards_point(distx, disty, dist / flytime);
+ *     alarm[0] = flytime;
+ *     instance_create(x, y, obj_heartburst);
+ *
+ * Spawning the soul directly put it on the board 8 frames before the
+ * oracle's — the whole-fight diff's soul_x column moved at frame 88 in the
+ * sim and 96 in the recording, and 96 - 88 is this flytime.
+ *
+ * Called from the arena-open frame of BOTH scenes (the fight's
+ * mnfight-1.5 / rtimer-12 block, and the drill's `gap === RTIMER_SPAWN`),
+ * with the live growtangle and the turn's `myattackchoice`. The caller owns
+ * the `!state.soul` / `ac !== -1` guard, as the GML does:
+ *
+ *     if (!instance_exists(obj_moveheart) && !i_ex(obj_heart)
+ *         && myattackchoice != -1)
+ *         scr_moveheart();
+ *
+ * A pure lift from practice.js — the whole-fight trace is the proof that
+ * nothing here moved.
+ */
+export function deliverHeart(state, gt, ac) {
+  // scr_moveheart's `global.inv = 0`. This wrote `state.inv`, WHICH
+  // NOTHING READS — the traced clock is `state.invTimer` — so the
+  // second turn's soul arrived still carrying turn 1's -79 while the
+  // recording restarts from 0 (whole-fight f438). Turn 1 masked it:
+  // inv is 0 at fight start anyway. The write-only-variable trap,
+  // again (CLAUDE.md lists `state.inv` by name).
+  state.invTimer = 0;
+  const kris = PARTY[0];
+  const mh = spawn(state, moveheart, { x: kris.x + 10, y: kris.y + 40 });
+  // `instance_create(x, y, obj_heartburst)` — obj_moveheart's Create
+  // bursts at the LAUNCH point, the mirror of obj_returnheart's burst
+  // on arrival. Visual only, same plain-state object.
+  state.heartBurst = { x: kris.x + 10, y: kris.y + 40, burst: 0 };
+  // No obj_heartmarker exists in this fight (only the watercooler
+  // enemy ever creates one), so the destination is the moveheart
+  // Create's growtangle branch: `(gt.x - 10, gt.y - 10)` — with the
+  // knight's own ac-13 override reaching in afterwards:
+  //
+  //     if (myattackchoice == 13) { distx = gt.x - 40; disty = gt.y - 8; }
+  //
+  // NOT SOUL_START. (314, 162) is where the TESTER creates its heart
+  // (growtangle - 6/-8), and the per-attack suites still use it; the
+  // fight lands 4 left and 2 up of that, and the oracle's first soul
+  // row — (314, 160), i.e. (310, 160) plus one movement step of 4,
+  // because the newborn heart DOES step on its birth frame — is what
+  // separated the two.
+  if (gt && ac === 13) {
+    mh.distx = gt.x - 40;
+    mh.disty = gt.y - 8;
+  } else {
+    mh.distx = (gt ? gt.x : state.view.x + 320) - 10;
+    mh.disty = (gt ? gt.y : state.view.y + 170) - 10;
+  }
+  const dist = Math.hypot(mh.distx - mh.x, mh.disty - mh.y);
+  mh.builtinMotion = true;
+  mh.speed = dist / 8;
+  mh.direction = (Math.atan2(-(mh.disty - mh.y), mh.distx - mh.x) * 180) / Math.PI;
+  mh.alarm[0] = 8;
 }
 
 /**

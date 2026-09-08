@@ -91,5 +91,6 @@
  "snd_weaponpull_fast": "snd_weaponpull_fast.m4a",
  "snd_wideslash_low": "snd_wideslash_low.m4a",
  "snd_wing": "snd_wing.m4a",
- "wind_highplace": "wind_highplace.ogg"
+ "wind_highplace": "wind_highplace.ogg",
+ "snd_txtral": "snd_txtral.wav"
 }

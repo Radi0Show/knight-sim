@@ -16,11 +16,9 @@
 
 import { spawn } from '../entity.js';
 import { gmlLte } from '../gml.js';
-import { soul } from '../soul.js';
-import { HEART_RECT } from '../masks.js';
 import { battlebox, settleBox } from '../battlebox.js';
 import { gmlCreate, gmlChoose, gmlIrandom, gmlRandom } from '../rng.js';
-import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry, turnLength } from './fight.js';
+import { FIGHT_TABLE, launchAttack, openArena, clearTurn, nextTurn, phase4Entry, turnLength, deliverHeart } from './fight.js';
 import { battleMsgFor, OPENING_MSG } from '../battlemsg.js';
 import { createMenu, stepMenu, openMenu, bagOf } from '../menu.js';
 import { partyWiped, PARTY as PARTY_STATS, isUp, PARTY_POS} from '../damage.js';
@@ -45,7 +43,7 @@ import {
 } from '../knight.js';
 import { scrTensionheal } from '../tension.js';
 import { cueLoop, cue, cueStop } from '../audio.js';
-import { knightActor, partyActor, PARTY, KNIGHT, BOX, SOUL_START } from '../actors.js';
+import { knightActor, partyActor, PARTY, KNIGHT, BOX } from '../actors.js';
 
 
 export const IS_SANDBOX = true;
@@ -103,60 +101,11 @@ const TURN_GAP = 1;
 
 
 
-/**
- * obj_moveheart — the soul flying to the board. Create aims it and arms
- * `alarm[0] = flytime` (8); the alarm snaps it to the destination, creates
- * obj_heart there, and destroys itself. The burst at the launch point is
- * obj_heartburst, visual only.
- */
-const moveheart = {
-  name: 'obj_moveheart',
-  create(e) {
-    // `image_alpha = 0` and the Step's `image_alpha += 0.334` — it FADES IN
-    // over three frames as it leaves Kris. spr_dodgeheart is its own sprite
-    // (object definition, like obj_returnheart's), which is why the alarm can
-    // hand it straight to the new heart: `heart.sprite_index = sprite_index`.
-    e.image_alpha = 0;
-    e.image_speed = 0;
-    e.flytime = 8;
-    e.sprite_index = 'spr_dodgeheart';
-  },
-  /**
-   * `image_alpha += 0.334` — the whole of obj_moveheart's Step. It fades in
-   * over three frames while it travels. The TRAVEL is not here: the spawn
-   * site already gives it builtinMotion with `speed = dist / 8` and the
-   * matching direction, which is `move_towards_point(distx, disty,
-   * dist / flytime)` exactly.
-   */
-  step(e) {
-    e.image_alpha = Math.min(1, (e.image_alpha ?? 0) + 0.334);
-  },
-  alarm: {
-    0(e, state) {
-      e.x = e.distx;
-      e.y = e.disty;
-      if (!state.soul) {
-        state.soul = spawn(state, soul, { x: e.distx, y: e.disty });
-        // No special case for the tunnel's delivery: the newborn soul's
-        // birth step runs everywhere, and ac-13's frozen first frame falls
-        // out of the real mechanics — the soul tests the box's PRE-step
-        // grow state (obj_growtangle's stepOrder note) and at t=7 the
-        // mid-grow ring's true coverage blocks every move and slide
-        // (growmeet probe, 28,000-point rect-A fit).
-        // The original's alarm hands the new heart obj_moveheart's OWN
-        // sprite and mask: `heart.mask_index = mask_index`. obj_moveheart's
-        // definition mask is spr_dodgeheart — a 20x20 AxisAlignedRect — so
-        // the FIGHT soul collides as the full square, not the heart-shaped
-        // spr_dodgeheartmask the tester room's directly-created soul keeps.
-        // Verified by the verify21g hitlog (mask name logged per pairing)
-        // and by all four fight wall rests re-deriving from the stored wall
-        // mask under bbox [0..19]. See HEART_RECT in sim/masks.js.
-        state.soul.mask = HEART_RECT;
-      }
-      e.alive = false;
-    },
-  },
-};
+// obj_moveheart and the scr_moveheart delivery now live in fight.js
+// (`deliverHeart`), shared with the single-attack drill — which used to
+// spawn its soul directly, 33 frames before the arena opened, and let the
+// player steer it outside the ring before the grow-in. The fight's call site
+// below is unchanged in behaviour; the whole-fight trace is the proof.
 
 /**
  * obj_battlecontroller's ONE translated Step line: `turntimer -= 1` during the
@@ -1034,7 +983,25 @@ const director = {
     if (state.pendingSpell) state.pendingSpell = [];
     if (state.pendingItem) state.pendingItem = [];
 
-    if (e.bar && (state.knight?.endCutscene ?? 0) > 0) {
+    // THE ENDING STOPS THE TURN MACHINE, bar or no bar. obj_knight_enemy
+    // gates every block that can start a turn on `end_cutscene_version == 0`
+    // — the enemytalk block, the mnfight-1.5 arena setup and the rtimer-12
+    // launch (all three quoted where the sim translates them below) — and
+    // obj_attackpress's Draw exits on ecv > 0, so global.mnfight never
+    // reaches 1 again. This block is the sim's gate for all three, and it
+    // used to be conditional on `e.bar`: a bar exists only when someone
+    // chose FIGHT, so an ending landed by Susie's Rude Buster on a turn with
+    // no FIGHT (Kris DEFEND / Ralsei DEFEND or heal — the natural
+    // post-ROARING "let down its guard" turn) fell straight through to talk
+    // -> arena -> launchAttack while the Knight strobed: board up at
+    // endtimer 18, soul at 25, obj_dbulletcontroller + the Stars cone at 29,
+    // three frames BEFORE the white fade began at 32 — "an attack in the
+    // cutscene", from play. The bar path was only accidentally safe (the
+    // post-teardown re-create/null loop below never reached the launch).
+    // Measured frame-for-frame identical to the previous build on the
+    // recorded (bar) ending path over 400 frames INCLUDING state.rng, so
+    // the whole-fight main, .end and .draw traces cannot move.
+    if ((state.knight?.endCutscene ?? 0) > 0) {
       // The ending froze it — keep it visible at its last value and step
       // nothing. See the freeze note at the end-cutscene trigger above.
       //
@@ -1056,7 +1023,8 @@ const director = {
         state.fightBar = null;
         return;
       }
-      state.fightBar = e.bar;
+      // (the endcon >= 2 branch above already handles a null bar)
+      if (e.bar) state.fightBar = e.bar;
       return;
     }
     if (e.bar) {
@@ -1113,6 +1081,16 @@ const director = {
         e.resolved[c] = true;
         const acc = e.bar.points[c];
         heroAct(state, c, HERO_ATTACK);
+        // THE SWING ITSELF HAS A SOUND. obj_heroparent Step:53-79, the same
+        // first state-1 frame (`attacked == 0` — obj_attackpress's Other_11
+        // sets state without touching the hero's `attacked`, so it always
+        // fires): `snd_stop(snd_laz_c)`, then `snd_play(snd_laz_c)` for
+        // Kris, `snd_pitch(ls, 0.9)` for Susie and `snd_pitch(ls, 1.15)` for
+        // Ralsei — and only THEN the critical block below. The sim cued only
+        // the crit, so every ordinary swing was silent; the swing was reported
+        // as "feeling incorrect" from play. Kris / Susie / Ralsei by slot.
+        cueStop(state, 'snd_laz_c');
+        cue(state, 'snd_laz_c', [1, 0.9, 1.15][c]);
         // `if (points == 150) { snd_stop(snd_criticalswing); snd_play(...); }`
         // — obj_heroparent's FIRST state-1 frame, i.e. the swing's start, not
         // its connect. The sound leads the damage by the same eleven frames.
@@ -1390,46 +1368,13 @@ const director = {
         // Spawning the soul directly put it on the board 8 frames before the
         // oracle's — the whole-fight diff's soul_x column moved at frame 88
         // in the sim and 96 in the recording, and 96 - 88 is this flytime.
-        if (upcoming.ac !== -1 && !state.soul) {
-          // scr_moveheart's `global.inv = 0`. This wrote `state.inv`, WHICH
-          // NOTHING READS — the traced clock is `state.invTimer` — so the
-          // second turn's soul arrived still carrying turn 1's -79 while the
-          // recording restarts from 0 (whole-fight f438). Turn 1 masked it:
-          // inv is 0 at fight start anyway. The write-only-variable trap,
-          // again (CLAUDE.md lists `state.inv` by name).
-          state.invTimer = 0;
-          const kris = PARTY[0];
-          const mh = spawn(state, moveheart, { x: kris.x + 10, y: kris.y + 40 });
-          // `instance_create(x, y, obj_heartburst)` — obj_moveheart's Create
-          // bursts at the LAUNCH point, the mirror of obj_returnheart's burst
-          // on arrival. Visual only, same plain-state object.
-          state.heartBurst = { x: kris.x + 10, y: kris.y + 40, burst: 0 };
-          // No obj_heartmarker exists in this fight (only the watercooler
-          // enemy ever creates one), so the destination is the moveheart
-          // Create's growtangle branch: `(gt.x - 10, gt.y - 10)` — with the
-          // knight's own ac-13 override reaching in afterwards:
-          //
-          //     if (myattackchoice == 13) { distx = gt.x - 40; disty = gt.y - 8; }
-          //
-          // NOT SOUL_START. (314, 162) is where the TESTER creates its heart
-          // (growtangle - 6/-8), and the per-attack suites still use it; the
-          // fight lands 4 left and 2 up of that, and the oracle's first soul
-          // row — (314, 160), i.e. (310, 160) plus one movement step of 4,
-          // because the newborn heart DOES step on its birth frame — is what
-          // separated the two.
-          if (gt && upcoming.ac === 13) {
-            mh.distx = gt.x - 40;
-            mh.disty = gt.y - 8;
-          } else {
-            mh.distx = (gt ? gt.x : state.view.x + 320) - 10;
-            mh.disty = (gt ? gt.y : state.view.y + 170) - 10;
-          }
-          const dist = Math.hypot(mh.distx - mh.x, mh.disty - mh.y);
-          mh.builtinMotion = true;
-          mh.speed = dist / 8;
-          mh.direction = (Math.atan2(-(mh.disty - mh.y), mh.distx - mh.x) * 180) / Math.PI;
-          mh.alarm[0] = 8;
-        }
+        //
+        // The launch itself (inv reset, moveheart from Kris, heartburst, the
+        // gt-10/-10 and ac-13 destinations, speed dist/8, alarm 8) is
+        // fight.js's deliverHeart — the same code, moved so the drill can
+        // share it. The guard stays here because it is the Knight's:
+        // `!i_ex(obj_heart) && myattackchoice != -1`.
+        if (upcoming.ac !== -1 && !state.soul) deliverHeart(state, gt, upcoming.ac);
       }
       // THE CLOCK ARMS ON THE KNIGHT'S OWN FRAME. rtimer hits 12 during the
       // knight's Step and `scr_turntimer(<attack>)` floors the clock right

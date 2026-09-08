@@ -117,12 +117,26 @@ if (HERO_SPRITES[0].spell !== HERO_SPRITES[0].act) {
   if (s.heroes[0].faceaction !== FACE_IDLE) failures.push('the ACT left a stale pose');
 }
 
-// A timed animation must END and drop back to idle, or the character is stuck.
+// A timed animation must END and drop back to idle, or the character is stuck
+// — and it ends on the SIXTEENTH step, for every character. obj_heroparent's
+// state-2/state-4 blocks arm `spelltimer = 16` on entry and the top-level
+// countdown (Step:444-461, outside the hp wrapper) sets `state = 0;
+// attacktimer = 0` when it reaches 0, with the entry frame's own decrement
+// counting. Ralsei (itemframes 6, spellframes 10) is the one whose frame
+// counts differ most from Susie's, so both are checked: the exit does not
+// depend on the frame count. Used to accept any return within 200 steps,
+// which let the invented `frames + 8` exit (27-37 steps) pass.
 for (const [hs, label] of [[HERO_ITEM, 'ITEM'], [HERO_SPELL, 'SPELL']]) {
-  const s = st();
-  heroAct(s, 1, hs);
-  for (let i = 0; i < 200; i++) stepHeroes(s);
-  if (s.heroes[1].state !== 0) failures.push(`${label} never returned to idle`);
+  for (const c of [1, 2]) {
+    const s = st();
+    heroAct(s, c, hs);
+    for (let i = 0; i < 15; i++) stepHeroes(s);
+    if (s.heroes[c].state !== hs) failures.push(`${label} on ${c} left the pose before step 16`);
+    stepHeroes(s);
+    if (s.heroes[c].state !== 0) failures.push(`${label} on ${c} did not return to idle at exactly step 16`);
+    if (s.heroes[c].attacktimer !== 0) failures.push(`${label} on ${c} returned with attacktimer ${s.heroes[c].attacktimer}`);
+    if (s.heroes[c].faceaction !== FACE_IDLE) failures.push(`${label} on ${c} left a stale ready-pose`);
+  }
 }
 
 // A DOWNED character runs none of the machine — `if (global.hp[...] > 0)`
