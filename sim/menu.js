@@ -20,7 +20,7 @@ import { scrTensionheal } from './tension.js';
 import { cue } from './audio.js';
 import { useItem, takeItem, applyItem, ITEMS } from './items.js';
 import {
-  SPELLS, SPELL_LIST, ACTS, canAfford, spellCost, castSpell, holdBreath,
+  spellInfo, spellListFor, actsFor, canAfford, spellCost, castSpell, holdBreath,
 } from './spells.js';
 import {
   FACE_IDLE, FACE_ATTACK, FACE_SPELL, FACE_ITEM, FACE_DEFEND, FACE_ACT,
@@ -100,7 +100,7 @@ function recordSpell(state, c, id, target) {
   state.charaction[c] = 2;
   state.pendingSpell = state.pendingSpell ?? [];
   state.pendingSpell[c] = { id, target };
-  return `${SPELLS[id].name}!`;
+  return `${spellInfo(state, id).name}!`;
 }
 
 /** `global.faceaction[c] = n` — the standing pose, read by hero state 0. */
@@ -392,9 +392,12 @@ export function listRows(state) {
     });
   }
   if (menu.submenu === 'magic') {
-    return (SPELL_LIST[c] ?? []).map((id) => ({
-      label: SPELLS[id].name,
-      descb: SPELLS[id].descb,
+    // CHARACTER-KEYED through the seam in sim/spells.js: `global.spell[
+    // global.char[charturn]]`, which is the slot table only while slot i
+    // holds character i + 1.
+    return (spellListFor(state, c) ?? []).map((id) => ({
+      label: spellInfo(state, id).name,
+      descb: spellInfo(state, id).descb,
       id,
       // A spell you cannot pay for is SHOWN AND GREYED, not hidden — the list
       // is what the character knows, not what they can afford this second.
@@ -408,8 +411,15 @@ export function listRows(state) {
     // last PAGE of that one performance, not a second use. With the row gone
     // the list is empty, and opening an empty list is the `snd_error` the
     // confirm handler already plays.
-    return (ACTS[c] ?? [])
-      .map((a, i) => ({ label: a.name, descb: a.descb, id: i, usable: true }))
+    //
+    // `usable` and `cost` come from the row when a character-keyed table
+    // supplies them (obj_battlecontroller's `canpress` / `cant` gates and
+    // `acttpcost[]`, Step_0:1097-1170, Draw_0:1223); the vanilla rows have
+    // neither, so they stay always-usable and free.
+    return (actsFor(state, c) ?? [])
+      .map((a, i) => ({
+        label: a.name, descb: a.descb, id: i, usable: a.usable ?? true, cost: a.cost ?? 0,
+      }))
       .filter(() => !(c === 1 && state.actCounts?.susieUsed));
   }
   return [];
@@ -771,6 +781,13 @@ export function stepMenu(state, input) {
           // is the acting block; the director calls it when the writer is
           // born, which is the sim's "after the menu".
           state.pendingAct = { c, act: row.id };
+          // `global.tension -= acttpcost[bmenucoord[9][charturn]]` — the
+          // grid's confirm (obj_battlecontroller Step_0:1170) charges the
+          // act's TP the way scr_spellconsumeb charges a spell's. Every
+          // vanilla act costs 0, so the branch is dead here and the trace
+          // cannot move; a character-keyed row (sim/spells.js actsFor) can
+          // carry one.
+          if (row.cost > 0) state.tension -= row.cost;
           menu.submenu = null;
           // `state = 6` — the ACT swing plays NOW, and it outlasts the menu:
           // the character is still mid-animation when the next one is choosing.
@@ -788,7 +805,7 @@ export function stepMenu(state, input) {
           // ITEM and MAGIC both route through the target rule. `spelltarget`
           // 1 opens the ally picker; anything else resolves immediately.
           const needsTarget = menu.submenu === 'magic'
-            ? SPELLS[row.id]?.target === 1
+            ? spellInfo(state, row.id)?.target === 1
             : ITEMS[row.id]?.target === 'one';
           if (needsTarget) {
             menu.pending = menu.submenu === 'magic'

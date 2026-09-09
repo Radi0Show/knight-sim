@@ -93,13 +93,65 @@ export const ACTS = [
   [{ name: 'R-Action', descb: '' }],
 ];
 
+// ── THE CHARACTER-TABLE SEAM ────────────────────────────────────────────────
+//
+// The three tables above are indexed by PARTY SLOT because this fight's party
+// is fixed: slot i is always character i + 1, so `SPELL_LIST[1]` is Susie's
+// list and `ACTS[1]` is hers. The game does not index that way. Every one of
+// these reads is `global.spell[global.char[charturn]]`, `global.canactsus`
+// / `actnamesus` (obj_battlecontroller Draw_0, the bmenuno-9 fill) and
+// `scr_actselect`'s `global.char[global.charturn] == 1 / 2 / 3 / 4` — by
+// CHARACTER ID, through the slot -> id bridge. The two agree only while the
+// bridge is the identity, which it is for Kris/Susie/Ralsei and nothing else.
+//
+// A scene that fields a different party (a kaizo lane: Kris + Noelle, whose
+// `global.char` is [1, 4, 0]) supplies its own character-keyed answer through
+// `state.kaizo.hooks`, and each accessor below falls back to the slot table
+// when no hook is installed — `??`, exactly the shape render/menu.js's
+// `state.partySprites` seam takes. Vanilla installs nothing, reads nothing
+// different, and the six whole-fight diffs pin that. sim/ still imports
+// nothing from any scene; the hook is a plain state field.
+//
+//   spellInfo(state, id)        scr_spellinfo's row for one id; a hook may
+//                               ADD ids this table lacks (8, 9, 10) and never
+//                               needs to restate the ones it has
+//   spellListFor(state, slot)   `global.spell[global.char[slot]]`
+//   actsFor(state, slot)        the canact/actname/actdesc fill for that
+//                               slot's character. A hook's row may carry
+//                               `usable` (the mod's `canpress`/`cant` gates,
+//                               computed live) and `cost` (`actcost`, TP
+//                               spent at the grid's confirm); listRows and
+//                               the confirm handler read both, and a vanilla
+//                               row has neither, so vanilla spends nothing.
+//   spellCost / castSpell / resolveActPages take a hook the same way: it
+//   answers, or returns undefined (pages: a falsy value) to hand the id
+//   back to the vanilla body below.
+export function spellInfo(state, id) {
+  return state?.kaizo?.hooks?.spellInfo?.[id] ?? SPELLS[id];
+}
+
+export function spellListFor(state, c) {
+  return state?.kaizo?.hooks?.spellList?.(state, c) ?? SPELL_LIST[c];
+}
+
+export function actsFor(state, c) {
+  return state?.kaizo?.hooks?.actList?.(state, c) ?? ACTS[c];
+}
+
 /**
  * `scr_spellconsumeb`'s TP check. A spell you cannot pay for is still SHOWN —
  * greyed, not hidden — because the list is built from what the character
  * knows, not from what they can afford this second.
  */
 export function spellCost(state, slot, spellId) {
-  const s = SPELLS[spellId];
+  // The seam (see spellInfo): a character-keyed cost, or undefined to fall
+  // through to the table.
+  const hook = state?.kaizo?.hooks?.spellCost;
+  if (hook) {
+    const v = hook(state, slot, spellId);
+    if (v !== undefined) return v;
+  }
+  const s = spellInfo(state, spellId);
   if (!s) return Infinity;
   // Devilsknife's "Buster TP DOWN" — 125 -> 100, the familiar 50% -> 40%.
   if (spellId === 4) return statFor(state, slot).rudeBusterCost;
@@ -152,6 +204,13 @@ export function canAfford(state, spellId, slot = 1) {
 export function resolveActPages(state, c, actId) {
   state.actCounts = state.actCounts ?? {};
   const n = state.actCounts;
+  // The seam (see spellInfo): a character-keyed acting block, or a falsy
+  // value to hand the act back to the slot-keyed blocks below.
+  const hook = state.kaizo?.hooks?.resolveActPages;
+  if (hook) {
+    const pages = hook(state, c, actId);
+    if (pages) return pages;
+  }
   if (c === 0) {
     if (actId === 1) return ACT_PAGES[holdBreath(state)];
     n.check = (n.check ?? 0) + 1;
@@ -206,7 +265,16 @@ export function soulSpeed(state) {
  * that enemy.
  */
 export function castSpell(state, slot, spellId, target = 0, opts = {}) {
-  const s = SPELLS[spellId];
+  // The seam (see spellInfo): a character-keyed scr_spell case, or undefined
+  // to hand the id to the cases below. It runs BEFORE the TP test on purpose:
+  // the hook is a whole scr_spell case, and scr_spell does not charge —
+  // scr_spellconsumeb already did, at selection (recordSpell in sim/menu.js).
+  const hook = state.kaizo?.hooks?.castSpell;
+  if (hook) {
+    const r = hook(state, slot, spellId, target, opts);
+    if (r !== undefined) return r;
+  }
+  const s = spellInfo(state, spellId);
   if (!s) return null;
   // `scr_spellconsumeb` deducts TP when the spell is SELECTED, not when it
   // resolves — that is what stops two characters spending the same 125 in one
