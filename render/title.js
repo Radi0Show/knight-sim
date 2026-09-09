@@ -34,7 +34,34 @@ function centred(ctx, font, text, y, color, scale = 1) {
   drawText(ctx, font, text, (W - w) / 2, y, { color: rgb(color), xscale: scale, yscale: scale });
 }
 
-export function drawTitle(ctx, title, sprites, attacks) {
+/**
+ * Centre ONE line built from several coloured segments.
+ *
+ * The whole line is measured first and the segments are laid end to end from
+ * that origin — calling `centred()` once per segment would centre each of
+ * them independently and stack them on top of each other.
+ *
+ * It exists so a lane can colour part of the wordmark: the kaizo build paints
+ * KAIZO in the Knight's own blue and leaves the rest white. `drawTitle`'s
+ * default is a single white segment, which is exactly the line this file drew
+ * before, so the vanilla title is unchanged to the pixel.
+ */
+function centredSegments(ctx, font, segs, y, scale = 1) {
+  let total = 0;
+  for (const seg of segs) total += textWidth(font, seg[0]) * scale;
+  let x = (W - total) / 2;
+  for (const [text, color] of segs) {
+    drawText(ctx, font, text, x, y, { color: rgb(color), xscale: scale, yscale: scale });
+    x += textWidth(font, text) * scale;
+  }
+}
+
+/**
+ * @param {object} [opts]
+ * @param {Array<[string, number[]]>} [opts.title] - the wordmark as
+ *   [text, rgb] segments. Omit for the vanilla single white line.
+ */
+export function drawTitle(ctx, title, sprites, attacks, opts = {}) {
   const font = loadFont();
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -57,7 +84,9 @@ export function drawTitle(ctx, title, sprites, attacks) {
     return;
   }
 
-  centred(ctx, font, 'BLACK KNIFE SIMULATOR', 60, c_white, 1.6);
+  // THE WORDMARK, overridable per lane (see centredSegments). Default is the
+  // one white line, so a caller that passes no opts gets what it always got.
+  centredSegments(ctx, font, opts.title ?? [['BLACK KNIFE SIMULATOR', c_white]], 60, 1.6);
 
   const heart = sprites.get('spr_heart');
   const picked = attacks[title.attackIndex];
@@ -158,20 +187,11 @@ export function drawTitle(ctx, title, sprites, attacks) {
     }
   }
 
-  // WASD has always been in the binder (input/keyboard.js); the hint just
-  // never said so, and it was asked for as if it were missing. Moved up 8px
-  // from 448 to make room for the line under it.
-  centred(ctx, font, title.pickingAttack
-    ? 'Z  choose      X  back'
-    : 'arrows / WASD  move      Z  choose', 440, DIM, 0.75);
-
-  // THE WAY OUT, and that there is one. R restarts; Escape, a pad's Start
-  // or a HELD touch R (a tap restarts) leave a run for this screen — and
-  // none of that is discoverable by pressing things mid-dodge, which is how
-  // three people asked for an exit that was not there. Same row and size
-  // as the version number, so it reads as the screen's small print.
-  centred(ctx, font, 'R  restart      ESC / START  exit      touch: hold R  exit',
-    462, DIM, 0.6);
+  // NO KEY HINTS. The footer used to say "arrows move  Z choose", then grew
+  // a second line for R / Escape / Start; both are gone by request — the
+  // screen is the game's own menu and nothing else. The controls live in
+  // PLAYTEST.md, and the version below is the one line of small print kept,
+  // because a bug report needs it.
 
   // The build number, bottom-left. Small and dim: it is for bug reports
   // ("which version are you on?"), not decoration — the replay-token
