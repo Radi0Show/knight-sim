@@ -509,15 +509,35 @@ export function scrDamage(state, damage, target, opts = {}) {
   const hp = state.partyHp;
   if (!hp || hp[target] <= 0) return 0;
 
-  let t = scrDamageCalculation(damage, target, mantle, state);
-
+  // TRUEDAMAGE TAKES NOTHING OFF. scr_damage's chapter-3 block, verbatim:
+  //
+  //     if (global.chapter == 3 && truedamage == 1) { }          // <- EMPTY
+  //     else if (oldcalculation) tdamage = ceil(tdamage - battledf * 3);
+  //     else tdamage = scr_damage_calculation(tdamage, target);
+  //     if (chapter == 3 && i_ex(obj_knight_enemy) && truedamage == 0) { ...mantle x0.33... }
+  //     if (global.chapter == 3 && truedamage == 1) { }          // <- EMPTY again
+  //     else { defend ceil(2t/3); element reduction }
+  //     if (tdamage < 1) tdamage = 1;
+  //
+  // So the roar's CATCH (obj_knight_enemy Other_12 -> truedamage 1) lands its
+  // 40 whole: no DF walk, no ShadowMantle, no DEFEND, no element. This build
+  // walked it through the defence anyway — 40 became 6/25/20 on the default
+  // party — which is why five catches downed nobody here where the game downs
+  // Susie on the fifth (5 x 40 >= 190). Reported from reddit as "increase the
+  // damage for Roaring"; the report was right and the triage that called it
+  // the game's numbers had trusted this function. The whole-fight recordings
+  // pin party HP, so no trace could see it.
+  let t = damage;
   let mantled = false;
-  if (mantle) {
-    t = gmlRound(t * 0.33);
-    mantled = true;
+  if (!opts.truedamage) {
+    t = scrDamageCalculation(damage, target, mantle, state);
+    if (mantle) {
+      t = gmlRound(t * 0.33);
+      mantled = true;
+    }
+    if (state.charaction?.[target] === ACTION_DEFEND) t = Math.ceil((2 * t) / 3);
+    if (!mantled) t = Math.ceil(t * (opts.elementReduction ?? 1));
   }
-  if (state.charaction?.[target] === ACTION_DEFEND) t = Math.ceil((2 * t) / 3);
-  if (!mantled) t = Math.ceil(t * (opts.elementReduction ?? 1));
   if (t < 1) t = 1;
 
   // Flurry (myattackchoice 2) at difficulty 1 or 3 takes a further third off,
