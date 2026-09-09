@@ -17,8 +17,17 @@ export const ALARM_COUNT = 12;
  * Measured directly (knight-research/tools/patches/oracle_f32_probe.csx):
  * assigning 1/3 to each and reading it back gives 0.3333333433 — the f32
  * value — for every field below, while plain instance variables give
- * 0.3333333333. hspeed/vspeed are excluded because they are derived from
- * speed/direction rather than stored independently.
+ * 0.3333333333. hspeed/vspeed are not in this list: the runner DOES keep them
+ * as f32 state (the motion probe, sim/index.js runMotion), but this engine
+ * holds that state as `motionHspeed`/`motionVspeed`, written only by
+ * runMotion and setMotionComponents, because `componentMotion` entities
+ * (obj_diagonal_bullet, the afterimages) carry f64 hspeed/vspeed of their
+ * own on an unmeasured path that stays as it is.
+ *
+ * `speed` and `direction` carry one more duty (sim/index.js runMotion, fact
+ * 1): assigning either raises `motionPolarWritten`, the signal that the
+ * runner re-derived the components from the polar pair -- so the move step
+ * knows to derive them afresh rather than keep the drifted state.
  *
  * This matters beyond position: `image_angle`, `image_xscale` and
  * `image_yscale` feed the rotated-mask collision test, so an f64 angle
@@ -105,6 +114,9 @@ export const F32_BUILTINS = [
  */
 const ANGLE_BUILTINS = new Set(['direction', 'gravity_direction']);
 
+/** The polar pair whose assignment makes GameMaker re-derive hspeed/vspeed. */
+const MOTION_POLAR = new Set(['speed', 'direction']);
+
 function installF32Builtins(e) {
   const store = Object.create(null);
   for (const k of F32_BUILTINS) {
@@ -114,6 +126,7 @@ function installF32Builtins(e) {
         return Math.fround(((f % 360) + 360) % 360);
       }
       : (v) => Math.fround(v);
+    const polar = MOTION_POLAR.has(k);
     store[k] = typeof e[k] === 'number' ? norm(e[k]) : e[k];
     delete e[k];
     Object.defineProperty(e, k, {
@@ -124,6 +137,9 @@ function installF32Builtins(e) {
       },
       set(v) {
         store[k] = typeof v === 'number' ? norm(v) : v;
+        // A spawn's initial values never pass through here, and an absent
+        // flag reads as "written": the first move step derives from scratch.
+        if (polar) e.motionPolarWritten = true;
       },
     });
   }

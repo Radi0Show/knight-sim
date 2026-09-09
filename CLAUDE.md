@@ -519,7 +519,10 @@ instance (`oracle_f32_probe.csx`, `traces/f32-probe.csv`): assigning 1/3 reads
 back 0.3333333433 for `x y xstart ystart speed direction image_angle
 image_xscale image_yscale image_index image_speed image_alpha friction gravity
 gravity_direction depth`, while plain instance variables read back
-0.3333333333. `hspeed`/`vspeed` are derived from speed/direction, not stored.
+0.3333333333. `hspeed`/`vspeed` are f32 STATE too — the runner keeps them and
+touches them only on an assignment of speed/direction (the 2026-09-08 motion
+probe; `sim/index.js` runMotion carries the whole measured move step, integer
+fix-up included); this engine holds that state as `motionHspeed`/`motionVspeed`.
 
 This is enforced **structurally**: `spawn()` installs f32-narrowing accessors
 for `F32_BUILTINS` (sim/entity.js), so no translation can forget. GML

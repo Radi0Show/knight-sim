@@ -105,106 +105,196 @@ function runMotion(state) {
       }
     }
 
-    if (!e.speed && !e.gravity) continue;
+    // ── THE RUNNER'S MOVE STEP, MEASURED END TO END ─────────────────────────
+    //
+    // MOTION PROBE, 2026-09-08 (knight-research/kaizo-mod/probes/
+    // kaizo_oracle_motion.csv, patch tools/patches/oracle_motion_probe.csx;
+    // scorer tools/fit-motion.mjs, written BEFORE the data existed): 237 bare
+    // obj_marker instances of the real runtime, each assigned a speed,
+    // direction, gravity and gravity_direction -- gravity 0.4 @ 180 over
+    // headings 190..215 and speeds 0.5..20.42, gravity 0.1 (the Stars regime),
+    // the cardinal gravity directions, gravity-0 controls -- and logged every
+    // frame for 80 frames at 17 decimal places: 18,960 rows, 18,723
+    // integration steps, each a (pre, post) pair a model must reproduce in
+    // ALL of hspeed, vspeed, speed, direction, x and y at f32 exactness.
+    //
+    //   model                                    pairs reproduced
+    //   shipped (this block before today)           674 / 18723    3.60%
+    //   refuted-f64-components (ledger:3520)        327             1.75%
+    //   refuted-f64-sum-narrowed-once               609             3.25%
+    //   refuted-whole-tail-narrowed                 639             3.41%
+    //   refuted-pi32-divide                         676             3.61%
+    //   refuted-f64-atan2 (the pre-09-04 tail)      669             3.57%
+    //   components-primary                         9743            52.04%
+    //   redecompose-fixup                          1101             5.88%
+    //   runner-f32chain (no fix-up)               18483            98.72%
+    //   runner-fixup-1e-5                         18524            98.94%
+    //   runner-fixup  -- THIS BLOCK               18723           100.00%
+    //
+    // Four facts, each fitted on its own sub-step against the recorded post
+    // state and only then composed (a model that fits the frame that found
+    // it is not a measurement -- ledger:3494):
+    //
+    // 1. hspeed AND vspeed ARE THE STATE. The old block rebuilt them from
+    //    (speed, direction) every frame, which launders a drifting component
+    //    through a narrowed polar pair: vspeed came back right on 1,481 of
+    //    18,723 steps. The runner keeps the components and touches them only
+    //    on an ASSIGNMENT of speed or direction (GameMaker's setter derives
+    //    them then); entity.js raises `motionPolarWritten` from those two
+    //    accessors and this block re-derives only while it is up. Under
+    //    gravity 0.4 @ 180 vspeed climbs one f32 ulp a frame -- sin of the
+    //    f32 radian of 180 deg is -8.74e-8, times 0.4 is more than half an
+    //    ulp at 0.52 -- and only a kept component can do that.
+    // 2. THE GRAVITY ADD is the f32-pi radian chain, f64 trig narrowed, f32
+    //    product, f32 sum: 0 misses on 18,012 gravity steps (a single
+    //    FMA-style rounding misses 10, an f64 radian 15,940). No snap and no
+    //    fix-up on the add itself: a component of -6.4e-5 survives it.
+    // 3. THE RECOMPOSITION IS ALL-f32 ARITHMETIC, THEN AN INTEGER FIX-UP.
+    //    speed = sqrt(f32(f32(hs*hs) + f32(vs*vs))) narrowed; direction =
+    //    f32(f32(f32(atan2(-vs, hs)) * 180) / f32(pi)), every operation in
+    //    single precision (the old f64 sqrt: 12,234 right; f32(atan2) then
+    //    f64 degrees, the half MEASURED at oracle f6604: 8,485; the f32
+    //    chains: 18,674 and 18,511). The remaining 49 speeds and 212
+    //    headings are exactly the cases whose recomposed value lies within
+    //    1e-4 of an integer, and the recording holds the INTEGER: 13.999933
+    //    -> 14, 180.99991 -> 181, 6.4e-5 -> 0. The window is bounded by the
+    //    data -- snapped values up to 9.92e-5 away, unsnapped from 2.1e-4;
+    //    GML's documented 1e-5 epsilon is refuted (18,524). Fix-up-then-wrap
+    //    and wrap-then-fix-up are not separable on this probe (no heading
+    //    recomposes within 1e-4 of 0 there); the runner's own wrap is a
+    //    single-precision + 360.
+    // 4. THE SAME FIX-UP IS ON THE ASSIGNMENT PATH. The 237 creation rows
+    //    (direction then speed assigned, components read back) store hspeed
+    //    exactly -1 for speed 1 at 180.6504 (cos is -0.99993557) and an exact
+    //    0 for the cardinals (cos of the f32 radian of 90 deg is -4.37e-8):
+    //    the old decomposition gets 230 of them, the fix-up all 237. This is
+    //    what SNAP_EPS was approximating all along. At speed 1 a 1e-4 snap
+    //    on the TRIG VALUE and a 1e-4 fix-up on the PRODUCT coincide -- which
+    //    is why 1e-4 scored 719/720 on the speed-1 direction sweep -- and at
+    //    speed 9.67 they do not, which is why verify37's star at 180.6504
+    //    walked off (9.67 * 0.99993555 is nowhere near an integer, so the
+    //    runner leaves it alone; the trig snap moved it a full 2^-11 a
+    //    frame). The 1e-12 snap that replaced it was a no-op: an f32 cannot
+    //    hold 1 - 3.8e-15, so narrowing the trig value already returns the
+    //    clean +/-1. Both are gone; the fix-up is the mechanism. The sweep's
+    //    one residual miss (163.123 deg) stays: cos64 there sits 2.9e-8 from
+    //    BOTH f32 neighbours, a rounding tie that neither V8 nor the UCRT's
+    //    cos or cosf resolves the runner's way. Accepted, as before.
+    //
+    // The position update is x += hspeed, y += vspeed with the POST-gravity
+    // components, through the f32 accessors: 0 misses on all 18,723 steps.
+    // Friction ahead of gravity is the order this block always had; the probe
+    // ran with friction 0 and cannot order the two, and no vanilla or kaizo
+    // object runs both at once.
+    //
+    // NOT MODELLED HERE: a GML write to hspeed or vspeed on a built-in-motion
+    // instance (GameMaker then recomposes speed/direction the way fact 3
+    // does). setMotionComponents below is that write; the revised tunnel's
+    // `vspeed = dorifto` and its hold's `hspeed *= 0.9` are its callers-to-be
+    // (vanilla's copy still lands those on a dead property).
+    let hs;
+    let vs;
+    if (e.motionPolarWritten !== false) {
+      // Fact 4: the assignment path. speed/direction were assigned (or this
+      // is the instance's first step): derive the components afresh.
+      const r = Math.fround(Math.fround(Math.fround(e.direction) * PI32) / 180);
+      hs = fixupInteger(Math.fround(Math.fround(e.speed) * Math.fround(Math.cos(r))));
+      vs = fixupInteger(Math.fround(Math.fround(e.speed) * -Math.fround(Math.sin(r))));
+    } else {
+      // Fact 1: the kept state.
+      hs = e.motionHspeed;
+      vs = e.motionVspeed;
+    }
+
+    if (!e.gravity && hs === 0 && vs === 0) {
+      // Nothing moves. An assigned speed of 0 derives components of exactly
+      // +/-0, so this is the old `!speed && !gravity` skip for every case
+      // the probe saw; a kept sub-1e-4 component (fact 3 reads it as speed
+      // 0) keeps moving, as the runner's x += hspeed would.
+      e.motionHspeed = hs;
+      e.motionVspeed = vs;
+      e.motionPolarWritten = false;
+      continue;
+    }
     state.counters.motionSteps += 1;
 
-    // Decompose to components, add gravity, recompose — THE RUNNER'S WAY,
-    // measured, not assumed. A direct probe of the runner (assign
-    // speed/direction to an instance, read hspeed/vspeed back at 17 digits;
-    // oracle_vspeed_probe.csx, plus a 720-point direction sweep) pinned the
-    // exact derivation:
-    //
-    //   r  = f32( f32( f32(direction) * f32(pi) ) / 180 )   // SINGLE-PRECISION pi
-    //   c  = cos(r); s = sin(r)                              // f64-grade trig
-    //   if (|c| > 1 - SNAP_EPS) c = sign(c)                  // the SNAP: a hair
-    //   if (|s| > 1 - SNAP_EPS) s = sign(s)                  //   from ±1 -> ±1
-    //   hspeed = f32( f32(speed) *  f32(c) )
-    //   vspeed = f32( f32(speed) * -f32(s) )
-    //
-    // Every piece is load-bearing and data-selected: the f32 pi radian is one
-    // f32 ulp away from f32(d*PI/180) for ~30% of directions (sweep score
-    // 719/720 vs 501/720); the chained-f32 product is what reproduces the
-    // probe's own hspeed AND vspeed for the recorded stars (f(s*t) fails two
-    // of them); the snap is why a 30-degree direction at speed 2 reads back
-    // vspeed exactly -1. The remaining 1-in-720 sweep miss is an f64
-    // rounding-boundary straddle between V8's cos and the runner's — odds
-    // ~1e-8 per bullet, accepted.
-    //
-    // Getting this wrong is not cosmetic: the b1 star's vspeed differed by
-    // 8e-6, which flipped a y-grid phase, then a graze at f217, then the
-    // cone's turntimer release frame, then the star count of the turn — and
-    // from there the RNG stream of every later Stars turn.
-    // SNAP_EPS WAS 1e-4 AND THAT WAS 11 ORDERS TOO LOOSE. The snap exists so a
-    // CARDINAL direction reads back exactly +/-1: the f32-pi radian puts
-    // |cos(180 deg)| at 1 - 3.8e-15 rather than 1, and the runner returns the
-    // clean value. That is the snap's entire data support -- and it does not
-    // constrain the width at all, because over the 720-point integer sweep
-    // that validated this block, 1e-4 and 1e-6 snap the SAME four directions
-    // (0/90/180/270); the nearest integer miss, 1 deg, sits at 1 - 1.5e-4,
-    // outside both. The width was simply never measured.
-    //
-    // At 1e-4 the window is +/-0.81 deg wide, so it swallowed real headings.
-    // verify37's true first divergence was a Stars bullet at direction
-    // 180.6504058838, where cos = -0.99993555: the sim snapped it to exactly
-    // -1 and moved the star its FULL speed in x, while the oracle moved it by
-    // speed * cos. That is a per-frame x excess of exactly 2^-11, growing
-    // linearly, and it is why the star's y stayed bit-exact while its x
-    // walked off -- a signature that is impossible for any (speed, direction)
-    // pair, since it needs |cos| > 1.
-    //
-    // 1e-12 keeps three orders of headroom over the 3.8e-15 a true cardinal
-    // needs, while narrowing the false-snap window to 8e-5 deg. The choice is
-    // not fitted: 1e-6, 1e-9, 1e-12 and 1e-14 all put verify37's front at the
-    // same frame (6832), the same plateau argument that pins the collision
-    // walk's step density.
-    const SNAP_EPS = 1e-12;
-    const PI32 = Math.fround(Math.PI);
-    const r = Math.fround(Math.fround(Math.fround(e.direction) * PI32) / 180);
-    let rc = Math.cos(r);
-    let rs = Math.sin(r);
-    if (Math.abs(rs) > 1 - SNAP_EPS) rs = Math.sign(rs);
-    if (Math.abs(rc) > 1 - SNAP_EPS) rc = Math.sign(rc);
-    let hs = Math.fround(Math.fround(e.speed) * Math.fround(rc));
-    let vs = Math.fround(Math.fround(e.speed) * -Math.fround(rs));
-
     if (e.gravity) {
-      // The runner adds the gravity vector onto the STORED f32 components —
-      // the vector derived by the same path as above, both sums narrowed.
+      // Fact 2: the gravity vector, by the same chain, onto the components.
       const gr = Math.fround(Math.fround(Math.fround(e.gravity_direction) * PI32) / 180);
-      let gc = Math.cos(gr);
-      let gsn = Math.sin(gr);
-      // SAME SNAP_EPS as the direction vector above. These two were left at
-      // 1e-4 when that one was tightened, and the half-fix is exactly what
-      // verify37's next front was: a star whose speed reaches 0 arms
-      // `gravity_direction = direction - 180`, so a heading of 180.6504 gives
-      // a gravity direction of 0.6504 -- cos 0.99993555, inside the old
-      // window. The sim accelerated it by a clean 0.1 in x while the oracle
-      // used 0.1 * cos, and the two crept apart one f32 ulp at a time.
-      if (Math.abs(gsn) > 1 - SNAP_EPS) gsn = Math.sign(gsn);
-      if (Math.abs(gc) > 1 - SNAP_EPS) gc = Math.sign(gc);
-      hs = Math.fround(hs + Math.fround(Math.fround(e.gravity) * Math.fround(gc)));
-      vs = Math.fround(vs + Math.fround(Math.fround(e.gravity) * -Math.fround(gsn)));
-      e.speed = Math.sqrt(hs * hs + vs * vs);
-      // THE ATAN2 RESULT IS NARROWED BEFORE THE DEGREE CONVERSION, and the
-      // conversion itself stays f64. MEASURED on the first frame the kaizo
-      // gate's blade drift appears -- oracle f6604, a revised-tunnel blade
-      // with speed 1.400272011756897 at direction 201.81463623046875 under
-      // gravity 0.4 at 180, giving hs -1.6999996900558472 and
-      // vs 0.5203483700752258. The recording's next direction is
-      // 197.0186767578; f64 atan2 all the way gives 197.0186920166 (one f32
-      // ulp high) and narrowing the atan2 first gives 197.0186767578 exactly.
-      // Dividing by a single-precision pi instead does NOT reproduce it, so
-      // the narrowing is on the angle, not on the constant.
-      let dir = (Math.fround(Math.atan2(-vs, hs)) * 180) / Math.PI;
-      if (dir < 0) dir += 360;
+      hs = Math.fround(hs + Math.fround(Math.fround(e.gravity) * Math.fround(Math.cos(gr))));
+      vs = Math.fround(vs + Math.fround(Math.fround(e.gravity) * -Math.fround(Math.sin(gr))));
+      // Fact 3: the recomposition, all-f32, fixed up.
+      e.speed = fixupInteger(Math.fround(Math.sqrt(Math.fround(Math.fround(hs * hs) + Math.fround(vs * vs)))));
+      let dir = fixupInteger(Math.fround(Math.fround(Math.fround(Math.atan2(-vs, hs)) * 180) / PI32));
+      if (dir < 0) dir = Math.fround(dir + 360);
       e.direction = dir;
     }
+
+    e.motionHspeed = hs;
+    e.motionVspeed = vs;
+    // The stores above are the runner's own recomposition, not an assignment.
+    e.motionPolarWritten = false;
 
     // No explicit fround: x/y are f32-narrowing accessors (see entity.js
     // F32_BUILTINS). Narrowing is structural so no call site can forget.
     e.x = e.x + hs;
     e.y = e.y + vs;
   }
+}
+
+const PI32 = Math.fround(Math.PI);
+
+/**
+ * THE RUNNER'S INTEGER FIX-UP (runMotion, facts 3 and 4): a value the runner
+ * RECOMPOSES -- speed and direction from the components, the components from
+ * an assigned (speed, direction) -- is stored as the nearest integer when it
+ * lies within 1e-4 of one. Measured on the motion probe: snapped values sit
+ * up to 9.92e-5 from the integer, unsnapped ones from 2.1e-4; 1e-5 misses
+ * 199 pairs. Never applied to the gravity add. Math.round keeps the sign of a
+ * tiny negative (-4.37e-8 -> -0), which is what the direction wrap and the
+ * f32 accessors expect.
+ */
+function fixupInteger(v) {
+  const r = Math.round(v);
+  return Math.abs(v - r) < 1e-4 ? r : v;
+}
+
+/**
+ * The components a built-in-motion entity will move by on its next step: the
+ * kept state, or -- after an assignment of speed/direction -- the derivation
+ * runMotion is about to make. What a GML read of hspeed/vspeed returns.
+ */
+export function motionComponents(e) {
+  if (e.motionPolarWritten !== false) {
+    const r = Math.fround(Math.fround(Math.fround(e.direction) * PI32) / 180);
+    return [
+      fixupInteger(Math.fround(Math.fround(e.speed) * Math.fround(Math.cos(r)))),
+      fixupInteger(Math.fround(Math.fround(e.speed) * -Math.fround(Math.sin(r)))),
+    ];
+  }
+  return [e.motionHspeed, e.motionVspeed];
+}
+
+/**
+ * GML `hspeed = a; vspeed = b` on a built-in-motion entity: the components
+ * become the state and speed/direction are recomposed from them the way the
+ * move step does (runMotion fact 3). GameMaker documents the recompose on
+ * either assignment; the arithmetic is the probe's, the routing is the
+ * runtime's documented behaviour, not a separate measurement. Write one
+ * component by reading the other from motionComponents first. No vanilla
+ * caller yet: the revised tunnel's `vspeed = dorifto` and `hspeed *= 0.9`
+ * still land on a dead property in sim/attacks/sword-tunnel-revised.js.
+ */
+export function setMotionComponents(e, hs, vs) {
+  hs = Math.fround(hs);
+  vs = Math.fround(vs);
+  e.motionHspeed = hs;
+  e.motionVspeed = vs;
+  e.speed = fixupInteger(Math.fround(Math.sqrt(Math.fround(Math.fround(hs * hs) + Math.fround(vs * vs)))));
+  let dir = fixupInteger(Math.fround(Math.fround(Math.fround(Math.atan2(-vs, hs)) * 180) / PI32));
+  if (dir < 0) dir = Math.fround(dir + 360);
+  e.direction = dir;
+  e.motionPolarWritten = false;
 }
 
 /**
