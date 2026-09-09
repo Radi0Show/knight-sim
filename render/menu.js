@@ -364,8 +364,15 @@ export function drawMenu(ctx, state, sprites) {
   // matters: render/ must not import from kaizo/ (kaizo/HANDOFF.md §2), and
   // reading a plain state field is not a dependency.
   const panels = state.partySprites?.length ?? 3;
+  // ...AND THE X POSITIONS FOLLOW THE HEADCOUNT. scr_charbox:24-47 keys
+  // `xchunk` on `chartotal` as well as the slot: three members at 0 / 213 /
+  // 426, TWO at 108 / 322, one at 213 — a short party is centred, not
+  // left-packed. Same seam shape as partySprites: an optional plain state
+  // field, the hardcoded three-member table when it is absent, and render/
+  // still imports nothing from whoever sets it.
+  const chunks = state.partyChunks ?? CHUNK;
   for (let c = 0; c < panels; c++) {
-    const chunk = CHUNK[c];
+    const chunk = chunks[c] ?? CHUNK[c];
     const mmy = menu.mmy[c];
     const color = CHAR_COLOR[c];
     const active = menu.open && menu.charturn === c;

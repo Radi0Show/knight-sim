@@ -219,6 +219,23 @@ export function createDialogue() {
  * Returns the Knight's line, or null on the silent early turns.
  */
 export function advanceBalloon(dlg, state) {
+  // ── THE KAIZO BALLOON SEAM, INERT unless a scene installs it ────────────
+  //
+  // The mod puts two lines in front of the counter (kaizo
+  // gml_Object_obj_knight_enemy_Step_0.gml:206-211):
+  //
+  //     if (practicemode || k_sideb || !i_ex(obj_herosusie)) balloonturn = -1;
+  //     if (global.hp[2] > 0 || k_freeze[2]) balloonturn++;
+  //
+  // so on the B-Side, in practice mode, or with Susie out of the party the
+  // exchange never fires — and the second test reads Susie's CHARACTER hp,
+  // not slot 1's, which on a Kris + Noelle roster is Noelle. The vanilla
+  // body below cannot express any of that without knowing who is in slot 1,
+  // and sim/ must not import kaizo/, so the whole advance defers to a hook
+  // on the state — same shape as `state.kaizo.hooks.knightTarget` in
+  // sim/damage.js. NO HOOK -> byte-identical to what it was.
+  const kHook = state.kaizo?.hooks?.advanceBalloon;
+  if (kHook) return kHook(dlg, state);
   // `if (global.hp[2] > 0)` — Susie must be standing for the exchange to move.
   if (state.partyHp[1] <= 0) return null;
   dlg.balloonturn += 1;
