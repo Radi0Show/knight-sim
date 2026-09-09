@@ -597,23 +597,18 @@ export function launchAttack(state, entry) {
       if (difficulty === 0 && state.gmlRng) {
         dc.side = gmlChoose(state.gmlRng, [-1, 1]);
       }
-      // FOUR DRAWS, MEASURED AND NOT YET ATTRIBUTED. The oracle's first star
-      // rolls its size at raw position 38 of the anchored stream; the
-      // accounted consumers — the cone's yoff irandom (2), the side choose
-      // (1), fifteen con-2 drag frames (30), the star's own dir choose (1) —
-      // total 34. Something in the recording's window consumes four more,
-      // and every candidate audited (growtangle, darkener, heart, follower,
-      // burst, the knight's Draw, scr_childbullet, the sounds in play) draws
-      // zero. Padded here, directly after the side, so the whole diff can
-      // confirm or refine the placement: the pad is wrong ONLY if star 2+
-      // aligns while star 1 does not, since later stars ride relative
-      // offsets. ORACLE-FITTED — replace with the real consumer when it is
-      // found.
-      // TWO of the original four fitted pads were the dc's basedir (now
-      // consumed centrally above); these two remain unattributed.
-      if (ac === 1 && state.gmlRng) {
-        for (let pad = 0; pad < 2; pad++) gmlRandom(state.gmlRng, 1);
-      }
+      // NO PADS. Two "unattributed" random(1) draws used to sit here (four
+      // originally; two were the dc's basedir, consumed centrally above).
+      // They were never a consumer the game has: they were the two u32 an
+      // INVERTED STEP ORDER cost at every star — the sim stepped the
+      // controller before the cone, so the star's three draws came before
+      // the cone's drag pair where the game draws them after, and two dead
+      // draws at the launch bought the swap back. The order is corrected
+      // (pointing-cone.js / stars-controller.js stepOrder) and the pads go
+      // with it; either change alone moves the stream two slots. The
+      // receipt is the whole-fight diff: byte-exact with all three changes,
+      // and 38 = 2 + 2 + 1 + 32 + 1 with sixteen drag pairs where it used to
+      // be 2 + 2 + 1 + 30 + 1 + 2.
       return dc;
     }
 

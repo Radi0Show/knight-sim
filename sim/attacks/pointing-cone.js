@@ -79,21 +79,25 @@ function gtMaxX(gt) {
 
 export const pointingCone = {
   name: 'obj_knight_pointing_cone',
-  // THE MIXED STEP ORDER, fitted to two exact measurements the pure orders
-  // cannot both satisfy:
+  // THE CONE STEPS FIRST: [cone, dc, heart]. It was [dc, cone, heart],
+  // fitted to "size = us[38] requires the CONTROLLER's rolls before the
+  // cone's two drag draws" — a real measurement, taken WITH two launch-frame
+  // pad draws in fight.js that were exactly the two u32 the inverted order
+  // cost at every star: the game draws the cone's drag pair BEFORE the
+  // star's three (dir/size/special); the sim drew the star's three first,
+  // and two dead draws at the launch bought the difference back. The two
+  // errors cancelled at every star, which is why the pads were load-bearing
+  // and why the us[38] fit came out self-consistent.
   //
-  //  * frame 145 (the first star): size = us[38] of the anchored stream
-  //    requires the CONTROLLER's rolls before the cone's two drag draws;
-  //  * frame 160 (the squeeze release): the soul leaves the pinned clamp at
-  //    365 = (new box clamp 369, applied first) - 4, requiring the cone's
-  //    drag-and-clamp before the HEART's movement — while the heart is the
-  //    OLDER instance.
+  // The mechanism is the step law already in hand — the runner walks the
+  // step phase newest-first, and the cone is YOUNGER than the controller
+  // that creates it (obj_dbulletcontroller Step_0:1992, a frame after its
+  // own birth). Not an object-index rule: index governs the ALARM phase
+  // only (sim/entity.js has the receipt for the step-phase attempt).
   //
-  // [dc, cone, heart] is the one order satisfying both. The same knob the
-  // sword vortex already needs (its sword steps before its older manager);
-  // GameMaker's real cross-object scheduling remains unexplained, these
-  // measurements are not.
-  stepOrder: -1,
+  // The frame-160 squeeze release still holds: it needs the cone before the
+  // HEART, and the heart is still last.
+  stepOrder: -2,
 
   create(e, state) {
     // `obj_knight_enemy.visible = false` — the cone's Create HIDES THE KNIGHT,
