@@ -185,7 +185,17 @@ function runMotion(state) {
       hs = Math.fround(hs + Math.fround(Math.fround(e.gravity) * Math.fround(gc)));
       vs = Math.fround(vs + Math.fround(Math.fround(e.gravity) * -Math.fround(gsn)));
       e.speed = Math.sqrt(hs * hs + vs * vs);
-      let dir = (Math.atan2(-vs, hs) * 180) / Math.PI;
+      // THE ATAN2 RESULT IS NARROWED BEFORE THE DEGREE CONVERSION, and the
+      // conversion itself stays f64. MEASURED on the first frame the kaizo
+      // gate's blade drift appears -- oracle f6604, a revised-tunnel blade
+      // with speed 1.400272011756897 at direction 201.81463623046875 under
+      // gravity 0.4 at 180, giving hs -1.6999996900558472 and
+      // vs 0.5203483700752258. The recording's next direction is
+      // 197.0186767578; f64 atan2 all the way gives 197.0186920166 (one f32
+      // ulp high) and narrowing the atan2 first gives 197.0186767578 exactly.
+      // Dividing by a single-precision pi instead does NOT reproduce it, so
+      // the narrowing is on the angle, not on the constant.
+      let dir = (Math.fround(Math.atan2(-vs, hs)) * 180) / Math.PI;
       if (dir < 0) dir += 360;
       e.direction = dir;
     }

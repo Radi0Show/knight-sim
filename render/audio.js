@@ -28,7 +28,16 @@
 // Module-relative, not document-relative — same rule as render/sprites.js.
 const BASE = new URL('../assets/audio/', import.meta.url).href;
 
-export function createAudio() {
+/**
+ * @param {object} [opts]
+ * @param {Object<string,string>} [opts.overrides] - cue name -> replacement
+ *   file. A bare name resolves against the vanilla audio folder like any
+ *   manifest entry; an absolute URL (or a root-relative path) is used as it
+ *   stands, which is how a LANE ships its own audio from its own directory.
+ *   The kaizo build replaces `mus_knight` this way. Omit it and nothing about
+ *   this module changes.
+ */
+export function createAudio({ overrides } = {}) {
   /** name -> AudioBuffer, once decoded. */
   const buffers = new Map();
   /** name -> in-flight decode, so a burst of cues fetches once. */
@@ -51,9 +60,15 @@ export function createAudio() {
 
   // Autoplay policy: the context starts suspended until the page has been
   // interacted with. The fight is keyboard-driven, so the first key resumes it.
+  /** Live streamed elements (music), so a gesture can start ones autoplay refused. */
+  const streams = new Set();
+
   const resume = () => {
     const c = audioCtx();
     if (c && c.state === 'suspended') c.resume().catch(() => {});
+    // An <audio> element is refused before a gesture exactly as the context is,
+    // and unlike the context nothing else retries it.
+    for (const el of streams) if (el.paused) el.play().catch(() => {});
   };
   window.addEventListener('keydown', resume, { passive: true });
   window.addEventListener('pointerdown', resume, { passive: true });
@@ -74,6 +89,11 @@ export function createAudio() {
       } else {
         available = new Map();
       }
+      // THE LANE'S OWN CUES WIN, and they are applied here rather than at the
+      // call site so `preloadAll` below decodes the replacement instead of the
+      // file it replaces -- decoding both would cost a player a download of a
+      // song that never plays.
+      if (overrides) for (const [k, v] of Object.entries(overrides)) available.set(k, v);
       preloadAll();
     })
     .catch(() => {
@@ -126,7 +146,11 @@ export function createAudio() {
     // decodeAudioData works on a SUSPENDED context, so the preload does not
     // have to wait for the player's first keypress — only playback does.
 
-    const p = fetch(`${BASE}${available.get(name)}`)
+    // An override may carry a whole URL; a manifest entry is a bare filename
+    // under BASE. Telling them apart here keeps every other caller unchanged.
+    const file = available.get(name);
+    const url = /^(?:[a-z]+:)?\/\//i.test(file) || file.startsWith('/') ? file : `${BASE}${file}`;
+    const p = fetch(url)
       .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404'))))
       .then((buf) => c.decodeAudioData(buf))
       .then((decoded) => {
@@ -216,7 +240,80 @@ export function createAudio() {
     }
   }
 
+  /**
+   * MUSIC STREAMS; EFFECTS DECODE.
+   *
+   * `fire` below decodes a cue to an AudioBuffer, which is right for effects:
+   * they are a few KB, they overlap, and they need sample-accurate starts. It
+   * is the wrong shape for a song. decodeAudioData expands a track to raw
+   * 32-bit PCM and holds all of it — a few minutes of 44.1kHz stereo is on the
+   * order of a hundred megabytes from a four-megabyte file, and the decode
+   * itself is a visible stall on the frame the track is cued.
+   *
+   * An <audio> element streams instead: it starts on the first buffered chunk,
+   * holds no decoded copy, and loops natively. Routing it through
+   * createMediaElementSource keeps it inside the same gain graph as everything
+   * else, so the music slider, the MASTER ceiling and stopLoop all keep
+   * working with no change at their end.
+   *
+   * The returned object presents the three surfaces the rest of this module
+   * uses on a BufferSource — `stop()`, `playbackRate.value` and
+   * `addEventListener` — so `play`, `startLoop` and `stopLoop` do not know the
+   * difference. Returning null falls back to the decode path, which is what
+   * happens if the browser refuses createMediaElementSource.
+   */
+  function fireStream(name, pitch, gain, loop) {
+    const c = audioCtx();
+    const file = available?.get(name);
+    if (!c || !file) return null;
+    const url = /^(?:[a-z]+:)?\/\//i.test(file) || file.startsWith('/') ? file : `${BASE}${file}`;
+    const el = new Audio();
+    el.src = url;
+    el.loop = !!loop;
+    el.preload = 'auto';
+    el.playbackRate = pitch ?? 1;
+
+    let node;
+    try {
+      node = c.createMediaElementSource(el);
+    } catch {
+      return null; // let the caller decode it the ordinary way
+    }
+
+    const g = c.createGain();
+    const entry = { g, base: gain ?? 1, loop: !!loop };
+    g.gain.value = levelFor(entry);
+    liveGains.add(entry);
+    node.connect(g).connect(c.destination);
+
+    streams.add(el);
+    el.play().catch(() => { /* refused until a gesture; `resume` retries */ });
+
+    return {
+      playbackRate: {
+        get value() { return el.playbackRate; },
+        set value(v) { el.playbackRate = v; },
+      },
+      addEventListener: (...a) => el.addEventListener(...a),
+      stop() {
+        streams.delete(el);
+        liveGains.delete(entry);
+        try { el.pause(); } catch { /* already gone */ }
+        // Drop the source so the browser can release what it buffered; an
+        // element left with a src holds its network buffer indefinitely.
+        el.removeAttribute('src');
+        try { el.load(); } catch { /* nothing to reload */ }
+        try { node.disconnect(); g.disconnect(); } catch { /* already detached */ }
+      },
+    };
+  }
+
   function fire(name, pitch, gain, loop) {
+    // The music is the one cue worth streaming — see fireStream.
+    if (name.startsWith('mus_')) {
+      const streamed = fireStream(name, pitch, gain, loop);
+      if (streamed) return streamed;
+    }
     const buf = buffer(name);
     const c = audioCtx();
     if (!buf || !c) {
@@ -288,6 +385,8 @@ export function createAudio() {
     // held R) inside mus_knight's first-load window and the title screen
     // began playing the fight's music a beat later. Forgetting the wish
     // here is what makes stopAll mean everything, not just the sounding.
+    // (The music streams now, so the window is the stream's own start-up
+    // rather than a decode; the wish is still recorded and still cleared.)
     wantedLoops.clear();
   }
 

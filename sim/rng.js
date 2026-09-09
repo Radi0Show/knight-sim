@@ -129,8 +129,40 @@ export function gmlRandom(r, x) {
 }
 
 /** GML random_range(lo, hi) — 1 draw. */
+/**
+ * THE ARGUMENT ORDER DOES NOT MATTER TO GML, and it used to matter here.
+ *
+ * `random_range(a, b)` normalises: the result is `min(a,b) + f*|b-a|`, not
+ * `a + f*(b-a)`. The two agree whenever a < b, which is every call written by
+ * hand — so this sat unnoticed until a call whose arguments INVERT AT RUNTIME
+ * hit it. obj_roaringknight_quickslash_attack's Other_13:31 is
+ * `y += random_range(-spawn_yrange, spawn_yrange)`, and `spawn_yrange` is -1
+ * on the very first spawn of the attack (Create_0:46 sets the sentinel; the
+ * lazy-init to 44 runs at the END of the same event). So the call really is
+ * `random_range(1, -1)`, descending, and the old form returned the exact
+ * NEGATION of the right answer.
+ *
+ * MEASURED on _tok3, 2026-09-02. The Quickslash turn (anchor n=16) spawns its
+ * first slash at oracle f4515. Both sides agree on x (299.7733154297) and on
+ * image_angle/direction (2.4057159424) — so the FIRST draw of the pair, and
+ * the orbit that follows it, are already exact — and disagree on y alone:
+ * recorded 169.9826049805 against 168.6742248535. The stream index is not in
+ * doubt (the tracer puts both draws at indices 2 and 3 of that anchor), and
+ * u[3]/2^32 = 0.8270958732 gives
+ *
+ *     old:  1 + 0.8270958732 * (-1 - 1)      = -0.6541917464
+ *     new: -1 + 0.8270958732 * |(-1) - 1|    = +0.6541917464
+ *
+ * and the recorded y minus the sim y is 1.3083801270 — twice that value, to
+ * within the f32 the recording stores. One u32, read the right way round.
+ *
+ * Descending calls are rare but not unique: kaizo/attacks/knightlines.js and
+ * three more sites in quickslash.js pass `-v, v` for a `v` that can go
+ * negative, and they all inherit the fix.
+ */
 export function gmlRandomRange(r, lo, hi) {
-  return lo + (gmlU32(r) / 4294967296) * (hi - lo);
+  const f = gmlU32(r) / 4294967296;
+  return Math.min(lo, hi) + f * Math.abs(hi - lo);
 }
 
 /** GML irandom(n) — 2 draws. */
