@@ -25,8 +25,8 @@
 // LABELLED: the writer's voice blips (snd_txtsus) are not cued.
 
 import { drawSpriteExt } from './draw/gm.js';
-import { loadFont, drawText } from './font.js';
-import { revealed, formatWriter } from '../sim/dialogue.js';
+import { loadFont, drawText, styleColors } from './font.js';
+import { writerLines } from '../sim/dialogue.js';
 import { PARTY } from '../sim/actors.js';
 
 const HSPACE = 9;
@@ -44,10 +44,16 @@ const VSPACE = 20;
 export function balloonGeometry(text) {
   const ax = PARTY[1].x + 92;
   const ay = PARTY[1].y + 38;
-  // formatWriter returns the wrapped STRING; the balloon sizes off its
-  // fully-revealed line set (`&` breaks — the writer's own line separator).
-  const formatted = formatWriter(text, 33);
-  const lines = revealed(formatted, 1e9);
+  // `writerLines` wraps and reveals in one pass, and carries the per-character
+  // style the escape codes selected out with the text (sim/dialogue.js). The
+  // balloon must size off the CONSUMED text, not the raw string: a line
+  // beginning `\ck` is three characters wider and, if a code ever fell on a
+  // wrap boundary, a line longer than the writer would actually type. Asking
+  // at timer 1e9 gives the fully-revealed line set, so the body does not
+  // resize as the text types itself in.
+  const styled = writerLines(text, { charline: 33, timer: 1e9 });
+  const lines = styled.lines;
+  const formatted = styled.formatted ?? lines.join('&');
   const stringmax = Math.max(...lines.map((l) => l.length));
   const bw = stringmax * HSPACE + 10;
   // `balloonheight = ((linecount + 1) * vspace) + 5` — obj_battleblcon's Draw,
@@ -109,7 +115,7 @@ export function drawDialogue(ctx, state, sprites) {
   // The anchor (obj_herosusie + (92, 38)) and every measurement taken from
   // it now come from balloonGeometry above, which is the asserted copy.
   const g = balloonGeometry(dlg.text);
-  const { ax, ay, formatted, bw, bh, writingX, writingY, boxY, tailScale } = g;
+  const { ax, ay, bw, bh, writingX, writingY, boxY, tailScale } = g;
 
   // The body: the two-rectangle union (draw_rectangle is inclusive; +1).
   ctx.fillStyle = '#fff';
@@ -128,10 +134,10 @@ export function drawDialogue(ctx, state, sprites) {
   }
 
   // The text — black, revealed at the writer's rate, one row per line.
-  const lines = revealed(formatted, dlg.timer);
+  const { lines, styles } = writerLines(dlg.text, { charline: 33, timer: dlg.timer });
   for (let i = 0; i < lines.length; i++) {
     drawText(ctx, font, lines[i], writingX, writingY + i * VSPACE, {
-      color: 'rgb(0,0,0)', advance: HSPACE,
+      color: 'rgb(0,0,0)', colors: styleColors(styles[i]), advance: HSPACE,
     });
   }
   ctx.restore();

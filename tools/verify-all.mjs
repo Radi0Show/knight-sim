@@ -86,6 +86,7 @@ const SUITES = [
   ['verify-dialogue.mjs', 'the fight dialogue — the two-beat exchange'],
   ['verify-balloon.mjs', 'the speech balloon geometry — the box Susie is drawn in'],
   ['verify-textsound.mjs', 'the typewriter — per-typer voice, skipped punctuation'],
+  ['verify-writer.mjs', "obj_writer's escape codes — consumed, and the style they select"],
   ['verify-victory.mjs', 'the ending cutscene — positions, the walk, the exit'],
   ['verify-roaring-fx.mjs', "ROARING's effect layer — screen echoes, streaks, the return"],
   ['verify-share.mjs', 'shareable setups — ?cfg= round trip and hostile tokens'],
