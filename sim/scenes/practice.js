@@ -965,6 +965,15 @@ const director = {
     if (e.spellphase === undefined) {
       e.spellphase = needsSpellphase(state) ? createSpellphase(state) : null;
       e.spellphaseDone = !e.spellphase;
+      // AN OBJECT CREATED DURING A STEP DOES NOT RUN ITS OWN STEP OR ALARM
+      // THAT FRAME — scr_attackphase is called from obj_battlecontroller's
+      // Step, and the instance it creates first acts on the NEXT frame, so
+      // alarm[0] = 5 fires five frames after the frame of creation, not four.
+      // This is the same one-frame rule the delayed tween note in CLAUDE.md
+      // records from the other direction, and it is worth a frame of the
+      // kaizo _rev1 spell turn: with the phase stepped on its birth frame the
+      // writer landed at f8573 where the recording has f8575.
+      if (e.spellphase) return;
     }
     if (e.spellphase) {
       if (stepSpellphase(state, e.spellphase, e)) {
