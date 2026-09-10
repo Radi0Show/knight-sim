@@ -69,6 +69,27 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         self.send_header("Expires", "0")
         super().end_headers()
 
+    # KEEP THE CONNECTION OPEN. Measured 2026-09-10, and it was the whole of a
+    # "the kaizo page takes a minute to load" report:
+    #
+    #   250 resources, median QUEUE time 1,587 ms, median time-to-first-byte
+    #   129 ms, median download 0 ms, wall 13.8 s.
+    #
+    # The server was never slow — a raw socket request for a module returns in
+    # 3 ms. BaseHTTPRequestHandler defaults to HTTP/1.0, which has no
+    # keep-alive, so the browser must open a NEW TCP CONNECTION for every one
+    # of those 250 files and is capped at about six at a time. Nearly all of
+    # the wall time was requests sitting in that queue.
+    #
+    # HTTP/1.1 is safe here only because every response this handler writes
+    # carries a Content-Length: send_text sets one, and SimpleHTTPRequestHandler
+    # sets one for the files it serves itself. Without that a persistent
+    # connection would hang waiting for a body that never ends.
+    #
+    # It bites the kaizo page hardest because that page pulls 165 modules to
+    # the base sim's 110, but both were paying it.
+    protocol_version = "HTTP/1.1"
+
     def send_text(self, body: bytes, ctype: str):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
