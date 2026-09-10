@@ -139,8 +139,258 @@ export const ACT_TEXT = {
   ralsei_done: "* (... but nothing happened.)",
 };
 
-/** `msgsetloc` uses `&` for a line break. */
-export const msgLines = (s) => String(s).split('&');
+// ─── THE WRITER'S ESCAPE SCANNER ────────────────────────────────────────────
+//
+// obj_writer's Draw_0 walks `mystring` one character at a time EVERY FRAME and
+// draws only what survives its `accept` flag. Everything the loop sets
+// `accept = 0` on is a COMMAND, not a glyph, and this engine had no parser for
+// any of it — `msgLines` split on `&` and handed the rest to render/menu.js,
+// which drew it letter by letter. Vanilla never noticed because every string in
+// the tables above was authored with the codes already stripped by hand (see
+// the `\EJ` note at the top of ACT_PAGES). The moment a lane pastes a string in
+// verbatim, `\ck` and `^2` appear on screen.
+//
+// What the v1.03 Draw_0 consumes, read out of the loop rather than guessed:
+//
+//     `        n++; mychar = next        the LITERAL escape — accept stays 1
+//     & \n     accept = 0                line break        KEPT, see below
+//     |        accept = 0; wx += hspace  indent skip       KEPT, see below
+//     ^        accept = 0; n += 1        PAUSE + its digit
+//     /        halt = 1 (2 before %)     page halt
+//     %        /% -> halt 2, %% -> destroy, else scr_nextmsg()
+//     \        accept = 0; n += 2        cmd + arg, ALWAYS two, whatever they are
+//
+// `&` and `|` are the two this scanner deliberately KEEPS: `msgLines` already
+// splits on `&`, `formatWriter` emits both, and render/font.js already consumes
+// `|` as an hspace skip. Stripping them here would delete the line breaks and
+// the hanging indent this engine has drawn correctly for months.
+//
+// `#` is NOT handled. The Draw turns a bare `#` into a newline
+// (`string_hash_to_newline`) unless a backtick precedes it — but the item
+// descriptions in sim/items.js use `#` as their own break character and never
+// reach a writer, so touching it here would change a screen this seam has no
+// business in. Left alone, deliberately.
+//
+// THE COLOUR IS PER CHARACTER, THE OTHER TWO LATCH. `colorchange = 0` is
+// re-run at the TOP of every Draw pass (Draw_0:87), so `\c` only tints from its
+// own position rightward. `shake` and `textsound` are NOT reset — once a `\ck`
+// is reached they stay set for the writer's whole life, so on the frame the
+// code is first passed only the characters after it shake, and from the next
+// frame onward the whole line does. This scanner publishes the first reading
+// (from the code's position rightward); every string that uses `\ck` puts it at
+// position 0, where the two readings are the same thing.
+
+/**
+ * The `\c<X>` arms, as this repo's RGB triples (render/draw/gm.js's form).
+ *
+ * `#RRGGBB` literals in the dump are RGB, not the BGR of the `$` form —
+ * `#3F48CC` and `#B5E61D` elsewhere in the dump are the MS Paint blue and
+ * green exactly, which settles the byte order without a probe.
+ *
+ * **`k` IS NOT VANILLA.** It is EnderCat8's single addition to the writer
+ * (kaizo gml_Object_obj_writer_Draw_0.gml:567-572, a six-line insert and
+ * nothing else in the file):
+ *
+ *     if (nextchar2 == "k") { textsound = snd_nosound; xcolor = c_gray;
+ *                             shake = 1; }
+ *
+ * so it selects three things at once, and the two flags are why this scanner
+ * publishes a style object rather than a colour.
+ */
+export const WRITER_COLORS = {
+  R: [255, 0, 0], // c_red
+  B: [0, 0, 255], // c_blue
+  Y: [255, 255, 0], // c_yellow
+  G: [0, 255, 0], // c_lime
+  W: [255, 255, 255], // c_white
+  X: [0, 0, 0], // c_black
+  P: [128, 0, 128], // c_purple
+  M: [128, 0, 0], // c_maroon
+  S: [255, 128, 255], // #FF80FF
+  V: [128, 255, 128], // #80FF80
+  I: [129, 192, 255], // #81C0FF
+  k: [128, 128, 128], // c_gray   — KAIZO ONLY
+};
+
+/**
+ * `^<n>` — obj_writer's PAUSE, and it lives in Alarm_0, not in the Draw:
+ *
+ *     if (getchar == "^") { pos += 2;
+ *         if (alarm[0] > 0) { if (nextchar == "1") alarm[0] += 5; ... } }
+ *
+ * alarm[0] had already been re-armed to `rate` this tick, so the digit buys
+ * EXTRA frames on top of the normal one-character step. `^0` is not in the
+ * table and adds nothing.
+ *
+ * **NO STRING THIS ENGINE TYPES CONTAINS A `^`.** A scan of every string
+ * literal in sim/ and render/ (tools/verify-writer.mjs re-runs it, so it
+ * cannot rot) finds three: `SILENT_CHARS`' own entry and two regexes in
+ * sim/rng.js. So consuming the pause is provably inert here — it moves no
+ * gate, because there is nothing to move. The table is translated anyway,
+ * faithfully, because the lanes that paste strings in verbatim DO use it and
+ * a dropped timing mechanic is not a thing to leave for later. It is
+ * UNEXERCISED: no recording covers a pause, and none can until a string here
+ * needs one.
+ */
+export const WRITER_PAUSE = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 30, 6: 40, 7: 60, 8: 90, 9: 150 };
+
+/**
+ * The style of a character no command has touched. Shared and frozen, so
+ * "the scanner produced nothing but defaults" is an identity test rather than
+ * a deep compare — which is exactly what the inertness assertion needs.
+ */
+export const DEFAULT_STYLE = Object.freeze({ color: null, silent: false, shake: 0 });
+
+const PARSE_CACHE = new Map();
+const PARSE_CACHE_MAX = 512;
+
+/**
+ * The scanner. Returns the printable stream, the per-character style, and the
+ * writer state the commands selected.
+ *
+ *     text     the glyph stream, codes removed, `&` and `|` kept
+ *     style    one entry per UTF-16 unit of `text`; DEFAULT_STYLE when clean
+ *     delay    extra pause frames accrued before each character is revealed
+ *     codes    HOW MANY COMMANDS WERE EATEN — the positive assertion. A string
+ *              that renders correctly because it had no codes and one that
+ *              renders correctly because the parser ran are different facts,
+ *              and this is what tells them apart.
+ *     halt     0 none, 1 `/`, 2 `/%`, 5 `\C<n>` (the choicer)
+ *     destroy  `%%` — the writer kills itself rather than paging
+ *     nextmsg  how many bare `%` asked for the next page
+ *     skippable `\s0` / `\s1`, null when neither appeared
+ *
+ * A string with no commands returns `text === input` and every style entry
+ * `=== DEFAULT_STYLE`, so every existing consumer sees exactly what it saw
+ * before this function existed.
+ */
+export function parseWriter(raw) {
+  const src = String(raw);
+  const hit = PARSE_CACHE.get(src);
+  if (hit) return hit;
+
+  const out = [];
+  const style = [];
+  const delay = [];
+  // obj_writer Create: xcolor = c_black, colorchange = 0, shake = 0,
+  // textsound = snd_text.
+  let xcolor = null;
+  let colorchange = 0;
+  let silent = false;
+  let shake = 0;
+  let skippable = null;
+  let halt = 0;
+  let destroy = false;
+  let nextmsg = 0;
+  let codes = 0;
+  let accrued = 0;
+  let pending = 0;
+  let cur = DEFAULT_STYLE;
+
+  const restyle = () => {
+    cur = (colorchange === 0 && !silent && shake === 0)
+      ? DEFAULT_STYLE
+      : Object.freeze({ color: colorchange ? xcolor : null, silent, shake });
+  };
+  const emit = (ch) => {
+    out.push(ch);
+    style.push(cur);
+    delay.push(accrued);
+    // The `^` tick reveals the character that FOLLOWS the code (Alarm_0 does
+    // `pos += 2` for the code and `pos += 1` again at the bottom), so the
+    // extra frames land on the character after that one. `&` costs no reveal
+    // tick in this engine's model, so it does not absorb the pause either.
+    if (pending && ch !== '&') { accrued += pending; pending = 0; }
+  };
+
+  let n = 0;
+  while (n < src.length) {
+    const ch = src[n];
+    if (ch === '`') {
+      // The literal escape: the next character is drawn without examination.
+      codes += 1;
+      if (n + 1 < src.length) emit(src[n + 1]);
+      n += 2;
+      continue;
+    }
+    if (ch === '^') {
+      codes += 1;
+      pending += WRITER_PAUSE[src[n + 1]] ?? 0;
+      n += 2;
+      continue;
+    }
+    if (ch === '/') {
+      codes += 1;
+      halt = src[n + 1] === '%' ? 2 : 1;
+      n += 1;
+      continue;
+    }
+    if (ch === '%') {
+      codes += 1;
+      if (src[n - 1] === '/') halt = 2;
+      if (src[n + 1] === '%') {
+        // DELIBERATE DEVIATION, one character wide: the original falls through
+        // to the second `%` and would ask for the next message, but
+        // `instance_destroy()` has already run by then so nothing reads it.
+        // Consuming both here is the same outcome with no phantom page.
+        destroy = true;
+        n += 2;
+        continue;
+      }
+      if (halt !== 2) nextmsg += 1;
+      n += 1;
+      continue;
+    }
+    if (ch === '\\') {
+      // `accept = 0; n += 2;` is UNCONDITIONAL in the Draw — an unrecognised
+      // command still eats its argument. Matching that is what keeps a
+      // mistyped code from spilling one stray letter into the glyph stream.
+      codes += 1;
+      const cmd = src[n + 1] ?? '';
+      const arg = src[n + 2] ?? '';
+      if (cmd === 'c') {
+        colorchange = 1;
+        if (arg === '0') xcolor = null; // xcolor = mycolor, the writer's own
+        else if (arg === 'k') { xcolor = WRITER_COLORS.k; silent = true; shake = 1; }
+        else if (WRITER_COLORS[arg]) xcolor = WRITER_COLORS[arg];
+        restyle();
+      } else if (cmd === 's') {
+        if (arg === '0') skippable = false;
+        if (arg === '1') skippable = true;
+      } else if (cmd === 'C') {
+        if (arg === '1' || arg === '2' || arg === '3' || arg === '4') halt = 5;
+      }
+      // \E \F \f \* \T \M \S \I \m \O all pick faces, sounds, sprites and
+      // flags this engine does not draw. Consumed, not modelled.
+      n += 3;
+      continue;
+    }
+    emit(ch);
+    n += 1;
+  }
+
+  const res = {
+    text: out.join(''),
+    style,
+    delay,
+    totalDelay: accrued,
+    codes,
+    halt,
+    destroy,
+    nextmsg,
+    skippable,
+  };
+  if (PARSE_CACHE.size >= PARSE_CACHE_MAX) PARSE_CACHE.clear();
+  PARSE_CACHE.set(src, res);
+  return res;
+}
+
+/**
+ * `msgsetloc` uses `&` for a line break — and everything else the writer
+ * consumes is gone before the split, so a caller that only wanted lines gets
+ * lines rather than lines with `\ck` welded to the front of the first one.
+ */
+export const msgLines = (s) => parseWriter(s).text.split('&');
 
 /**
  * obj_writer's FORMATTER (Other_15), the part our strings exercise: wrap at
@@ -156,21 +406,40 @@ export const msgLines = (s) => String(s).split('&');
  * line — and the game wraps them here at draw time, which is why copying the
  * strings verbatim and skipping the formatter cut them off at the canvas
  * edge instead.
+ *
+ * THE CODES ARE WIDTH-NEUTRAL, so scanning them out first lands the breaks
+ * where the original's formatter would. Other_15 counts them off explicitly —
+ * `/` and `%` do `charpos -= 1`, `^` does `-= 2`, `\` does `-= 3` — and every
+ * one of those is followed by the loop's own `charpos += 1` per character, so
+ * a command contributes exactly zero to the line width. Stripping before
+ * wrapping is therefore the same arithmetic, not an approximation.
+ *
+ * The wrap runs on the char array rather than on a string so the per-character
+ * style survives it: every splice the original does to `mystring` is mirrored
+ * onto the style and delay arrays, and an inserted `&` or `||` inherits the
+ * style of the character it was inserted after (both are non-printing, so the
+ * inheritance is bookkeeping, not a colour decision).
  */
-export function formatWriter(text, charline = 33) {
-  let s = String(text);
+function formatChars(cs, st, dl, charline) {
   let charpos = 0;
   let remspace = -1;
   let aster = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
+  const insert = (at, chars) => {
+    const style = st[at - 1] ?? DEFAULT_STYLE;
+    const delay = dl[at - 1] ?? 0;
+    cs.splice(at, 0, ...chars);
+    st.splice(at, 0, ...chars.map(() => style));
+    dl.splice(at, 0, ...chars.map(() => delay));
+  };
+  for (let i = 0; i < cs.length; i++) {
+    const ch = cs[i];
     if (ch === '&') {
       charpos = 0;
       remspace = -1;
       // The explicit-break indent checks the next char; a wrap's (below,
       // scr_asterskip) does not. Faithful to both.
-      if (aster && s[i + 1] !== '*') {
-        s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+      if (aster && cs[i + 1] !== '*') {
+        insert(i + 1, ['|', '|']);
         charpos = 2;
         i += 2;
       }
@@ -181,29 +450,43 @@ export function formatWriter(text, charline = 33) {
     charpos += 1;
     if (charpos >= charline) {
       if (remspace > 2) {
-        s = `${s.slice(0, remspace)}&${s.slice(remspace + 1)}`;
+        cs[remspace] = '&';
         i = remspace;
         charpos = 1;
         remspace = -1;
         if (aster) {
-          s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+          insert(i + 1, ['|', '|']);
           i += 2;
           charpos = 2;
         }
       } else {
-        s = `${s.slice(0, i + 1)}&${s.slice(i + 1)}`;
+        insert(i + 1, ['&']);
         i += 1;
         charpos = 1;
         remspace = -1;
         if (aster) {
-          s = `${s.slice(0, i + 1)}||${s.slice(i + 1)}`;
+          insert(i + 1, ['|', '|']);
           i += 2;
           charpos = 2;
         }
       }
     }
   }
-  return s;
+  return { text: cs.join(''), style: st, delay: dl };
+}
+
+export function formatWriter(text, charline = 33) {
+  return formatWriterStyled(text, charline).text;
+}
+
+/**
+ * `formatWriter`, with the style the codes selected still attached — this is
+ * the half a renderer needs. `text` is the wrapped glyph stream, `style[i]` is
+ * the style of `text[i]`, `delay[i]` the pause frames accrued before it.
+ */
+export function formatWriterStyled(text, charline = 33) {
+  const p = parseWriter(text);
+  return formatChars(p.text.split(''), p.style.slice(), p.delay.slice(), charline);
 }
 
 /** The first turn a taunt appears. */
@@ -305,9 +588,33 @@ export const CHARS_PER_FRAME = 1;
 
 /** Characters revealed after `timer` frames at `cps` characters a frame. */
 
-export function revealed(text, timer, cps = CHARS_PER_FRAME) {
+/**
+ * How many characters are up at `timer`, with the `^` pauses counted.
+ *
+ * `delay` is the frames a character had to wait beyond its own position, and
+ * it only ever climbs, so the walk stops at the first character that is not
+ * out yet. **With no pause anywhere in the string this is `floor(timer * cps)`
+ * and nothing else** — the same arithmetic the reveal has always used, which
+ * is what makes the seam inert on every string this engine types.
+ */
+function revealCount(text, delay, timer, cps) {
   const n = Math.floor(timer * cps);
-  const lines = msgLines(text);
+  if (delay.length === 0 || delay[delay.length - 1] === 0) return n;
+  // `delay` is indexed over the whole stream including `&`, which costs no
+  // reveal tick, so walk the two together.
+  let shown = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '&') continue;
+    if (Math.floor((timer - delay[i]) * cps) < shown + 1) break;
+    shown += 1;
+  }
+  return shown;
+}
+
+export function revealed(text, timer, cps = CHARS_PER_FRAME) {
+  const p = parseWriter(text);
+  const n = revealCount(p.text, p.delay, timer, cps);
+  const lines = p.text.split('&');
   let left = n;
   const out = [];
   for (const line of lines) {
@@ -318,8 +625,42 @@ export function revealed(text, timer, cps = CHARS_PER_FRAME) {
   return out;
 }
 
+/**
+ * The lines a renderer should draw, and the style of every character in them
+ * — the writer's Draw output, wrapped, revealed and tinted, in one call.
+ *
+ * `formatWriter` + `revealed` cannot carry style between them: the first
+ * returns a plain string and the second parses it again, by which time the
+ * codes are already gone. Anything that wants to PAINT what `\c` selected
+ * has to go through here instead. `styles[i][j]` is the style of
+ * `lines[i][j]`; a clean string gives DEFAULT_STYLE for every character, so a
+ * caller can skip the whole business with one identity test.
+ */
+export function writerLines(text, { charline = 33, timer = 1e9, cps = CHARS_PER_FRAME } = {}) {
+  const f = formatWriterStyled(text, charline);
+  const n = revealCount(f.text, f.delay, timer, cps);
+  const lines = [];
+  const styles = [];
+  let left = n;
+  let i = 0;
+  while (i <= f.text.length) {
+    let end = f.text.indexOf('&', i);
+    if (end === -1) end = f.text.length;
+    if (left <= 0) break;
+    const take = Math.min(end - i, left);
+    lines.push(f.text.slice(i, i + take));
+    styles.push(f.style.slice(i, i + take));
+    left -= end - i;
+    if (end === f.text.length) break;
+    i = end + 1;
+  }
+  return { lines, styles };
+}
+
 export function dialogueDone(text, timer) {
-  return Math.floor(timer * CHARS_PER_FRAME) >= msgLines(text).join('').length;
+  const p = parseWriter(text);
+  return revealCount(p.text, p.delay, timer, CHARS_PER_FRAME)
+    >= p.text.split('&').join('').length;
 }
 
 /**
@@ -332,7 +673,11 @@ export function dialogueDone(text, timer) {
  * once, so the skip assigns this rather than adding to the rate.
  */
 export function dialogueSkipTimer(text) {
-  return Math.ceil(msgLines(text).join('').length / CHARS_PER_FRAME);
+  const p = parseWriter(text);
+  // The pauses are part of how long the line takes, so they are part of where
+  // the skip has to land. `totalDelay` is 0 for every string here, so this is
+  // the old expression until something uses a `^`.
+  return Math.ceil(p.text.split('&').join('').length / CHARS_PER_FRAME) + p.totalDelay;
 }
 
 /**
@@ -367,13 +712,21 @@ const SILENT_CHARS = new Set([' ', '^', '!', '.', '?', ',', ':', '/', '\\', '|',
 export function textSoundChar(text, timer, cps = CHARS_PER_FRAME) {
   // The character revealed BY this frame: pos is 1-based in the original and
   // `getchar = string_char_at(mystring, pos)` at rate <= 2.
-  const s = msgLines(text).join('\n');
-  const pos = Math.floor(timer * cps);
+  const p = parseWriter(text);
+  const s = p.text.split('&').join('\n');
+  const pos = p.totalDelay === 0
+    ? Math.floor(timer * cps)
+    : revealCount(p.text, p.delay, timer, cps);
   if (pos < 1 || pos > s.length) return null;
   let ch = s[pos - 1];
+  let at = pos - 1;
   // `if (getchar == "&" || getchar == "\n")` — at rate < 3 the blip belongs
   // to the character AFTER the break, not to the break.
-  if ((ch === '&' || ch === '\n') && cps >= 0.5) ch = s[pos] ?? '';
+  if ((ch === '&' || ch === '\n') && cps >= 0.5) { ch = s[pos] ?? ''; at = pos; }
+  // `textsound = snd_nosound` — EnderCat8's `\ck` arm. The blip is not made
+  // quieter, it is not played, and the whole point of the Knight's kaizo
+  // taunts is that they arrive without a voice.
+  if (p.style[at]?.silent) return null;
   if (!ch || SILENT_CHARS.has(ch)) return null;
   return ch;
 }

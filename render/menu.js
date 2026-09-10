@@ -15,14 +15,14 @@
 // `chartotal == 3`).
 
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
-import { formatWriter, revealed } from '../sim/dialogue.js';
+import { writerLines } from '../sim/dialogue.js';
 import { PARTY } from '../sim/damage.js';
 import { BUTTONS, CHAR_COLOR, PARTY_SPRITES, listRows } from '../sim/menu.js';
 import { SPELLS, spellCost } from '../sim/spells.js';
 import { MAX_TENSION } from '../sim/tension.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
 import { drawSpriteText, FONTS } from './text.js';
-import { loadFont, drawText, textWidth, textHeight } from './font.js';
+import { loadFont, drawText, textWidth, textHeight, styleColors } from './font.js';
 
 const BP = 152;
 const CHUNK = [0, 213, 426];
@@ -618,18 +618,25 @@ function drawBattleMsg(ctx, state, font) {
   // space becomes the break, `||` hangs the continuation under the "* ") —
   // the dump's strings arrive unsplit and were drawn off the canvas edge.
   const lh = 28;
-  const formatted = formatWriter(state.battlemsg, 33);
   // Typed, not shown: one character a frame from the moment the message was
   // set. The director owns the clock (state.battlemsgTimer).
   // rate 1: ONE character a frame (scr_textsetup arg 6), not the balloons' 2.
-  const lines = revealed(formatted, state.battlemsgTimer ?? 1e9, 1);
+  //
+  // `writerLines` is the formatter and the reveal in one call, and it is one
+  // call because it has to be: the escape codes carry a per-character colour
+  // and `formatWriter` -> `revealed` throws it away between the two steps.
+  // Every string this fight sets comes back all-default, so `styleColors`
+  // hands back null and this draws exactly what it drew before.
+  const { lines, styles } = writerLines(state.battlemsg, {
+    charline: 33, timer: state.battlemsgTimer ?? 1e9, cps: 1,
+  });
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i]) continue;
     // The ELEVENTH argument of that same scr_textsetup call is `special = 1`
     // — the dkgray-to-navy shadow one pixel down and right of each glyph.
     // Same typer, same shadow, as the ending's dialogue; see render/font.js.
     drawText(ctx, font, lines[i], 30, 376 + i * lh, {
-      color: rgb(c_white), advance: 16, special: 1,
+      color: rgb(c_white), colors: styleColors(styles[i]), advance: 16, special: 1,
     });
   }
 }

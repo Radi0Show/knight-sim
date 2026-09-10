@@ -85,6 +85,14 @@ export function textHeight(font) {
  */
 export function drawText(ctx, font, text, x, y, {
   xscale = 1, yscale = 1, color = null, alpha = 1, halign = 'left',
+  // PER-CHARACTER COLOUR, for the writer's `\c` codes. An array parallel to
+  // `text` (UTF-16 units, so it lines up with sim/dialogue.js's style array);
+  // a null or missing entry falls back to `color`. obj_writer sets the colour
+  // inside its per-character loop — `if (colorchange == 1) draw_set_color(
+  // xcolor)` sits between the `accept` test and the draw — so one line can
+  // carry several colours, which a single `color` for the whole string cannot
+  // express.
+  colors = null,
   // obj_writer's layout, not draw_text's: a FIXED advance per character
   // (`wx += hspace` — 16 for the battle message's typer 4, 9 for the
   // balloons' 81) instead of the glyph's own shift, and `|` consumed as an
@@ -108,7 +116,10 @@ export function drawText(ctx, font, text, x, y, {
   ctx.imageSmoothingEnabled = false;
 
   let prev = null;
+  let at = 0;
   for (const ch of String(text)) {
+    const col = (colors && colors[at] != null) ? colors[at] : color;
+    at += ch.length;
     if (advance != null && ch === '|') {
       pen += advance * xscale;
       continue;
@@ -129,7 +140,7 @@ export function drawText(ctx, font, text, x, y, {
       // SPECIAL 2 — the pulsing glow: the four cardinals, then the four
       // diagonals, then the solid glyph last.
       if (special === 2) {
-        const page = color ? tintedPage(font, color) : font.img;
+        const page = col ? tintedPage(font, col) : font.img;
         const near = (0.3 + Math.sin(siner / 14) * 0.1) * alpha;
         const far = (0.08 + Math.sin(siner / 14) * 0.04) * alpha;
         blit(page, gx + xscale, y, near);
@@ -141,12 +152,25 @@ export function drawText(ctx, font, text, x, y, {
         blit(page, gx - xscale, y + yscale, far);
         blit(page, gx + xscale, y - yscale, far);
       }
-      blit(color ? tintedPage(font, color) : font.img, gx, y, alpha);
+      blit(col ? tintedPage(font, col) : font.img, gx, y, alpha);
     }
     pen += (advance != null ? advance : g.shift) * xscale;
     prev = g;
   }
   ctx.restore();
+}
+
+/**
+ * A `colors` array for `drawText` out of one of `writerLines`' style rows.
+ *
+ * Returns **null** when no character was tinted, which is every string in the
+ * vanilla tables — so the common path allocates nothing and drawText takes the
+ * same branch it always did. `sim/` publishes GML colours as this repo's RGB
+ * triples (render/draw/gm.js's form) because it must not know about CSS.
+ */
+export function styleColors(style) {
+  if (!style || !style.some((s) => s && s.color)) return null;
+  return style.map((s) => (s && s.color ? `rgb(${s.color[0]},${s.color[1]},${s.color[2]})` : null));
 }
 
 /**

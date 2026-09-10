@@ -25,8 +25,8 @@
 // LABELLED: the writer's voice blips (snd_txtsus) are not cued.
 
 import { drawSpriteExt } from './draw/gm.js';
-import { loadFont, drawText } from './font.js';
-import { revealed, formatWriter } from '../sim/dialogue.js';
+import { loadFont, drawText, styleColors } from './font.js';
+import { writerLines } from '../sim/dialogue.js';
 import { PARTY } from '../sim/actors.js';
 
 const HSPACE = 9;
@@ -46,10 +46,12 @@ export function drawDialogue(ctx, state, sprites) {
   const ax = PARTY[1].x + 92;
   const ay = PARTY[1].y + 38;
 
-  // formatWriter returns the wrapped STRING; the balloon sizes off its
-  // fully-revealed line set (`&` breaks — the writer's own line separator).
-  const formatted = formatWriter(dlg.text, 33);
-  const fullLines = revealed(formatted, 1e9);
+  // `writerLines` wraps and reveals in one pass, and carries the per-character
+  // style the escape codes selected out with the text — see sim/dialogue.js.
+  // The balloon sizes off the fully-revealed line set (`&` breaks — the
+  // writer's own line separator), so it asks for the same text twice at two
+  // different timers rather than measuring what is currently typed.
+  const fullLines = writerLines(dlg.text, { charline: 33, timer: 1e9 }).lines;
   const stringmax = Math.max(...fullLines.map((l) => l.length));
   const bw = stringmax * HSPACE + 10;
   // `balloonheight = ((linecount + 1) * vspace) + 5` — obj_battleblcon's Draw,
@@ -92,10 +94,10 @@ export function drawDialogue(ctx, state, sprites) {
   }
 
   // The text — black, revealed at the writer's rate, one row per line.
-  const lines = revealed(formatted, dlg.timer);
+  const { lines, styles } = writerLines(dlg.text, { charline: 33, timer: dlg.timer });
   for (let i = 0; i < lines.length; i++) {
     drawText(ctx, font, lines[i], writingX, writingY + i * VSPACE, {
-      color: 'rgb(0,0,0)', advance: HSPACE,
+      color: 'rgb(0,0,0)', colors: styleColors(styles[i]), advance: HSPACE,
     });
   }
   ctx.restore();
