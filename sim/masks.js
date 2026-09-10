@@ -917,6 +917,25 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   const rotated = ((bangle % 360) + 360) % 360 !== 0;
   const px = rotated ? bx : Math.round(bx);
   const py = rotated ? by : Math.round(by);
+  // MASK A IS QUANTISED ON THE UNROTATED PATH TOO, and for the reason B is:
+  // a GameMaker instance's mask lands on WHOLE PIXELS, so an A at a
+  // fractional position does not put its cells at fractional world columns.
+  // Every A-side receipt before 2026-09-09 was taken with the soul on an
+  // INTEGER x — which is every frame it moves under its own speed of 4 — so
+  // raw and quantised were indistinguishable. CLAUDE.md's "Known-unverified"
+  // list called this one in advance: "we use a half-open float AABB ... any
+  // attack that PUSHES OR PULLS the soul will hit this."
+  //
+  // THE ATTACK THAT PUSHES IT IS THE SPLITTER, and the kaizo _rev1 whole
+  // fight is where it surfaced, at its f8906: the game destroys a tooth on
+  // the soul and this engine let it through, hitting a frame later. The pose,
+  // from the pair instrument — soul (548.2614135742188, 222) on the 20x20
+  // rect mask, tooth (542.1723022460938, 231.7142791748047) at angle 0 whose
+  // ink reaches +6 of its origin: 548.172 against a mask edge at 548.261, a
+  // MISS BY 0.089 PX. Quantised, the soul's edge is 548 and the tooth's last
+  // inked column is 548 — they share it, which is what the recording says.
+  const qax = rotated ? ax : Math.round(ax);
+  const qay = rotated ? ay : Math.round(ay);
   const invMap = rotated ? (v) => Math.ceil(v) - 1 : Math.floor;
   const [al, at, ar, ab] = maskA.bbox;
   const [bl, bt, br, bb] = maskB.bbox;
@@ -970,13 +989,13 @@ function masksOverlapPrecise(maskA, ax, ay, maskB, bx, by, bsx, bsy, bangle = 0)
   const aoy = maskA.originY ?? 0;
   for (let cy = at; cy <= ab; cy++) {
     const rowA = maskA.px[cy];
-    const wy = ay + cy - aoy;
+    const wy = qay + cy - aoy;
     if (wy < top || wy > bottom) continue;
     const dy = wy - py;
 
     for (let cx = al; cx <= ar; cx++) {
       if (!rowA[cx]) continue;
-      const wx = ax + cx - aox;
+      const wx = qax + cx - aox;
       if (wx < left || wx > right) continue;
       const dx = wx - px;
 
