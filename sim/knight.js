@@ -199,7 +199,14 @@ export function spellDamage(state, slot) {
  * NOT MODELLED, and stated rather than guessed: `scr_damage_enemy` itself
  * plays nothing on an ordinary hit. The strike sound belongs to
  * `obj_basicattack`, which this build does not spawn. No cue is invented here.
+ *
+ * THE 100 IS A CONSTANT A CALLER CAN MOVE. It is the literal in that one
+ * line and nothing else reads it, so a build whose scr_damage_enemy carries
+ * a different number overrides it with `state.stronghurtDamage`; absent, the
+ * vanilla 100 stands and every recording is unaffected.
  */
+export const STRONGHURT_DAMAGE = 100;
+
 export function damageKnight(state, amount) {
   if (amount <= 0) return 0;
   const k = state.knight;
@@ -208,7 +215,9 @@ export function damageKnight(state, amount) {
   k.hurttimer = 30;
   k.shakex = 9;
   k.hurtamt = amount;
-  if (amount >= 100) k.stronghurtanim = true;
+  if (amount >= (state.stronghurtDamage ?? STRONGHURT_DAMAGE)) {
+    k.stronghurtanim = true;
+  }
   return amount;
 }
 
