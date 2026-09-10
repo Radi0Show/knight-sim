@@ -341,7 +341,25 @@ export const knightActor = {
     // sets both to 0 and a whole-dump grep finds no other assignment. They are
     // write-only, the same family as `linex` and `splitbox`. Adding fields
     // that are provably always zero would only invite someone to "fix" them.
-    e.x = KNIGHT.x;
+    // THE POSE BELONGS TO WHOEVER HOLDS `state`.
+    //
+    // This knight's `state` is 0 (idle) or 3 (hurt) AND NOTHING ELSE: the
+    // whole vanilla dump contains exactly two writes to it, Step_0:57 and
+    // Draw_0:63, and both are `state = 3`. His Draw dispatches on that —
+    // `if (state == 0 || state == 3)` for the bob and the trail, then the
+    // per-state draw_sprite_ext calls — so the sprite this engine records in
+    // `sprite_index` and the `x` pin below are both stand-ins for that
+    // dispatch. They are written unconditionally only because in vanilla the
+    // condition cannot be false.
+    //
+    // A caller that puts him in some other state therefore owns his pose,
+    // and this engine must stop writing over it. Nothing in vanilla can, so
+    // `posed` is false on every frame of every recording and this is inert;
+    // the kaizo mod's B-Side cutscenes are state 10, where his own Step sets
+    // sprite_index / image_index and obj_lerpvar walks his x and y across the
+    // screen (kaizo/party/scenes.js).
+    const posed = !!k && k.animState !== 0 && k.animState !== 3;
+    if (!posed) e.x = KNIGHT.x;
 
     // THE FAILED PACIFY'S COLOUR FLASH — obj_pacifyspell's `fail` path.
     // con 6 walks image_blend toward c_blue at 0.12 a frame for 8 frames,
@@ -411,13 +429,17 @@ export const knightActor = {
     }
     e.fog = false;
 
-    if (k?.blockanim) {
-      e.sprite_index = 'spr_roaringknight_block_ol';
-    } else if (strobing) {
-      e.sprite_index = 'spr_roaringknight_ball_transition';
-      e.image_index = 7;
-    } else {
-      e.sprite_index = 'spr_roaringknight_idle';
+    // The Draw's per-state sprite choice — see `posed` above for why this
+    // is a dispatch rather than three unconditional writes.
+    if (!posed) {
+      if (k?.blockanim) {
+        e.sprite_index = 'spr_roaringknight_block_ol';
+      } else if (strobing) {
+        e.sprite_index = 'spr_roaringknight_ball_transition';
+        e.image_index = 7;
+      } else {
+        e.sprite_index = 'spr_roaringknight_idle';
+      }
     }
 
     // THE AFTERIMAGE TRAIL, from his Draw event. Every fourth frame he leaves
