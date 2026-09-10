@@ -126,16 +126,24 @@ export function stepGraze(state, grazes, only = null) {
     const ordered = state.grazeReplay.get(state.frame) ?? [];
     const rank = new Map();
     const claimed = new Set();
-    ordered.forEach((r, idx) => {
-      for (const e of state.entities) {
-        if (claimed.has(e) || !e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;
-        if (r.type !== (e.type.gmlName ?? e.type.name)) continue;
-        if (Math.abs(r.x - e.x) > 0.05 || Math.abs(r.y - e.y) > 0.05) continue;
-        rank.set(e, idx);
-        claimed.add(e);
-        break;
-      }
-    });
+    // Two passes, so the row's own `grazed` gets first refusal on every row
+    // before position alone decides any of them — see the tie-break note at
+    // the per-entity match below.
+    for (const strict of [true, false]) {
+      ordered.forEach((r, idx) => {
+        if (rank.has(r)) return;
+        for (const e of state.entities) {
+          if (claimed.has(e) || !e.alive || !e.isBullet || e.type.name === 'obj_heart') continue;
+          if (r.type !== (e.type.gmlName ?? e.type.name)) continue;
+          if (Math.abs(r.x - e.x) > 0.05 || Math.abs(r.y - e.y) > 0.05) continue;
+          if (strict && r.grazed !== e.grazed) continue;
+          rank.set(e, idx);
+          rank.set(r, idx);
+          claimed.add(e);
+          break;
+        }
+      });
+    }
     if (rank.size) {
       pass = [...state.entities].sort((a, b) => (rank.has(a) ? rank.get(a) : Infinity)
         - (rank.has(b) ? rank.get(b) : Infinity));
@@ -164,8 +172,20 @@ export function stepGraze(state, grazes, only = null) {
       // obj_regularbullet instances in the mod) declares `gmlName`; without
       // it no row ever matched those bullets and their grazes -- burst and
       // trickle -- were never paid (_tok3 f2153, the Rising Abyss orbs).
-      const match = rows?.find((r) => !r.used && r.type === (e.type.gmlName ?? e.type.name)
-        && Math.abs(r.x - e.x) <= 0.05 && Math.abs(r.y - e.y) <= 0.05);
+      // THE ROW'S OWN `grazed` BREAKS A TIE THAT POSITION CANNOT. Two
+      // instances of one type can sit on the SAME point on the same frame —
+      // the rotating slash respawns at (388.9733276367, 184) frame after
+      // frame, and the kaizo _rev1 recording's f9915 is one of those: a NEW
+      // slash first-touches (row grazed 0, a burst worth a whole timepoint)
+      // while the previous one is still there at grazed 1. Matching on type
+      // and position alone handed the row to whichever came first in the
+      // entity list; when that was the old slash the sim paid a trickle and
+      // the turn clock ran 1.0 slower than the recording's. Prefer a
+      // candidate whose flag agrees, then fall back to any — a feed without
+      // the column (undefined) keeps the old behaviour exactly.
+      const cand = (r) => !r.used && r.type === (e.type.gmlName ?? e.type.name)
+        && Math.abs(r.x - e.x) <= 0.05 && Math.abs(r.y - e.y) <= 0.05;
+      const match = rows?.find((r) => cand(r) && r.grazed === e.grazed) ?? rows?.find(cand);
       if (match) {
         match.used = true;
         // THE GATES' INPUTS RIDE THE ROW. On a hit frame the runner's

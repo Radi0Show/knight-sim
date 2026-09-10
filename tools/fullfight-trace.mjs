@@ -156,9 +156,16 @@ if (gzIdx >= 0) {
     // lands (Other_15: active = 0) and the graze event logs active 0 and
     // pays nothing, while the sim's damage pass runs after graze(old) and
     // its own flag still read true.
+    // `grazed` is the GAME'S flag for the instance this row belongs to, and it
+    // is what tells a FIRST TOUCH (0, a burst) from a continuing graze (1, a
+    // trickle). stepGraze uses it to break a tie no position can: two
+    // instances of one type can occupy the SAME point on the same frame — the
+    // rotating slash respawns at (388.9733276367, 184) frame after frame — and
+    // pairing the row to the older, already-grazed one pays a trickle where the
+    // game paid a burst. One timepoint off the turn clock, and nothing else.
     byFrame.get(fight).push({
       type: r[2], x: Number(r[4]), y: Number(r[5]),
-      active: Number(r[8]), inv: Number(r[10]), used: false,
+      grazed: Number(r[3]), active: Number(r[8]), inv: Number(r[10]), used: false,
     });
     n++;
   }
