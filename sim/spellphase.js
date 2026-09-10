@@ -166,6 +166,45 @@ export const SPELLDELAY_DEFAULT = 10;
  * menu, sim/menu.js recordItem), and a case with neither call (203 the
  * GlowShard, 204 the Manual) leaves the entry's 10.
  */
+/**
+ * scr_spell's OWN spelldelay, per case. The script sets a default of 10 at its
+ * top (line 6) and then every case that cares overwrites it:
+ *
+ *     case 1  :30                       case 6  (Dual Heal)   :190  15
+ *     case 2  (Heal Prayer)  :57   15   case 8  (SleepMist)   :208  20 + mist*10
+ *     case 3  (Pacify)       :112  20   case 9  (IceShock)    :212  30 (:221 40)
+ *     case 4  (Rude Buster)  :116  30   case 10 (SnowGrave)   :232  30 (:244 140)
+ *                            :123  70   case 11 (UltraHeal)   :276  15
+ *     case 5  (Red Buster)   :142/:149  30 / 70
+ *
+ * Rude Buster's pair is the one that matters here: :116 sets 30 and the
+ * UNCANCELLED branch at :123 raises it to 70, which is why a Rude Buster turn
+ * holds the bar so much longer than a heal — and it is what makes the kaizo
+ * _rev1 recording's bar land 69 frames after its writer.
+ *
+ * THE CONDITIONAL ARMS ARE NOT MODELLED: Pacify's :97 999 (the already-TIRED
+ * path), IceShock's 40, SnowGrave's 140, SleepMist's mist count. None is
+ * reachable in this fight, and the kaizo lane's own cases set their value
+ * through the cast hook instead — which is why the caller below only fills
+ * this in when the cast did not write a delay itself.
+ */
+export function spellSpelldelay(spellId) {
+  switch (spellId) {
+    case 1: return 30;
+    case 2: return 15;
+    case 3: return 20;
+    case 4: return 70;
+    case 5: return 70;
+    case 6: return 15;
+    case 8: return 20;
+    case 9: return 30;
+    case 10: return 30;
+    case 11: return 15;
+    // case 7 is ACT, which never touches it: the default stands.
+    default: return SPELLDELAY_DEFAULT;
+  }
+}
+
 export function itemSpelldelay(itemId) {
   const it = ITEMS[itemId];
   if (!it) return SPELLDELAY_DEFAULT;
@@ -411,7 +450,17 @@ function fire(state, sp, c, opts) {
   const p = state.pendingSpell?.[c];
   const it = state.pendingItem?.[c];
   if (p) {
+    // scr_spell:6 — the default, before the switch.
+    state.spelldelay = SPELLDELAY_DEFAULT;
     opts.castSpell(state, c, p.id, p.target);
+    // ...then the case's own value, unless the cast already wrote one. The
+    // engine's castSpell translates the case BODIES but not their spelldelay
+    // lines, so the table stands in for them; a hook that writes its own (the
+    // kaizo lane's frozen-target 15, scr_spell:45-52) must win, hence the
+    // test rather than an unconditional assignment.
+    if (state.spelldelay === SPELLDELAY_DEFAULT) {
+      state.spelldelay = spellSpelldelay(p.id);
+    }
   } else if (it) {
     state.spelldelay = SPELLDELAY_DEFAULT;
     opts.applyItem(state, it.id, it.target);

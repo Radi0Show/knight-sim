@@ -78,6 +78,7 @@ const SUITES = [
   ['verify-fightbar.mjs', 'FIGHT bar — schedule, window, one-button scoring'],
   ['verify-itemmenu.mjs', 'item menu — the 2x6 grid, pages, clamped cursor'],
   ['verify-spells.mjs', 'MAGIC and ACT — lists, TP costs, HoldBreath'],
+  ['verify-spellphase.mjs', 'obj_spellphase — a caster’s turn holds the bar'],
   ['verify-dmgnumbers.mjs', 'damage numbers + impacts — stack, squash, bounces'],
   ['verify-animation.mjs', 'party + knight animation — poses, timers, hurt strobe'],
   ['verify-swoon.mjs', 'the swoon system — scr_dead/scr_revive, both floors, the heal gate'],

@@ -685,6 +685,62 @@ export function stepMenu(state, input) {
     return false;
   }
 
+  // ---- THE SPELL'S ENEMY ROW (`bmenuno == 3`) ------------------------------
+  //
+  // A spell whose `spelltarget` is 2 opens an enemy row of its own before it
+  // is committed — obj_battlecontroller Step_0:632-652, the MAGIC confirm:
+  //
+  //     scr_spellinfo(global.spell[thischar][...]);
+  //     if (spelltarget == 0) scr_spellconsumeb();      // straight through
+  //     if (spelltarget == 1) global.bmenuno = 8;       // the ALLY picker
+  //     if (spelltarget == 2) global.bmenuno = 3;       // THIS
+  //
+  // and bmenuno 3's own confirm is what charges the TP and records the spell.
+  // With one enemy in the fight the row is a formality — exactly like FIGHT's
+  // above — but it is a REAL PRESS, and this build did not have it: a
+  // spelltarget-2 spell (Rude Buster, Pacify; scr_spellinfo cases 4 and 3)
+  // was recorded the instant it was chosen, one confirm early.
+  //
+  // MEASURED on the kaizo _rev1 whole fight, whose f8556 menu is the only one
+  // of thirty in which the mash lands on MAGIC: the token presses confirm
+  // every other frame, so the missing press is worth two frames, and the
+  // game's obj_spellphase appears at f8570 where the sim's bar appeared at
+  // f8568. The rest of that turn's 30-frame gap is the phase itself
+  // (sim/spellphase.js); this is the first two.
+  if (menu.submenu === 'spellenemy') {
+    if (pressed('cancel')) {
+      // One step back, to the list the spell came from — bmenuno 3's cancel
+      // returns to the MAGIC grid, not to the button row.
+      menu.submenu = menu.pending?.from ?? 'magic';
+      menu.pending = null;
+      moveNoise = true;
+    } else if (pressed('confirm')) {
+      const p = menu.pending;
+      // The same record the no-target branch makes, with the same target
+      // argument: scr_spell's enemy cases aim at the monster themselves
+      // (Rude Buster reads global.monsterinstance[star]), so the slot passed
+      // here is the caster's, as it was before this picker existed.
+      const did = p ? recordSpell(state, c, p.id, c) : null;
+      if (!did) {
+        cue(state, 'snd_error');
+      } else {
+        menu.lastItem = did;
+        menu.pending = null;
+        menu.submenu = null;
+        cue(state, 'snd_select');
+        nextHero(menu, state);
+        if (!skipFallen(state)) {
+          menu.charturn = 0;
+          menu.open = false;
+          menu.justClosed = true;
+          return true;
+        }
+      }
+    }
+    if (moveNoise) cue(state, 'snd_menumove');
+    return false;
+  }
+
   // ---- KRIS'S ACT PICKER (`bmenuno == 11`) --------------------------------
   //
   // The stage between the ACT button and the option grid: pick which enemy
@@ -802,12 +858,23 @@ export function stepMenu(state, input) {
             return true;
           }
         } else {
-          // ITEM and MAGIC both route through the target rule. `spelltarget`
-          // 1 opens the ally picker; anything else resolves immediately.
-          const needsTarget = menu.submenu === 'magic'
-            ? spellInfo(state, row.id)?.target === 1
-            : ITEMS[row.id]?.target === 'one';
-          if (needsTarget) {
+          // ITEM AND MAGIC ROUTE THROUGH `spelltarget`, and it has THREE arms,
+          // not two (obj_battlecontroller Step_0:640-651): 0 charges the TP and
+          // resolves at once, 1 opens the ALLY picker (bmenuno 8), and 2 opens
+          // the ENEMY ROW (bmenuno 3) — the block above. "anything else
+          // resolves immediately" sent every spelltarget-2 spell straight
+          // through, one confirm early.
+          const spellTarget = menu.submenu === 'magic'
+            ? spellInfo(state, row.id)?.target
+            : (ITEMS[row.id]?.target === 'one' ? 1 : 0);
+          const needsTarget = spellTarget === 1;
+          const needsEnemy = spellTarget === 2;
+          if (needsEnemy) {
+            menu.pending = { kind: 'spell', id: row.id, from: 'magic' };
+            menu.submenu = 'spellenemy';
+            menu.gridIndex = 0;
+            selNoise = true;
+          } else if (needsTarget) {
             menu.pending = menu.submenu === 'magic'
               ? { kind: 'spell', id: row.id, from: 'magic' }
               : { kind: 'item', slot: menu.gridIndex, from: 'item' };

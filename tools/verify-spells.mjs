@@ -321,8 +321,16 @@ console.log(`Rude Buster: bolt lands frame ${landOn} · no press ${noPress.dealt
   s7.tension = 250;
   const t7 = (k) => { step(s7, { [k]: true }); step(s7, {}); };
   s7.menu.selected[0] = 4; t7('confirm');            // Kris DEFEND
-  s7.menu.selected[1] = 1; t7('confirm'); t7('confirm'); // Susie: Rude Buster
+  // THREE CONFIRMS, NOT TWO: MAGIC, then Rude Buster, then ITS ENEMY ROW.
+  // Rude Buster is spelltarget 2 (scr_spellinfo case 4), and
+  // obj_battlecontroller Step_0:648-651 sends a spelltarget-2 spell to
+  // bmenuno 3 before anything is charged — the TP is spent by that row's
+  // confirm, not by the one that picked the spell off the grid. This test
+  // paid on the second press because sim/menu.js had no such row; it now
+  // does, so the second press only opens it.
+  s7.menu.selected[1] = 1; t7('confirm'); t7('confirm'); t7('confirm'); // Susie: Rude Buster
   const paid = s7.tension;
+  if (paid !== 125) failures.push(`the enemy row's confirm did not charge the 125 (TP ${paid})`);
   t7('cancel');
   if (s7.tension <= paid) failures.push(`cancel did not refund the spell (TP ${s7.tension})`);
   if (s7.pendingSpell?.[1]) failures.push('cancel left the spell QUEUED — it will fire for free');
