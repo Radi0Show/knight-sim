@@ -864,6 +864,15 @@ const SURVIVES_TURN = new Set([
  * clears leftover bullets through the battle controller when the turn ends,
  * which is turn-system machinery this project does not model. It only ever
  * runs BETWEEN turns, so nothing live during an attack is touched.
+ *
+ * A SCENE CAN NAME MORE SURVIVORS. The list below is everything the vanilla
+ * fight keeps across a turn, and it is a list precisely because the sweep is
+ * a stand-in for `with (obj_bulletparent) instance_destroy()` — the real
+ * test is parentage, which this engine does not model, so anything that is
+ * NOT a bullet has to be named. A scene that installs battle-long instances
+ * of its own (a controller, a UI element that carries state) adds their type
+ * names to `state.survivesTurn`; absent, nothing changes and every vanilla
+ * recording sweeps the same set as before.
  */
 export function clearTurn(state) {
   state.currentAc = undefined;
@@ -874,8 +883,10 @@ export function clearTurn(state) {
   // boxsplitter's CleanUp (`global.turntimer = -1`) is the one that shows:
   // _tok3 f1472 reads -1 in the recording. No vanilla type declares a
   // cleanUp, so the vanilla fights kill the same set as before.
+  const extra = state.survivesTurn;
   const dying = state.entities
-    .filter((e) => e.alive && !SURVIVES_TURN.has(e.type.name))
+    .filter((e) => e.alive && !SURVIVES_TURN.has(e.type.name)
+      && !(extra && extra.has(e.type.name)))
     .sort((a, b) => b.seq - a.seq);
   for (const e of dying) destroy(e, state);
 
