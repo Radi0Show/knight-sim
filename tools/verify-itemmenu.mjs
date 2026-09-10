@@ -38,9 +38,18 @@ function fresh() {
 }
 
 /** One EDGE press: the menu reads `pressed()`, so it needs a released frame. */
+// A TAP RELEASES UNTIL THE INPUT BUFFER LETS THE NEXT ONE THROUGH.
+// obj_battlecontroller gates every confirm on `onebuffer < 0` and the four
+// GRID confirms set it to 2 (Step_0:636 MAGIC, :780 battlespell, :937 ITEM,
+// :1140 ACT) where every other confirm sets 1 — so after choosing something
+// off a grid the game ignores button1 for two frames. A fixed press/release
+// pair is one frame short of that, and every press after it in a script
+// would be swallowed; waiting is what a player does and it keeps these
+// tests measuring the menu rather than the buffer.
 function tap(st, key) {
   stepMenu(st, { ...NONE, [key]: true });
   stepMenu(st, { ...NONE });
+  for (let g = 0; g < 4 && (st.menu?.onebuffer ?? -1) >= 0; g++) stepMenu(st, { ...NONE });
 }
 
 if (freshInventory().length !== INVENTORY_SIZE) {
@@ -277,7 +286,11 @@ console.log('left and right both TOGGLE columns; up/down step 2 and CLAMP at the
   s2.menu = createMenu();
   openMenu(s2);
   s2.tension = 0;
-  const tap = (k) => { stepMenu(s2, { [k]: true }); stepMenu(s2, {}); };
+  const tap = (k) => {
+    stepMenu(s2, { [k]: true });
+    stepMenu(s2, {});
+    for (let g = 0; g < 4 && (s2.menu?.onebuffer ?? -1) >= 0; g++) stepMenu(s2, {});
+  };
   for (let i = 0; i < 2; i++) { s2.menu.selected[s2.menu.charturn] = defIdx; tap('confirm'); }
   if (s2.tension !== TP_DEFEND * 2) {
     failures.push(`two DEFENDs banked ${s2.tension} TP, expected ${TP_DEFEND * 2}`);

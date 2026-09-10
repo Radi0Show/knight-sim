@@ -48,9 +48,18 @@ function fresh(charturn = 1) {
   st.menu.charturn = charturn;
   return st;
 }
+// A TAP RELEASES UNTIL THE INPUT BUFFER LETS THE NEXT ONE THROUGH.
+// obj_battlecontroller gates every confirm on `onebuffer < 0` and the four
+// GRID confirms set it to 2 (Step_0:636 MAGIC, :780 battlespell, :937 ITEM,
+// :1140 ACT) where every other confirm sets 1 — so after choosing something
+// off a grid the game ignores button1 for two frames. A fixed press/release
+// pair is one frame short of that, and every press after it in a script
+// would be swallowed; waiting is what a player does and it keeps these
+// tests measuring the menu rather than the buffer.
 function tap(st, key) {
   stepMenu(st, { ...NONE, [key]: true });
   stepMenu(st, { ...NONE });
+  for (let g = 0; g < 4 && (st.menu?.onebuffer ?? -1) >= 0; g++) stepMenu(st, { ...NONE });
 }
 
 // ── The bug itself ───────────────────────────────────────────────────────
@@ -319,7 +328,11 @@ console.log(`Rude Buster: bolt lands frame ${landOn} · no press ${noPress.dealt
   let g = 0;
   while (!s7.menu?.open && g++ < 2000) step(s7, {});
   s7.tension = 250;
-  const t7 = (k) => { step(s7, { [k]: true }); step(s7, {}); };
+  const t7 = (k) => {
+    step(s7, { [k]: true });
+    step(s7, {});
+    for (let g = 0; g < 4 && (s7.menu?.onebuffer ?? -1) >= 0; g++) step(s7, {});
+  };
   s7.menu.selected[0] = 4; t7('confirm');            // Kris DEFEND
   // THREE CONFIRMS, NOT TWO: MAGIC, then Rude Buster, then ITS ENEMY ROW.
   // Rude Buster is spelltarget 2 (scr_spellinfo case 4), and

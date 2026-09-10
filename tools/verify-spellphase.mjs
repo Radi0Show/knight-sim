@@ -61,7 +61,13 @@ function atMenu(seed = 3) {
 }
 
 /** One press, then one released frame — the shape verify-spells drives with. */
-const tap = (s, k) => { stepFrame(s, { [k]: true }); stepFrame(s, {}); };
+const tap = (s, k) => {
+  stepFrame(s, { [k]: true });
+  stepFrame(s, {});
+  // release until the buffer clears — the GRID confirms set onebuffer = 2
+  // (obj_battlecontroller Step_0:636/:780/:937/:1140), two frames of lockout.
+  for (let g = 0; g < 4 && (s.menu?.onebuffer ?? -1) >= 0; g++) stepFrame(s, {});
+};
 
 // THE BOX WAITS FOR A PRESS, so a test that feeds nothing hangs the phase for
 // ever — correctly. obj_writer halts one character past its visible text and

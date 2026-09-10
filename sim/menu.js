@@ -824,6 +824,21 @@ export function stepMenu(state, input) {
         if (!row || !row.usable) {
           cue(state, 'snd_error');
         } else if (menu.submenu === 'actgrid') {
+          // THE GRID CONFIRMS SET onebuffer = 2, NOT 1 — the only four sites
+          // in obj_battlecontroller that do: the MAGIC grid (Step_0:636), the
+          // battlespell grid (:780), the ITEM grid (:937) and the ACT grid
+          // (:1140). Every other confirm sets 1. Since the gate is
+          // `onebuffer < 0` and the value decrements once a frame, 1 locks
+          // input out for one frame and 2 for two — and under a token that
+          // presses every other frame, ONE of those is invisible and the
+          // other is not. That is why twenty-nine byte-exact FIGHT menus
+          // never noticed: none of them opens a grid.
+          //
+          // Set at the three success sites rather than beside the latch,
+          // because the original sets it INSIDE the branch that accepts: an
+          // unaffordable spell (:634's cost test) leaves the buffer alone and
+          // can be pressed again at once.
+          menu.onebuffer = 2;
 
           // SELECTION QUEUES, RESOLUTION COUNTS. The menu marks the act
           // (`acting = 1`); everything else — checkcount++, holdbreathcount++
@@ -869,6 +884,7 @@ export function stepMenu(state, input) {
             : (ITEMS[row.id]?.target === 'one' ? 1 : 0);
           const needsTarget = spellTarget === 1;
           const needsEnemy = spellTarget === 2;
+          menu.onebuffer = 2;   // the MAGIC / ITEM grid's own buffer — see the ACT site above
           if (needsEnemy) {
             menu.pending = { kind: 'spell', id: row.id, from: 'magic' };
             menu.submenu = 'spellenemy';
