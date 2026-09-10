@@ -17,12 +17,30 @@
 // "wasn't TIRED" line is the reachable one — say so at the table when it is
 // wired). The colour codes (\cB ... \cW) are dropped from every line.
 //
-// AN EARLIER DRAFT OF THIS FILE INVENTED GML AND CITED IT: a second skip loop
-// testing `hp[global.char[char]] <= 0` at the top of the Step's else-branch, and
-// a `char < 3` guard with an `else global.spelldelay = 1`. Neither is in the
-// dump. Both are gone, and the header's quote is now the file line for line.
-// The lesson is the project's own law: a citation is a claim, and an unread
-// citation is a fabrication.
+// A SECOND SKIP LOOP DOES NOT BELONG HERE — AND THE RETRACTION THAT SAID SO
+// WAS ITSELF HALF WRONG. CORRECTED 2026-09-10.
+//
+// An earlier draft carried, at the TOP of the Step's else-branch, a second
+// `repeat (2)` testing `hp[global.char[char]] <= 0`, plus a `char < 3` guard
+// around the cast body with an `else global.spelldelay = 1`. Removing them
+// from THIS file was right: v1.03's obj_spellphase does not have them. Its
+// else-branch (Step_0:19-21) goes straight to `if (gotitem[char] == 1)`, and
+// its ONE skip loop is at the tail (:55-64) testing `using[char] == 0`.
+//
+// But the note that replaced them said "Neither is in the dump", flat, and
+// that is false of the dump the draft was written against. EnderCat8's Kaizo
+// Roaring Knight HAS BOTH, at gml_Object_obj_spellphase_Step_0.gml:21-31 and
+// :31-82 — the skip loop verbatim, and the guard with its `else` arm. They
+// are a real mod mechanic: the mod skips a member who queued a spell and was
+// then knocked down, where vanilla plays their cast pose and burns the
+// 90-frame spelldelay anyway.
+//
+// So this file is correct and the kaizo lane is MISSING that override. The
+// wording mattered: an absolute "not in the dump" is an argument against
+// re-adding code the mod really has, sitting in the file someone would read
+// first. The law the old note quoted still holds, with one word added: a
+// citation is a claim, an unread citation is a fabrication, and a citation
+// that does not say WHICH dump is an ambiguity that will be read as both.
 //
 // TO WIRE IT (the work this does not do): sim/scenes/practice.js must create
 // this object INSTEAD of the bar when any charaction is 2 or 4 and create the
@@ -82,15 +100,15 @@
 //                  }
 //              }
 //
-// (gml_Object_obj_spellphase_Step_0.gml, all 78 lines. THE ONE SKIP LOOP IS AT
-// THE END AND IT TESTS `using`, NOT HP: the phase walks only the slots that
-// actually chose something, and it never inspects whether a member is down.
-// An earlier draft of this file carried a second `repeat (2)` at the TOP of the
-// branch testing `hp[global.char[char]] <= 0`, and a `char < 3` guard around
-// the caster with an `else global.spelldelay = 1` — NEITHER IS IN THE DUMP.
-// `char < 3` is already guaranteed by the `char >= 3` test above it, and the
-// GML indexes gotitem[char] with no guard at all. Both were removed; this
-// quote is the file, line for line.)
+// (gml_Object_obj_spellphase_Step_0.gml, V1.03, all 78 lines. ITS ONE SKIP
+// LOOP IS AT THE END AND IT TESTS `using`, NOT HP: the phase walks only the
+// slots that actually chose something, and it never inspects whether a member
+// is down. `char < 3` is already guaranteed by the `char >= 3` test above it,
+// and the GML indexes gotitem[char] with no guard at all — which is why the
+// top-of-branch loop and the guard an earlier draft carried do not belong in
+// THIS file. THE KAIZO MOD HAS BOTH (see the correction in the header): its
+// copy of this event is 77 diff lines longer and adds them at :21-31 and
+// :31-82. A mod lane wanting them overrides this module; it does not edit it.)
 
 // So the phase is FIVE FRAMES of nothing (the alarm), then the first caster's
 // pose and their line in the battle box, then a wait that ends when BOTH the
