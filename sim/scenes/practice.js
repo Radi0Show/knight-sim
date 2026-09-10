@@ -36,6 +36,7 @@ import {
 import { spawnImpact, stepAttackVfx } from '../attackvfx.js';
 import { stepRudeBuster, rudeBusterBusy } from '../rudebuster.js';
 import { castSpell, resolveActPages } from '../spells.js';
+import { needsSpellphase, createSpellphase, stepSpellphase } from '../spellphase.js';
 import { rngNext } from '../rng.js';
 import {
   fightDamage, damageKnight, advanceTurn, stepKnightAnim, tickChargeup, phase4Reached,
@@ -846,22 +847,30 @@ const director = {
       state.menu.needsCommit = false;
     }
 
-    // ---- THE RESOLVE PHASE: obj_attackpress ---------------------------------
+    // ---- THE RESOLVE PHASE --------------------------------------------------
     //
-    // Its Create and Draw define the whole order, and this build had two parts
-    // of it wrong.
+    // WHAT THIS COMMENT USED TO SAY, and it was wrong: that obj_attackpress's
+    // Create and Draw define the order —
     //
     //     Create:  for each char with charaction 4 (item) or 2 (spell):
-    //                  if (maxdelay == 0) maxdelay = 25;
-    //                  maxdelay += 15;
+    //                  if (maxdelay == 0) maxdelay = 25;   maxdelay += 15;
     //     Draw:    maxdelaytimer += 1;
-    //              at maxdelaytimer == spelldelay[xyz] -> that character's
-    //                  state = 4 or 2, i.e. their animation STARTS
+    //              at maxdelaytimer == spelldelay[xyz] -> state = 4 or 2
     //              if (maxdelaytimer >= maxdelay) active = 1;   // bolts run
     //
-    // So the bar EXISTS from the moment the menu closes but sits inactive
-    // while the spells and items play out. Rude Buster happens first, the
-    // bolts come after — which is the order you actually see.
+    // "So the bar exists from the moment the menu closes but sits inactive
+    // while the spells and items play out." IT DOES NOT. Create_0:1-6 reads
+    // `active = 0; fastmode = 1; if (fastmode == 1) active = 1;` and :58 sets
+    // `spelluse = 0` after the very loop that would have raised it — so the
+    // Draw's `if (spelluse == 1)` block never runs, the `maxdelay` test is
+    // moot, and the bar is LIVE FROM ITS FIRST FRAME. The quoted lines are
+    // real; reading them as the live path was the mistake, and it is the same
+    // one this project keeps making: quoting code without checking the flow
+    // reaches it.
+    //
+    // The order a caster's turn really has belongs to obj_spellphase, and
+    // scr_attackphase decides which of the two objects a turn even creates.
+    // Both are translated in sim/spellphase.js; the branch is below.
     // ---- THE ACT RESOLUTION, before the bar --------------------------------
     //
     // `if (actcon == 1 && !instance_exists(obj_writer)) scr_nextact()` — the
@@ -922,6 +931,52 @@ const director = {
       return;
     }
 
+    // ---- scr_attackphase's BRANCH: a CASTER'S TURN DOES NOT GO TO THE BAR --
+    //
+    //     fightphase = 1;
+    //     if (charaction[i] == 4 || charaction[i] == 2) fightphase = 0;   // i = 0..2
+    //     if (global.myfight == 4) fightphase = 1;
+    //     if (fightphase == 1) { global.myfight = 1; instance_create(obj_attackpress); }
+    //     else                 { global.myfight = 4; instance_create(obj_spellphase); }
+    //
+    // (gml_GlobalScript_scr_attackphase.gml:20-47.) So a turn in which anyone
+    // chose MAGIC or ITEM creates obj_spellphase INSTEAD of the bar, and the
+    // bar is created by that object when it finishes — it calls
+    // scr_attackphase again, and `myfight == 4` then forces fightphase 1.
+    //
+    // WHAT WAS HERE BEFORE, and why it was wrong: a `maxdelay = 25 + 15 *
+    // casters` hold with the casts fired at `maxdelaytimer == 10`, translated
+    // from obj_attackpress's Draw. THAT BLOCK NEVER RUNS. Create_0:1-6 is
+    // `active = 0; fastmode = 1; if (fastmode == 1) active = 1;` and :58 sets
+    // `spelluse = 0` AFTER the caster loop that would have raised it, so the
+    // Draw's `if (spelluse == 1)` gate is dead and `if (maxdelaytimer >=
+    // maxdelay) active = 1` is moot — the bar is live from its first frame.
+    // The delay a caster's turn really has is obj_spellphase's, and with it
+    // come the pose, the battle-text box and the wait on that box's death,
+    // none of which the old model had.
+    //
+    // MEASURED on the kaizo _rev1 whole fight, whose f8556 menu is the only
+    // one of thirty where the mash lands on MAGIC (Susie, Rude Buster): the
+    // game creates the phase at f8570, its Alarm_0 writes the box at f8575,
+    // the buster's trail runs f8602-8614, and the bar appears at f8644 —
+    // f8575 + 69, spelltimer reaching 70 with the writer dead. The old model
+    // put the bar at f8568 and never wrote a box. See kaizo/scenes'
+    // resolve phase for the kaizo side and sim/spellphase.js's header.
+    if (e.spellphase === undefined) {
+      e.spellphase = needsSpellphase(state) ? createSpellphase(state) : null;
+      e.spellphaseDone = !e.spellphase;
+    }
+    if (e.spellphase) {
+      if (stepSpellphase(state, e.spellphase, e)) {
+        // The frame it destroys itself IS the frame scr_attackphase creates
+        // the bar, so this does not return: the block below runs now.
+        e.spellphase = null;
+        e.spellphaseDone = true;
+      } else {
+        return;
+      }
+    }
+
     if (state.menu.fight.some(Boolean) && !e.bar) {
       const order = [0, 1, 2].filter((c) => state.menu.fight[c] && isUp(state, c));
       // The schedule is RANDOM, so the bar draws from the sim's generator —
@@ -939,45 +994,6 @@ const director = {
       e.pendingSwing = [];
     }
 
-    // `maxdelay` — 0 with no spells or items, otherwise 25 + 15 per caster.
-    if (e.maxdelay === undefined) {
-      // `for each char with charaction 4 (ITEM) or 2 (SPELL)` — obj_attackpress's
-      // Create counts BOTH, so a turn with two items holds the bar exactly as
-      // long as a turn with two spells.
-      const casters = [0, 1, 2].filter(
-        (c) => state.pendingSpell?.[c] || state.pendingItem?.[c],
-      ).length;
-      e.maxdelay = casters ? 25 + 15 * casters : 0;
-      e.maxdelaytimer = 0;
-      // `spelldelay[xyz]` defaults to 10 for all three, so the first caster's
-      // animation starts ten frames in and the rest follow at the same offset
-      // — they overlap, which is why a two-spell turn does not take twice as
-      // long as a one-spell turn.
-      e.spellFired = [false, false, false];
-    }
-
-    if (e.maxdelaytimer < e.maxdelay) {
-      e.maxdelaytimer += 1;
-      for (let c = 0; c < 3; c++) {
-        if (e.spellFired[c] || e.maxdelaytimer < 10) continue;
-        const p = state.pendingSpell?.[c];
-        const it = state.pendingItem?.[c];
-        if (p) {
-          e.spellFired[c] = true;
-          heroAct(state, c, HERO_SPELL);
-          castSpell(state, c, p.id, p.target, { alreadyPaid: true });
-        } else if (it) {
-          // THE ITEM LANDS HERE, not when it was chosen. `state = 4` and the
-          // effect both fire at `maxdelaytimer == spelldelay[c]`, so a Revive
-          // used this turn cannot give that character a turn — by the time it
-          // resolves the command phase is over.
-          e.spellFired[c] = true;
-          heroAct(state, c, HERO_ITEM);
-          applyItem(state, it.id, it.target);
-        }
-      }
-      return;
-    }
     // Everything queued has fired; the bolt may still be flying.
     if (rudeBusterBusy(state)) return;
     if (state.pendingSpell) state.pendingSpell = [];
@@ -1162,7 +1178,7 @@ const director = {
       e.barHold = 0;
       e.bar = null;
       state.menu.fight = [false, false, false];
-      e.maxdelay = undefined;
+      e.spellphase = undefined;
       // `global.mnfight = 1` is assigned HERE, in the bar's Draw — but the
       // knight's enemy-talk branch reads it in his STEP, which runs next
       // frame. Returning gives the handoff that one-frame lag: the next call
@@ -1170,7 +1186,7 @@ const director = {
       // where the oracle's turn column moves.
       return;
     }
-    e.maxdelay = undefined;
+    e.spellphase = undefined;
 
     // ---- ENEMY TALK, and it belongs HERE, not before the menu ------------
     //
