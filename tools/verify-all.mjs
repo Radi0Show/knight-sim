@@ -84,6 +84,7 @@ const SUITES = [
   ['verify-swoon.mjs', 'the swoon system — scr_dead/scr_revive, both floors, the heal gate'],
   ['verify-audio-coverage.mjs', 'audio coverage — every live knight sound is cued'],
   ['verify-dialogue.mjs', 'the fight dialogue — the two-beat exchange'],
+  ['verify-balloon.mjs', 'the speech balloon geometry — the box Susie is drawn in'],
   ['verify-textsound.mjs', 'the typewriter — per-typer voice, skipped punctuation'],
   ['verify-victory.mjs', 'the ending cutscene — positions, the walk, the exit'],
   ['verify-roaring-fx.mjs', "ROARING's effect layer — screen echoes, streaks, the return"],

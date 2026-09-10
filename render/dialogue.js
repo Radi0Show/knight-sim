@@ -32,34 +32,51 @@ import { PARTY } from '../sim/actors.js';
 const HSPACE = 9;
 const VSPACE = 20;
 
-export function drawDialogue(ctx, state, sprites) {
-  const dlg = state.dialogue;
-  if (!dlg?.text) return;
-  const font = loadFont('../assets/fonts', 'fnt_dotumche');
-  if (!font?.ready) return;
-
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  // The anchor: obj_herosusie + (92, 38). Susie's battle position is the
-  // sim's PARTY[1].
+/**
+ * THE BALLOON'S GEOMETRY, as a pure function of the text.
+ *
+ * Lifted out of the drawer so it can be ASSERTED. The stub canvas the render
+ * suites use loads no font, and drawDialogue returns early on `!font.ready` —
+ * so a draw-call probe cannot tell a correct balloon from a broken one, which
+ * is how a 20px height error survived two reports from play and one wrong
+ * fix. This is the arithmetic; tools/verify-balloon.mjs checks it.
+ */
+export function balloonGeometry(text) {
   const ax = PARTY[1].x + 92;
   const ay = PARTY[1].y + 38;
-
   // formatWriter returns the wrapped STRING; the balloon sizes off its
   // fully-revealed line set (`&` breaks — the writer's own line separator).
-  const formatted = formatWriter(dlg.text, 33);
-  const fullLines = revealed(formatted, 1e9);
-  const stringmax = Math.max(...fullLines.map((l) => l.length));
+  const formatted = formatWriter(text, 33);
+  const lines = revealed(formatted, 1e9);
+  const stringmax = Math.max(...lines.map((l) => l.length));
   const bw = stringmax * HSPACE + 10;
   // `balloonheight = ((linecount + 1) * vspace) + 5` — obj_battleblcon's Draw,
-  // line 37. The +1 IS THE BUG THAT WAS REPORTED: a one-line balloon is two
-  // line-heights tall, not one, and using `linecount` left every balloon a
-  // whole 20px short. The text is laid out from the TOP, so what goes missing
-  // is the bottom — reported twice from play as Susie's dialogue being cut off
-  // at the bottom, and the half-pixel fix below (which was also real) only
-  // ever addressed the last ROW of it.
-  const bh = (fullLines.length + 1) * VSPACE + 5;
+  // line 37.
+  //
+  // `linecount` IS THE NUMBER OF LINE BREAKS, NOT THE NUMBER OF LINES, and
+  // that one word is the whole of this bug. obj_writer's Other_15 sets
+  // `linecount = 0` at :7 and does `linecount += 1` at :164, :199 and :212 —
+  // every one of them at a BREAK: the `&` branch, and the two word-wrap
+  // branches. A three-line string has two breaks, so the writer hands the
+  // balloon `linecount == 2` and `(linecount + 1) * vspace` is already
+  // THREE line-heights.
+  //
+  // So `fullLines.length` IS `linecount + 1`, and the `+ 1` this line used to
+  // carry made every balloon a whole 20px too tall. Because `writingy` is
+  // `initwritingy - balloonheight / 2`, half of that extra height went above
+  // the anchor and half below, which put the text 10px HIGH inside a box 20px
+  // too deep: measured on the three-line "Didn't... think&we'd still be&
+  // standing, did you?", the glyph rows sat 12px below the body's top edge
+  // and 31px above its bottom. That lopsidedness is what reads from play as
+  // the text being wrong in the box, and it is why the earlier reading —
+  // that the balloon was 20px SHORT and clipping the last line — pointed the
+  // fix in exactly the wrong direction. Nothing was ever clipped; the last
+  // line always had 30-odd rows of white under it.
+  //
+  // With the `+ 1` gone the same balloon measures 12px of white above the
+  // first glyph row and 11 below the last, which is the centring the GML's
+  // own `- balloonheight / 2` is asking for.
+  const bh = lines.length * VSPACE + 5;
   const writingX = ax + 5;
   // `writingy = initwritingy - (balloonheight / 2)`, and balloonheight is
   // `lines * 20 + 5` — always ODD, so this lands on a HALF PIXEL.
@@ -73,6 +90,26 @@ export function drawDialogue(ctx, state, sprites) {
   // positions those at the unrounded coordinate.
   const writingY = ay + 3 - bh / 2;
   const boxY = Math.floor(writingY);
+  return {
+    ax, ay, formatted, lines, bw, bh, writingX, writingY, boxY,
+    // `if (balloonheight < 40) blconscale = 0.5` — obj_battleblcon Draw:109.
+    tailScale: bh < 40 ? 0.5 : 1,
+  };
+}
+
+export function drawDialogue(ctx, state, sprites) {
+  const dlg = state.dialogue;
+  if (!dlg?.text) return;
+  const font = loadFont('../assets/fonts', 'fnt_dotumche');
+  if (!font?.ready) return;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // The anchor (obj_herosusie + (92, 38)) and every measurement taken from
+  // it now come from balloonGeometry above, which is the asserted copy.
+  const g = balloonGeometry(dlg.text);
+  const { ax, ay, formatted, bw, bh, writingX, writingY, boxY, tailScale } = g;
 
   // The body: the two-rectangle union (draw_rectangle is inclusive; +1).
   ctx.fillStyle = '#fff';
@@ -83,7 +120,6 @@ export function drawDialogue(ctx, state, sprites) {
   // short balloon.
   const parts = sprites.get('spr_battleblcon_parts');
   if (parts) {
-    const tailScale = bh < 40 ? 0.5 : 1;
     ctx.save();
     ctx.translate(ax - 20, ay);
     ctx.scale(-1, tailScale);
