@@ -213,14 +213,19 @@ export const UNUSED_SHATTER = Object.freeze({
 
 /**
  * `merge_color(c_white, c_red, 0.6)` — the mod's final-hit shatter tint, and
- * the ramp's target. `merge_color(c_blue, c_red, 0.6)` is the BACK face of the
- * same pieces (the mod flips them and swaps the blend by the sign of
- * `image_xscale`); it is exported for a renderer that wants that second face.
- * Computed through the repo's own `mergeColor`, never typed: two typed
- * constants are two things to keep in step, and this way there is one.
+ * the ramp's target. Computed through the repo's own `mergeColor`, never
+ * typed: two typed constants are two things to keep in step, and this way
+ * there is one.
+ *
+ * THE MOD'S SECOND BLEND, `merge_color(c_blue, c_red, 0.6)`, IS NOT HERE. It
+ * is the BACK face of the same pieces — the mod flips them and swaps the blend
+ * by the sign of `image_xscale` — and these fragments never flip, so nothing
+ * on this screen would read it. A constant exported for a caller that does not
+ * exist is this repo's signature defect wearing a `export` keyword; the
+ * expression is written down in the block above instead, where the reader who
+ * needs it will look.
  */
 export const UNUSED_RED = mergeColor(WHITE, RED, 0.6);
-export const UNUSED_RED_BACK = mergeColor([0, 0, 255], RED, 0.6);
 
 /**
  * Arm the row. The driver calls this with whatever it has persisted; the saved
@@ -313,14 +318,24 @@ function stepUnusedShatter(title) {
       f.vsp = lengthdirY(UNUSED_SHATTER.speed, f.direction);
     }
     if (sh.t >= UNUSED_SHATTER.delay) {
-      f.vsp += f.gravity; // gravity_direction 270; friction 0 subtracts nothing
+      // GameMaker's order: friction off the speed MAGNITUDE, then the gravity
+      // vector onto the components, then move. `friction` is 0 here — that is
+      // the ch4 call's own third delayed var — so the branch is an identity,
+      // and it is written out rather than assumed because a constant nothing
+      // reads is a constant nobody notices is wrong.
+      if (UNUSED_SHATTER.friction) {
+        const spd = Math.hypot(f.hsp, f.vsp);
+        const k = spd > 0 ? Math.max(0, spd - UNUSED_SHATTER.friction) / spd : 0;
+        f.hsp *= k;
+        f.vsp *= k;
+      }
+      f.vsp += f.gravity; // gravity_direction 270, untouched by the ch4 code
       f.dx += f.hsp;
       f.dy += f.vsp;
     }
     if (sh.t >= UNUSED_SHATTER.doom || f.dy > UNUSED_SHATTER.cull) f.alive = false;
     else live += 1;
   }
-  sh.live = live;
   if (live > 0) return false;
   // THE POINT OF NO RETURN, and it is here rather than at the press: the mod's
   // own screen offers PROCEED as the only answer and then does not let you
@@ -1002,9 +1017,15 @@ export function stepTitle(title, input, attacks) {
   if (title.unused?.shatter) {
     for (const k of ['up', 'down', 'left', 'right', 'confirm', 'cancel']) pressed(k);
     const done = stepUnusedShatter(title);
+    // `shatter` STAYS FALSE HERE. It is the cue for the moment the glass is
+    // MADE — one frame, the twentieth press — and the driver plays a sound on
+    // it. Reported again on every frame of the fall it would play that sound
+    // seventy-odd times; the status "is it still going" has no reader, and a
+    // field with no reader is this repo's signature defect. `unusedRowStyle`
+    // carries `shattering` for anyone who wants the status.
     return {
       moved: false, chosen: false, selected: false, error: false,
-      link: null, share: false, proceed: done, press: 0, shatter: !done,
+      link: null, share: false, proceed: done, press: 0, shatter: false,
     };
   }
 

@@ -328,7 +328,15 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
   // on this screen turns yellow under the heart and this one must not be the
   // exception — so the heat shows on the row the player is not pointing at,
   // and while they are pointing at it, in the counter beside it.
-  const base = style.taken ? style.red : mergeColor(DIM, style.red, style.heat);
+  const base = style.taken ? style.red
+    // `dim` IS THE UNTOUCHED ROW, and it is read rather than inferred: on an
+    // unarmed build, and before the first press, this is character for
+    // character the line that stood here before any of this existed. (Heat 0
+    // mixes to the same grey — verify-titlemenu asserts that it does — but a
+    // row that says "I do nothing" should be drawn from that statement, not
+    // from an arithmetic coincidence that a later edit could move.)
+    : style.dim ? DIM
+      : mergeColor(DIM, style.red, style.heat);
   const colour = on ? HILITE : base;
   // The TAKEN row breathes, the way every cursor on this screen bobs; a row
   // still climbing the ramp does not, because it is a button being refused
