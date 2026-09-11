@@ -102,27 +102,46 @@ export function sliceShatter(entry, { width, height, blend, paint = null, count 
 
   // The intact picture, once — every fragment is a copy of this with a hole
   // punched round it.
+  const w = Math.ceil(width);
+  const h = Math.ceil(height);
   const source = document.createElement('canvas');
-  source.width = Math.ceil(width);
-  source.height = Math.ceil(height);
+  source.width = w;
+  source.height = h;
   const sg = source.getContext('2d');
   sg.imageSmoothingEnabled = false;
   if (paint) {
-    paint(sg, source.width, source.height);
+    // TWO CANVASES, AND THE SECOND ONE IS NOT OPTIONAL. The tint is a MULTIPLY
+    // — the same rule `tintInto` documents, so a black pixel stays black
+    // whatever the colour is, which is what GameMaker's `draw_sprite_ext`
+    // colour argument does — and `multiply` IGNORES THE DESTINATION'S ALPHA:
+    // over a transparent pixel it simply writes the source colour. So the fill
+    // floods the whole box and the picture's own shape has to be put back with
+    // a `destination-in` pass over an UNTOUCHED copy.
+    //
+    // Doing that pass against the canvas being drawn INTO is the bug this
+    // comment is here to prevent: `drawImage(source, 0, 0)` on `source`'s own
+    // context keeps everything, so the box came out a solid slab of colour and
+    // the word inside it was gone. Seen on screen, not in a suite — the slices
+    // were the right count, the right size and in the right place, and every
+    // assertion about them passed.
+    const art = document.createElement('canvas');
+    art.width = w;
+    art.height = h;
+    const ag = art.getContext('2d');
+    ag.imageSmoothingEnabled = false;
+    paint(ag, w, h);
+    sg.drawImage(art, 0, 0);
     if (blend) {
-      // MULTIPLY, not replace — the same rule `tintInto` documents: a black
-      // pixel stays black whatever the tint is, which is what GameMaker's
-      // `draw_sprite_ext` colour argument does.
       sg.globalCompositeOperation = 'multiply';
       sg.fillStyle = rgb(blend);
-      sg.fillRect(0, 0, source.width, source.height);
+      sg.fillRect(0, 0, w, h);
       sg.globalCompositeOperation = 'destination-in';
-      sg.drawImage(source, 0, 0); // multiply ignored alpha; put it back
+      sg.drawImage(art, 0, 0);
       sg.globalCompositeOperation = 'source-over';
     }
   } else {
     sg.fillStyle = rgb(blend ?? [255, 255, 255]);
-    sg.fillRect(0, 0, source.width, source.height);
+    sg.fillRect(0, 0, w, h);
   }
 
   const out = [];
