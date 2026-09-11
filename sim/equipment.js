@@ -75,12 +75,28 @@
 /** ShadowMantle's DF is `global.chapter`, and this fight is chapter 3. */
 export const CHAPTER = 3;
 
-/** `scr_weaponinfo`. `allowed` is [Kris, Susie, Ralsei] from char1..3. */
+/**
+ * `scr_weaponinfo`. `allowed` is [Kris, Susie, Ralsei, Noelle] from
+ * char1..**4**.
+ *
+ * THE FOURTH FLAG WAS ALWAYS IN THE DUMP and was dropped on translation
+ * because ch. 3's party has three people in it. It is not a mod value:
+ * `scr_weaponinfo` opens with `weaponchar4temp = 0` and every case sets it,
+ * in the VANILLA v1.03 dump, and five weapons (4, 12, 13, 22, 26) plus
+ * sixteen armour pieces say 1 — SnowRing and ThornRing say ONLY Noelle,
+ * which is why they read as equippable by nobody until now.
+ *
+ * PURELY ADDITIVE: every char1..3 entry below was re-derived from the dump
+ * and reproduces the previous table exactly, so `canEquip(kind, id, 0..2)` is
+ * unchanged for every id. Only index 3, which no vanilla caller passes, is
+ * new. Consumers index this by the CHARACTER FLAG, never by a party slot —
+ * see `partyTabs` in sim/modes.js for why the two had to be separated.
+ */
 export const WEAPONS = {
   1: { name: "Wood Blade", allowed: [0] },
   2: { name: "Mane Ax", allowed: [] },
   3: { name: "Red Scarf", allowed: [2] },
-  4: { name: "EverybodyWeapon", at: 12, df: 6, magic: 8, allowed: [0, 1, 2] },
+  4: { name: "EverybodyWeapon", at: 12, df: 6, magic: 8, allowed: [0, 1, 2, 3] },
   5: { name: "Spookysword", at: 2, allowed: [0], ability: "Spookiness UP" },
   6: { name: "Brave Ax", at: 2, allowed: [1], ability: "Guts Up" },
   7: { name: "Devilsknife", at: 5, magic: 4, allowed: [1], ability: "Buster TP DOWN" },
@@ -88,8 +104,8 @@ export const WEAPONS = {
   9: { name: "Ragger", at: 2, allowed: [2] },
   10: { name: "DaintyScarf", magic: 2, allowed: [2], ability: "Fluffiness UP" },
   11: { name: "TwistedSwd", at: 16, allowed: [0], ability: "Trance" },
-  12: { name: "SnowRing", allowed: [] },
-  13: { name: "ThornRing", at: 14, magic: 12, allowed: [], ability: "Trance" },
+  12: { name: "SnowRing", allowed: [3] },
+  13: { name: "ThornRing", at: 14, magic: 12, allowed: [3], ability: "Trance" },
   14: { name: "BounceBlade", at: 2, df: 1, allowed: [0], ability: "Defense" },
   15: { name: "CheerScarf", at: 1, magic: 2, allowed: [2], ability: "Smiley" },
   16: { name: "MechaSaber", at: 4, allowed: [0], ability: "Annoying" },
@@ -98,41 +114,41 @@ export const WEAPONS = {
   19: { name: "Ragger2", at: 5, magic: -1, allowed: [2], ability: "Prickly" },
   20: { name: "BrokenSwd", allowed: [], ability: "Failure" },
   21: { name: "PuppetScarf", at: 10, magic: -6, allowed: [2] },
-  22: { name: "FreezeRing", at: 4, magic: 4, allowed: [] },
+  22: { name: "FreezeRing", at: 4, magic: 4, allowed: [3] },
   23: { name: "Saber10", at: 6, allowed: [0] },
   24: { name: "ToxicAxe", at: 6, allowed: [1] },
   25: { name: "FlexScarf", at: 4, magic: 1, allowed: [2] },
-  26: { name: "BlackShard", at: 16, allowed: [0] },};
+  26: { name: "BlackShard", at: 16, allowed: [0, 3] },};
 
 /** `scr_armorinfo`. */
 export const ARMOR = {
   1: { name: "Amber Card", df: 1, allowed: [0, 1, 2] },
   2: { name: "Dice Brace", df: 2, allowed: [0, 1, 2] },
-  3: { name: "Pink Ribbon", df: 1, allowed: [0, 2], ability: "GrazeArea" },
+  3: { name: "Pink Ribbon", df: 1, allowed: [0, 2, 3], ability: "GrazeArea" },
   4: { name: "White Ribbon", df: 2, allowed: [0, 2], ability: "Cuteness" },
   5: { name: "IronShackle", at: 1, df: 2, allowed: [0, 1, 2] },
   6: { name: "MouseToken", magic: 2, allowed: [0, 1, 2], element: 7, elementAmount: 0.5 },
   7: { name: "Jevilstail", at: 2, df: 2, magic: 2, allowed: [0, 1, 2] },
   8: { name: "Silver Card", df: 2, allowed: [0, 1, 2], ability: "$ +5%" },
-  9: { name: "TwinRibbon", df: 3, allowed: [0, 2], ability: "GrazeArea" },
-  10: { name: "GlowWrist", df: 2, allowed: [0, 1, 2] },
-  11: { name: "ChainMail", df: 3, allowed: [0, 1, 2] },
-  12: { name: "B.ShotBowtie", df: 2, magic: 1, allowed: [0, 1, 2] },
-  13: { name: "SpikeBand", at: 2, df: 1, allowed: [0, 1, 2] },
-  14: { name: "Silver Watch", df: 2, allowed: [0, 1, 2], ability: "GrazeTime" },
-  15: { name: "TensionBow", df: 2, allowed: [0, 1, 2], ability: "TPGain" },
+  9: { name: "TwinRibbon", df: 3, allowed: [0, 2, 3], ability: "GrazeArea" },
+  10: { name: "GlowWrist", df: 2, allowed: [0, 1, 2, 3] },
+  11: { name: "ChainMail", df: 3, allowed: [0, 1, 2, 3] },
+  12: { name: "B.ShotBowtie", df: 2, magic: 1, allowed: [0, 1, 2, 3] },
+  13: { name: "SpikeBand", at: 2, df: 1, allowed: [0, 1, 2, 3] },
+  14: { name: "Silver Watch", df: 2, allowed: [0, 1, 2, 3], ability: "GrazeTime" },
+  15: { name: "TensionBow", df: 2, allowed: [0, 1, 2, 3], ability: "TPGain" },
   16: { name: "Mannequin", allowed: [0], element: 6, elementAmount: 0.35, ability: "???" },
   17: { name: "DarkGoldBand", allowed: [0] },
-  18: { name: "SkyMantle", df: 1, allowed: [0, 1, 2], element: 1, elementAmount: 0.5, ability: "Elec/Holy" },
-  19: { name: "SpikeShackle", at: 3, df: 1, allowed: [0, 1, 2], ability: "Attack" },
-  20: { name: "FrayedBowtie", at: 1, df: 1, magic: 1, allowed: [0, 2], element: 6, elementAmount: 0.15 },
+  18: { name: "SkyMantle", df: 1, allowed: [0, 1, 2, 3], element: 1, elementAmount: 0.5, ability: "Elec/Holy" },
+  19: { name: "SpikeShackle", at: 3, df: 1, allowed: [0, 1, 2, 3], ability: "Attack" },
+  20: { name: "FrayedBowtie", at: 1, df: 1, magic: 1, allowed: [0, 2, 3], element: 6, elementAmount: 0.15 },
   21: { name: "Dealmaker", df: 5, magic: 5, allowed: [0, 1, 2], element: 6, elementAmount: 0.4, ability: "$ +30%" },
-  22: { name: "RoyalPin", df: 3, magic: 1, allowed: [0, 1, 2] },
+  22: { name: "RoyalPin", df: 3, magic: 1, allowed: [0, 1, 2, 3] },
   23: { name: "ShadowMantle", df: CHAPTER, allowed: [0, 1, 2], element: 5, elementAmount: 0.66, ability: "Dark/Star" },
-  24: { name: "LodeStone", df: 2, allowed: [0, 1, 2], ability: "TPGain" },
-  25: { name: "GingerGuard", df: 3, allowed: [0, 1, 2] },
-  26: { name: "BlueRibbon", df: 1, magic: 1, allowed: [0, 2], ability: "Heal+" },
-  27: { name: "TennaTie", df: 5, magic: -2, allowed: [0, 1, 2] },};
+  24: { name: "LodeStone", df: 2, allowed: [0, 1, 2, 3], ability: "TPGain" },
+  25: { name: "GingerGuard", df: 3, allowed: [0, 1, 2, 3] },
+  26: { name: "BlueRibbon", df: 1, magic: 1, allowed: [0, 2, 3], ability: "Heal+" },
+  27: { name: "TennaTie", df: 5, magic: -2, allowed: [0, 1, 2, 3] },};
 
 /**
  * `obj_grazebox`'s Create, verbatim. These are the ONLY graze modifiers in

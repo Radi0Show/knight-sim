@@ -15,12 +15,11 @@ import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { VERSION } from '../web/version.js';
 import {
   MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER, GEAR_PAGES,
-  pocketOf, previewStats, wornBy,
+  pocketOf, previewStats, wornBy, partyTabs, unusedRowStyle, UNUSED_CRACK_STAGES,
 } from '../sim/modes.js';
 import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
 import { WEAPONS, ARMOR, canEquip, itemOf } from '../sim/equipment.js';
-import { PARTY } from '../sim/damage.js';
 
 const BG = [0x27, 0x29, 0x3f];
 const DIM = [128, 128, 138];
@@ -208,6 +207,157 @@ export function drawTitle(ctx, title, sprites, attacks, opts = {}) {
 
 const SLOT_NAMES = ['WEAPON', 'ARMOR 1', 'ARMOR 2'];
 
+// ---------------------------------------------------------------------------
+// THE UNUSED ROW, CRACKING.
+//
+// TAKEN FROM THE MOD: the word PROCEED, its `NAME#(NAME)` two-line shape (the
+// bracketed echo under itself), the RED, and the fact that the row does not
+// let you back out once it is taken.
+//   * the word and the shape: `gml_Object_DEVICE_FAILURE_Step_0.gml:384-385`,
+//     `NAME[0][0] = NAME[1][0] = "PROCEED#(PROCEED)"` on the B-Side game over
+//     — `#` is a line break in `string_hash_to_newline`.
+//   * the second line is drawn in `fnt_main` at a smaller scale because that
+//     is the face the whole screen it comes from uses: DEVICE_FAILURE's typer
+//     is 667, `scr_textsetup(scr_84_get_font("main"), ...)`, charline 33,
+//     hspace 12, vspace 20 — the same reasoning drawGameOver's header gives.
+//   * the red is `c_red`, GameMaker's (255, 0, 0) — the FIRST entry of the
+//     mod's own seven-colour `rgbafterimages` cycle
+//     (`gml_Object_obj_knight_enemy_Draw_0.gml:58-91`, transcribed in
+//     kaizo/attacks/kaizo-colors.js's RGB_AFTERIMAGE_CYCLE). It is the one red
+//     this mod uses at all: its palette is otherwise blue.
+//
+// OURS, AND LABELLED AS SUCH: the cracking itself. The mod has no button that
+// breaks. The crack geometry is a FIXED TABLE rather than anything random,
+// for the reason CLAUDE.md's Draw-RNG trap gives — a Draw that rolls dice
+// runs at the monitor's rate, not the sim's, and the fracture would boil.
+//
+// Each row is one crack: [x0, y0, x1, y1] in row-local pixels, origin at the
+// row's text baseline-left. Stage n draws the first n. The last two reach
+// past the word, which is what makes the break read as the row failing rather
+// than the letters being scratched.
+// IN FRACTIONS OF THE WORD BOX, not in pixels. The row is drawn in
+// `fnt_mainbig` and the two words are different lengths, so a pixel table
+// fitted to "UNUSED" puts its fractures beside "PROCEED" instead of across it
+// — and a pixel table is silently wrong again the day the font changes. Values
+// outside 0..1 are deliberate: the last crack runs clear through and out both
+// sides, which is what makes the final press read as the row failing rather
+// than the letters being scratched.
+const CRACKS = [
+  [0.12, -0.15, 0.26, 0.55],
+  [0.42, 0.90, 0.56, 0.05],
+  [0.04, 0.30, 0.22, 1.10],
+  [0.62, -0.12, 0.88, 0.62],
+  [-0.10, 0.72, 1.10, 0.18],
+];
+// ONE CRACK PER PRESS, and the table has to say so out loud: a stepper that
+// counts to six against five drawn fractures would show the last press doing
+// nothing, which is exactly how a working mechanism reads as broken.
+if (CRACKS.length !== UNUSED_CRACK_STAGES) {
+  throw new Error(`render/title.js: ${CRACKS.length} crack stages drawn, ${UNUSED_CRACK_STAGES} counted`);
+}
+
+/**
+ * The broken row's per-letter displacement — OURS. Stable per index so a
+ * letter always lands in the same place; `siner` only breathes it, the way
+ * every other cursor on this screen bobs.
+ */
+const SHARDS = [
+  [-2, 1], [1, -2], [-1, 2], [2, 1], [-1, -1], [1, 2], [2, -1],
+];
+
+const C_RED = [255, 0, 0];
+
+/**
+ * Draw the UNUSED / PROCEED row. Returns nothing; the caller has already
+ * placed the heart.
+ *
+ * `style` is `unusedRowStyle(title)` — the single place that decides what the
+ * row says, so this function never re-derives it.
+ */
+function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
+  // NOT ARMED, or not cracked yet: the row exactly as it has always been, one
+  // `drawText` with the same colour rule. This is the branch every vanilla
+  // build takes, forever.
+  if (!style.broken && style.crack === 0) {
+    drawText(ctx, font, style.name, x, y,
+      { color: rgb(on ? HILITE : (style.dim ? DIM : c_white)) });
+    return;
+  }
+
+  const name = style.name;
+  const w = textWidth(font, name);
+  const h = textHeight(font) || 30;
+  // HOW FAR THROUGH THE BREAK IT IS, 0..1. Everything below scales by it, so
+  // the first press is a hairline and the fifth is a wreck; a step that only
+  // added a line would read as five identical presses.
+  const t = Math.min(style.crack, CRACKS.length) / CRACKS.length;
+  const colour = style.broken ? (on ? HILITE : C_RED) : (on ? HILITE : DIM);
+  // The broken row breathes, the way every cursor on this screen bobs. A
+  // cracked-but-whole one does not — it is a damaged button, not a live one.
+  const breathe = style.broken ? Math.sin(siner / 8) * 0.8 : 0;
+
+  // THE FRACTURES. Each is drawn twice — a BLACK stroke first, then the red
+  // inside it — so it reads as the row splitting open rather than as a pen
+  // mark laid over the letters. Black because the settings overlay is black;
+  // the gap is the screen showing through.
+  const fractures = () => {
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let i = 0; i < Math.min(style.crack, CRACKS.length); i++) {
+      const [fx0, fy0, fx1, fy1] = CRACKS[i];
+      const x0 = x + fx0 * w;
+      const y0 = y + fy0 * h;
+      const x1 = x + fx1 * w;
+      const y1 = y + fy1 * h;
+      for (const [width, css] of [[4, '#000000'], [2, `rgb(${C_RED[0]},${C_RED[1]},${C_RED[2]})`]]) {
+        ctx.strokeStyle = css;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+
+  // THE LETTERS, ONE AT A TIME, each carrying its own displacement so the word
+  // comes apart progressively instead of jumping at the last press. `t` is the
+  // scale, so at crack 1 the offsets are a fifth of a pixel and invisible,
+  // which is right: one tap should look like almost nothing happened.
+  const letters = () => {
+    let cx = x;
+    for (let i = 0; i < name.length; i++) {
+      const ch = name[i];
+      const [dx, dy] = SHARDS[i % SHARDS.length];
+      drawText(ctx, font, ch, cx + dx * t + breathe * (i % 2 ? 1 : -1) * 0.4, y + dy * t,
+        { color: rgb(colour) });
+      cx += textWidth(font, ch);
+    }
+  };
+
+  // ORDER IS THE WHOLE READING, and getting it wrong made the finished row
+  // illegible rubble the first time this was looked at on screen.
+  //
+  //   CRACKING: the fractures go ON TOP. They are cutting INTO a word that is
+  //   still whole, and a crack drawn behind the letters is not a crack, it is
+  //   a decoration beside one.
+  //
+  //   BROKEN: the fractures go BEHIND. The word has already come apart — the
+  //   displaced letters say so by themselves — and the player now has to READ
+  //   it, because it is the thing they are about to choose. Black strokes over
+  //   24px glyphs at this size take the word out entirely.
+  if (style.broken) { fractures(); letters(); } else { letters(); fractures(); }
+
+  // The bracketed echo, the mod's own second line — `PROCEED#(PROCEED)` with
+  // `#` as the newline. Only the broken row has one. Clear of the glyphs and
+  // still inside the row's 40px pitch.
+  if (style.sub && small?.ready) {
+    drawText(ctx, small, style.sub, x + 6, y + h + 2,
+      { color: rgb(colour), xscale: 0.85, yscale: 0.85 });
+  }
+}
+
 function drawSettings(ctx, title, sprites, font) {
   const s = title.settings;
   const heart = sprites.get('spr_heart');
@@ -220,8 +370,17 @@ function drawSettings(ctx, title, sprites, font) {
       const on = i === s.cursor;
       const unused = SETTINGS_PAGES[i].id === 'unused';
       if (on && heart) drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
-      drawText(ctx, font, SETTINGS_PAGES[i].name, 190, y,
-        { color: rgb(on ? HILITE : (unused ? DIM : c_white)) });
+      if (unused) {
+        // ONE CALL SITE, and on an unarmed build it draws the dim UNUSED it
+        // always drew — `unusedRowStyle` returns { dim, crack: 0 } when
+        // `title.unused` is null, and the first branch of drawUnusedRow is
+        // then character-for-character the line this replaced.
+        drawUnusedRow(ctx, font, loadFont('../assets/fonts', 'fnt_main'),
+          unusedRowStyle(title), 190, y, on, title.siner);
+      } else {
+        drawText(ctx, font, SETTINGS_PAGES[i].name, 190, y,
+          { color: rgb(on ? HILITE : c_white) });
+      }
     }
     // SHARE SETUP's confirmation, on the row itself rather than as a popup —
     // `s.shared` is a frame countdown the step sets, so it clears itself even
@@ -431,11 +590,20 @@ function drawSettings(ctx, title, sprites, font) {
   const eq = s.equip;
   centred(ctx, font, 'WEAPONS / ARMOR', 40, c_white, 1.2);
 
-  // The party heads as the character tabs.
-  const HEADS = ['spr_headkris', 'spr_headsusie', 'spr_headralsei'];
-  for (let c = 0; c < 3; c++) {
-    const x = 200 + c * 90;
-    const head = sprites.get(HEADS[c]);
+  // The party heads as the character tabs — ONE PER ROSTER ENTRY, not three.
+  // `scr_charbox` draws `spr_head<name>` per CHARACTER, never per slot, which
+  // is the same distinction `partyTabs` exists for: a tab's portrait follows
+  // `tab.char` (the char1..4 flag), a tab's position follows the roster.
+  // A driver may name the sprite itself with `tab.head`.
+  const HEADS = ['spr_headkris', 'spr_headsusie', 'spr_headralsei', 'spr_headnoelle'];
+  const tabs = partyTabs(title);
+  // Centred on the same 200..380 span the vanilla three occupied, so a
+  // two-person roster does not sit hard against the left of the panel.
+  const tabStep = 90;
+  const tabX0 = 290 - ((tabs.length - 1) * tabStep) / 2;
+  for (let c = 0; c < tabs.length; c++) {
+    const x = tabX0 + c * tabStep;
+    const head = sprites.get(tabs[c].head ?? HEADS[tabs[c].char] ?? HEADS[0]);
     const on = eq.char === c;
     if (head) {
       ctx.save();
@@ -443,7 +611,7 @@ function drawSettings(ctx, title, sprites, font) {
       drawSpriteExt(ctx, head, 0, x, 80, 2, 2, 0, null, 1);
       ctx.restore();
     }
-    drawText(ctx, font, PARTY[c].name, x - 4, 130, {
+    drawText(ctx, font, tabs[c].name, x - 4, 130, {
       color: rgb(on ? HILITE : DIM), xscale: 0.75, yscale: 0.75,
     });
     if (on && eq.stage === 'char' && heart) {
@@ -495,7 +663,10 @@ function drawSettings(ctx, title, sprites, font) {
       const y = 160 + i * 34;
       const on = idx === eq.pocket;
       const name = id === 0 ? '(Nothing)' : table[id]?.name ?? '?';
-      const ok = id === 0 || canEquip(kind, id, eq.char);
+      // BY CHAR FLAG, not by tab position — the same index the stepper's
+      // refusal test uses, or the greyed-out list and the refusal would
+      // disagree on a roster that is not the vanilla trio.
+      const ok = id === 0 || canEquip(kind, id, tabs[eq.char].char);
       if (on && heart) drawSpriteExt(ctx, heart, 0, 370 + bob, y + 4, 1, 1, 0, null, 1);
       // WHO HAS IT ON, as DIM initials right of the name — K, S, R for the
       // three slots. Worn pieces used to leave the list entirely (the "take
@@ -503,7 +674,9 @@ function drawSettings(ctx, title, sprites, font) {
       // ShadowMantle vanish for everyone; the list is whole again and says
       // who wears what instead, so a second LodeStone reads as a choice.
       // Right-aligned inside the box; the name yields to it.
-      const tag = wornBy(kind, id, title.gear).map((c) => 'KSR'[c]).join(' ');
+      // Initials off the ROSTER, so a Weird Route list tags K and N rather
+      // than reading the second wearer as Susie.
+      const tag = wornBy(kind, id, title.gear).map((c) => (tabs[c]?.name ?? '?')[0]).join(' ');
       const tagW = tag ? textWidth(font, tag) * 0.7 : 0;
       const tagX = 612 - tagW;
       // `min(1, 200 / width)` — the item menu's squeeze, never a clip; the

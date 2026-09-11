@@ -27,7 +27,10 @@
 
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
-  ITEM_PICKER, GEAR_PAGES, pocketOf, wornBy } from '../sim/modes.js';
+  ITEM_PICKER, GEAR_PAGES, pocketOf, wornBy,
+  armUnused, unusedRowStyle, UNUSED_CRACK_STAGES, partyTabs, previewStats,
+} from '../sim/modes.js';
+import { canEquip } from '../sim/equipment.js';
 import {
   ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE, freshInventory,
 } from '../sim/items.js';
@@ -516,6 +519,174 @@ function atRoster() {
   check(freshInventory().join() === DEFAULT_BAG.join(),
     'no custom bag falls back to the default loadout');
   check(freshInventory([]).join() === '', 'an all-empty bag is empty, not the default');
+}
+
+// ---- THE UNUSED ROW: INERT BY DEFAULT, AND IT MUST STAY THAT WAY ---------
+//
+// This is the half of the seam that matters most to the vanilla build. A
+// driver that never calls `armUnused` must see EXACTLY the row it has always
+// seen: dim, error-on-confirm, no page, and — the trap this file was written
+// about — no new intent leaking out of `stepTitle`'s whitelist either.
+/** A title parked on the settings hub with the cursor on UNUSED. */
+function atUnusedRow() {
+  const t = createTitle();
+  for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
+  tap(t, 'confirm');
+  const row = SETTINGS_PAGES.findIndex((p) => p.id === 'unused');
+  for (let i = 0; i < row; i++) tap(t, 'down');
+  return t;
+}
+{
+  const t = atUnusedRow();
+  const r = tap(t, 'confirm');
+  check(r.error === true, 'UNARMED: confirming UNUSED still sounds the error');
+  check(!r.selected, 'UNARMED: it does not select');
+  check(t.settings.page === null, 'UNARMED: it opens no page');
+  check(r.proceed === false, 'UNARMED: no proceed intent, ever');
+  check(r.crack === 0, 'UNARMED: nothing cracks');
+  check(t.unused === null, 'UNARMED: pressing it creates no state');
+  const style = unusedRowStyle(t);
+  check(style.name === 'UNUSED' && style.dim === true && style.crack === 0,
+    'UNARMED: the row still reads a dim UNUSED');
+  // Ten more presses change nothing. The row is a wall.
+  for (let i = 0; i < 10; i++) tap(t, 'confirm');
+  check(unusedRowStyle(t).name === 'UNUSED', 'UNARMED: it never becomes anything');
+}
+
+// ---- ARMED: it cracks, it breaks, and THEN it proceeds -------------------
+{
+  const t = atUnusedRow();
+  armUnused(t, {});
+  check(unusedRowStyle(t).crack === 0, 'ARMED: a fresh row is uncracked');
+  const stages = [];
+  for (let i = 0; i < UNUSED_CRACK_STAGES; i++) {
+    const r = tap(t, 'confirm');
+    stages.push(r.crack);
+    check(r.error === true, `press ${i + 1} still refuses (it is cracking, not opening)`);
+    check(r.proceed === false, `press ${i + 1} does not proceed`);
+    check(t.settings.page === null, `press ${i + 1} opens no page`);
+    check(t.dirty === true, `press ${i + 1} asks the driver to persist`);
+    t.dirty = false;
+  }
+  check(stages.join() === [1, 2, 3, 4, 5].slice(0, UNUSED_CRACK_STAGES).join(),
+    `every press reported its own stage, got [${stages.join()}]`);
+  // BROKEN. The word changes, the dimming stops, and the mod's bracketed
+  // second line appears.
+  const broke = unusedRowStyle(t);
+  check(broke.broken === true, `${UNUSED_CRACK_STAGES} presses break it`);
+  check(broke.name === 'PROCEED', 'and the broken row reads PROCEED');
+  check(broke.sub === '(PROCEED)', '...with the mod\'s own bracketed echo under it');
+  check(broke.dim === false, '...and it is no longer dimmed');
+  check(broke.taken === false, 'breaking it is not taking it');
+
+  // THE NEXT PRESS IS THE DOOR, and it comes out through stepTitle's
+  // whitelist — which is the exact place the last new intent was dropped.
+  const r = tap(t, 'confirm');
+  check(r.proceed === true, 'PROCEED reaches the DRIVER through stepTitle');
+  check(r.selected === true, '...as a selection, not an error');
+  check(r.error === false, '...and it does not sound the refusal any more');
+  check(t.unused.taken === true, '...and the state records it was taken');
+  check(t.dirty === true, '...and asks the driver to persist that');
+
+  // ONE WAY. Pressing it again cannot un-take it.
+  tap(t, 'confirm');
+  check(t.unused.taken === true, 'taken never goes back to false');
+}
+
+// ---- THE CRACK SURVIVES A RELOAD ----------------------------------------
+{
+  // Two presses, persisted, re-armed: the row comes back cracked twice, not
+  // fresh. Without this the stages are decoration.
+  const t = atUnusedRow();
+  armUnused(t, {});
+  tap(t, 'confirm');
+  tap(t, 'confirm');
+  const saved = { ...t.unused };
+  const t2 = atUnusedRow();
+  armUnused(t2, saved);
+  check(unusedRowStyle(t2).crack === 2, 'a reload resumes at the crack it left on');
+  // A taken row comes back broken whatever the saved count says.
+  const t3 = createTitle();
+  armUnused(t3, { taken: true, presses: 0 });
+  check(unusedRowStyle(t3).broken === true && unusedRowStyle(t3).name === 'PROCEED',
+    'a taken row comes back already PROCEED');
+  // A hostile entry cannot produce a half-broken row.
+  const t4 = createTitle();
+  armUnused(t4, { presses: 9999, broken: false });
+  check(t4.unused.presses === UNUSED_CRACK_STAGES && t4.unused.broken === true,
+    'an out-of-range saved count is clamped, and broken is DERIVED from it');
+  const t5 = createTitle();
+  armUnused(t5, { presses: -5, broken: true });
+  check(t5.unused.presses === 0 && t5.unused.broken === false,
+    '...in both directions: a saved `broken` alone cannot break it');
+}
+
+// ---- THE EQUIP PAGE READS A ROSTER, and defaults to the vanilla three ----
+{
+  const t = createTitle();
+  check(t.party === null, 'a fresh title carries no roster override');
+  const tabs = partyTabs(t);
+  check(tabs.length === 3, 'the default roster is the vanilla three');
+  check(tabs.map((x) => x.name).join() === 'KRIS,SUSIE,RALSEI', 'in the vanilla order');
+  check(tabs.map((x) => x.char).join() === '0,1,2',
+    'and tab position equals char flag for the vanilla three — which is why the '
+    + 'bug this separates was invisible');
+
+  // A TWO-PERSON ROSTER whose second member is NOT Susie. Tab 1 is char flag
+  // 3 (Noelle), so the refusal test must consult 3 and not 1: ThornRing
+  // (weapon 13) is Noelle-only, and Susie's Brave Ax (6) is not hers.
+  const wr = createTitle();
+  wr.party = [
+    { name: 'KRIS', char: 0, base: { at: 14, df: 2, magic: 0 } },
+    { name: 'NOELLE', char: 3, base: { at: 5, df: 1, magic: 13 } },
+  ];
+  const wtabs = partyTabs(wr);
+  check(wtabs.length === 2, 'a supplied roster is the roster');
+  check(canEquip('weapon', 13, wtabs[1].char) === true,
+    'Noelle CAN equip the ThornRing (weaponchar4temp = 1 in the dump)');
+  check(canEquip('weapon', 13, 1) === false,
+    '...and Susie still cannot — the char4 flag added nobody to char1..3');
+  check(canEquip('weapon', 6, wtabs[1].char) === false,
+    'Noelle cannot equip Susie\'s Brave Ax');
+  check(canEquip('weapon', 23, 0) === true && canEquip('weapon', 23, 1) === false,
+    'and every vanilla answer is exactly what it was (Saber10 is Kris-only)');
+
+  // The preview reads the ROSTER's stat block, not PARTY[slot]: tab 1's magic
+  // is Noelle's 13, never Susie's 2.
+  wr.gear = [{ weapon: 0, armor: [] }, { weapon: 0, armor: [] }];
+  check(previewStats(wr, 1).magic === 13,
+    'the stat preview uses the roster\'s own base, not PARTY[1] = Susie');
+
+  // And the CURSOR wraps the roster's size. Two tabs: right, right returns
+  // to 0 rather than walking onto a third that is not there.
+  for (let i = 0; i < extraAt('gear'); i++) tap(wr, 'down');
+  tap(wr, 'confirm');                     // the GEAR hub
+  tap(wr, 'confirm');                     // WEAPONS / ARMOR
+  check(wr.settings.equip.stage === 'char', 'the equip page is open');
+  tap(wr, 'right');
+  check(wr.settings.equip.char === 1, 'right moves to the second member');
+  tap(wr, 'right');
+  check(wr.settings.equip.char === 0, 'and wraps at TWO, not at three');
+
+  // AND THE EQUIP REALLY LANDS, through the stepper rather than through
+  // `canEquip` directly — testing the predicate proves the table, not the
+  // page, and it was the PAGE that was passing the wrong index.
+  const pocket = pocketOf('weapon', wr.gear);
+  const put = (tab, id) => {
+    wr.settings.equip = { stage: 'char', char: tab, row: 0, pocket: 0 };
+    tap(wr, 'confirm');                                   // -> slot rows
+    tap(wr, 'confirm');                                   // -> the pocket
+    wr.settings.equip.pocket = pocket.indexOf(id);
+    return tap(wr, 'confirm');
+  };
+  const r13 = put(1, 13);
+  check(r13.error !== true && wr.gear[1].weapon === 13,
+    'the page equips Noelle\'s ThornRing — the refusal reads char flag 3, not tab 1');
+  const r6 = put(1, 6);
+  check(r6.error === true && wr.gear[1].weapon === 13,
+    'and refuses her Susie\'s Brave Ax, leaving what she had on');
+  const r23 = put(0, 23);
+  check(r23.error !== true && wr.gear[0].weapon === 23, 'Kris still takes Saber10');
 }
 
 console.log('title navigation — modes, roster, difficulties, settings\n');

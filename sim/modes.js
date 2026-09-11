@@ -80,6 +80,95 @@ export const SETTINGS_PAGES = [
   { id: 'unused', name: 'UNUSED' },
 ];
 
+// ---------------------------------------------------------------------------
+// THE UNUSED ROW'S SECOND LIFE — an OPT-IN state machine, off by default.
+//
+// WHAT THIS IS AND IS NOT. On the vanilla build `title.unused` is null and the
+// row behaves exactly as it always has: dimmed, and confirming it returns
+// `out.error` and nothing else. Everything below only runs for a driver that
+// ARMS it by assigning `title.unused` a state object (see `armUnused`) — and
+// the whole purpose of that gate is that a build which never arms it cannot
+// tell this code exists. verify-titlemenu asserts both halves.
+//
+// WHAT THE ROW BECOMES, once armed: pressing it does not open a page. It
+// CRACKS — one stage per press, `UNUSED_CRACK_STAGES` of them — and on the
+// stage after the last it BREAKS APART and reads PROCEED. Confirming PROCEED
+// returns `out.proceed`, which is the driver's cue to change what the whole
+// program is. That is a one-way door: `taken` never goes back to false.
+//
+// PROVENANCE, because half of this is taken and half is ours and the repo's
+// fourth law says which is which must be written down (CLAUDE.md, "nothing
+// invented ships unlabelled"):
+//
+//   TAKEN from EnderCat8's Kaizo Roaring Knight v2.3.3, whose B-Side game-over
+//   screen replaces both of DEVICE_CHOICE's options with the same word —
+//   `gml_Object_DEVICE_FAILURE_Step_0.gml:384-385`,
+//       NAME[0][0] = NAME[1][0] = "PROCEED#(PROCEED)"
+//   and then refuses to let either answer leave (`:430-437`: `global.choice ==
+//   1` routes to `knight_mode_con 53`, not the 55 that exits). The WORD, its
+//   two-line `NAME#(NAME)` shape, and the fact that taking it does not get you
+//   out of anything are all from there.
+//
+//   OURS: the press count, the crack stages, the breaking-apart, and the idea
+//   of putting any of it on a settings row. The mod has no cracking button.
+//
+// The DRIVER owns persistence. This module only counts.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many presses it takes to break. FIVE, and the number is a feel decision
+ * rather than a measurement: fewer and a player who mashes the row twice by
+ * accident is on the Weird Route before they have read anything, more and the
+ * first two stages look like the row is simply broken. Every stage is visible
+ * (render/title.js draws crack `n` of `UNUSED_CRACK_STAGES`), so the count is
+ * legible from the screen without being told.
+ */
+export const UNUSED_CRACK_STAGES = 5;
+
+/**
+ * Arm the row. The driver calls this with whatever it has persisted; the
+ * shape is deliberately three plain numbers/booleans so a JSON round trip
+ * through localStorage is lossless.
+ *
+ * @param {*} title
+ * @param {{presses?: number, broken?: boolean, taken?: boolean}} saved
+ */
+export function armUnused(title, saved = {}) {
+  const presses = Math.max(0, Math.min(UNUSED_CRACK_STAGES, saved.presses | 0));
+  const taken = !!saved.taken;
+  title.unused = {
+    presses: taken ? UNUSED_CRACK_STAGES : presses,
+    // BROKEN IS DERIVED, not trusted. A hand-edited storage entry saying
+    // `broken: true, presses: 0` would otherwise show a whole button as
+    // rubble; deriving it from the count means the drawn state and the
+    // stepper's state cannot disagree.
+    broken: taken || presses >= UNUSED_CRACK_STAGES,
+    taken,
+  };
+  return title.unused;
+}
+
+/**
+ * HOW THE ROW SHOULD READ AND BE DRAWN, in one place, so the stepper and the
+ * renderer cannot drift. render/title.js calls exactly this.
+ *
+ * @returns {{name: string, sub: string|null, dim: boolean, crack: number,
+ *            broken: boolean, taken: boolean}}
+ *   `crack` is 0..UNUSED_CRACK_STAGES — how far through the break it is.
+ *   `sub` is the parenthesised second line, which only the broken row has:
+ *   the mod writes its choice as `"PROCEED#(PROCEED)"` and `#` is a line
+ *   break in `string_hash_to_newline`, so the word appears twice, once in
+ *   brackets under itself.
+ */
+export function unusedRowStyle(title) {
+  const u = title?.unused;
+  // NOT ARMED — the reserved, inert row, dimmed because grey is this menu's
+  // convention for "this does nothing", which there it still does not.
+  if (!u) return { name: 'UNUSED', sub: null, dim: true, crack: 0, broken: false, taken: false };
+  if (u.broken) return { name: 'PROCEED', sub: '(PROCEED)', dim: false, crack: UNUSED_CRACK_STAGES, broken: true, taken: u.taken };
+  return { name: 'UNUSED', sub: null, dim: true, crack: u.presses, broken: false, taken: false };
+}
+
 /**
  * THE GEAR / ITEMS HUB — its own two-row menu off the title, in the settings
  * hub's exact shape. WEAPONS / ARMOR and ITEMS lived inside SETTINGS first,
@@ -179,6 +268,32 @@ export function wornBy(kind, id, gear) {
   ));
 }
 
+/**
+ * THE EQUIP PAGE'S ROSTER — one tab per character the page offers, in the
+ * order `title.gear` is indexed.
+ *
+ * WHY THIS IS NOT JUST `PARTY`. The page walked `% 3` and read `PARTY[c]`
+ * everywhere, which hardcodes three characters AND hardcodes which char
+ * flag each tab means: `canEquip(kind, id, slot)` tests
+ * `WEAPONS[id].allowed.includes(slot)` and `allowed` is indexed by the
+ * game's own `char1..4` flags. Those two indexings agree only for the
+ * vanilla trio. A roster of two, or a roster containing anybody who is not
+ * Kris/Susie/Ralsei, needs them separated — hence `char`, the char1..4 flag
+ * index (0 Kris, 1 Susie, 2 Ralsei, 3 Noelle), carried per tab.
+ *
+ * `title.party` null is the vanilla three and the DEFAULT: every existing
+ * caller gets exactly what it had. A driver supplies its own array of
+ * `{ name, char, base, head? }` to change the roster; `base` is the stat
+ * block `statsOf` previews against and `head` names the portrait sprite
+ * (render/title.js falls back to the vanilla heads by `char`).
+ */
+export const DEFAULT_PARTY_TABS = PARTY.map((p, i) => ({ name: p.name, char: i, base: p }));
+
+export function partyTabs(title) {
+  const tabs = title?.party;
+  return Array.isArray(tabs) && tabs.length ? tabs : DEFAULT_PARTY_TABS;
+}
+
 export function createTitle() {
   return {
     /** null while the menu is up; the chosen mode id once it is not. */
@@ -258,6 +373,18 @@ export function createTitle() {
      * not a setup.
      */
     swapZX: false,
+    /**
+     * THE UNUSED ROW'S STATE, or null for "not armed" — which is the default
+     * and is what every vanilla build stays on. See `armUnused` above; a
+     * driver that never calls it gets the reserved, inert row unchanged.
+     */
+    unused: null,
+    /**
+     * THE EQUIP PAGE'S ROSTER, or null for the vanilla three (`partyTabs`).
+     * A plain data field on purpose: a driver with a different party hands
+     * one over without `sim/` learning anything about that driver.
+     */
+    party: null,
     /** Set when gear/volumes change; the driver persists and clears it. */
     dirty: false,
   };
@@ -335,7 +462,44 @@ function stepSettings(title, pressed) {
     if (pressed('cancel')) { title.settings = null; out.moved = true; return out; }
     if (pressed('confirm')) {
       const page = SETTINGS_PAGES[s.cursor].id;
-      if (page === 'unused') { out.error = true; return out; } // reserved, inert
+      // ---- UNUSED: reserved and inert, unless a driver armed it ------------
+      //
+      // NOT ARMED is the whole vanilla behaviour and the whole vanilla line:
+      // one error sound, no page, nothing else returned.
+      //
+      // ARMED, the row cracks (see the block above SETTINGS_PAGES for what is
+      // taken from the mod and what is this project's). Every press before the
+      // break still SOUNDS like the refusal it used to be — `out.error` stays
+      // true — because the row is still refusing; what changes is that it is
+      // visibly coming apart while it does it. `out.crack` carries the stage
+      // for a driver that wants a different sound per press; the page may
+      // ignore it and lose nothing.
+      if (page === 'unused') {
+        const u = title.unused;
+        if (!u) { out.error = true; return out; }        // reserved, inert
+        if (u.broken) {
+          // THE POINT OF NO RETURN. `taken` is written here and never
+          // cleared — the mod's own screen offers PROCEED as the only answer
+          // and then does not let you leave (DEVICE_FAILURE_Step_0:430-437),
+          // and a button that can be un-pressed would not be that.
+          u.taken = true;
+          out.proceed = true;
+          out.selected = true;
+          title.dirty = true;
+          return out;
+        }
+        u.presses += 1;
+        if (u.presses >= UNUSED_CRACK_STAGES) {
+          u.presses = UNUSED_CRACK_STAGES;
+          u.broken = true;
+        }
+        out.crack = u.presses;
+        out.error = true;
+        // The crack must survive a reload, or the player re-cracks it every
+        // visit and it reads as a decoration rather than progress.
+        title.dirty = true;
+        return out;
+      }
       // SHARE copies rather than opens. The driver builds the URL and talks to
       // the clipboard — `sim/` has neither, and a headless verifier must be
       // able to run this path without either.
@@ -493,9 +657,17 @@ function stepSettings(title, pressed) {
 
   // ---- equip ----
   const eq = s.equip;
+  // THE ROSTER, not the literal three. `partyTabs` is `PARTY` unless a driver
+  // supplied its own — and `tab.char` is the char1..4 flag index, which is
+  // what `canEquip` and the refusal tables are keyed by. `% tabs.length` makes
+  // the left/right wrap the roster's size instead of a hardcoded 3; a stale
+  // cursor from a longer roster is clamped rather than left dangling.
+  const tabs = partyTabs(title);
+  if (eq.char >= tabs.length) eq.char = 0;
+  const charFlag = tabs[eq.char].char;
   if (eq.stage === 'char') {
-    if (pressed('left')) { eq.char = (eq.char + 2) % 3; out.moved = true; }
-    if (pressed('right')) { eq.char = (eq.char + 1) % 3; out.moved = true; }
+    if (pressed('left')) { eq.char = (eq.char + tabs.length - 1) % tabs.length; out.moved = true; }
+    if (pressed('right')) { eq.char = (eq.char + 1) % tabs.length; out.moved = true; }
     // `root`: the page was opened straight from the title (the GEAR row), so
     // X leaves to the title rather than dropping into a settings hub the
     // player never visited — the same rule the credits page carries.
@@ -549,11 +721,14 @@ function stepSettings(title, pressed) {
     // Speaker keys are the game's: 2 Susie, 3 Ralsei. Kris has no line —
     // scr_weaponinfo defines no wmessage1 because Kris never speaks.
     {
+      // Keyed by the CHAR FLAG (1 Kris, 2 Susie, 3 Ralsei, 4 Noelle), not by
+      // the tab position — a two-person roster puts a different character in
+      // tab 1, and the line has to follow the character.
       const table = kind === 'weapon' ? WEAPON_REFUSALS : ARMOR_REFUSALS;
-      const line = id !== 0 ? table[id]?.[String(eq.char + 1)] : null;
+      const line = id !== 0 ? table[id]?.[String(charFlag + 1)] : null;
       eq.comment = line && line.trim() ? line : null;
     }
-    if (id !== 0 && !canEquip(kind, id, eq.char)) { out.error = true; return out; }
+    if (id !== 0 && !canEquip(kind, id, charFlag)) { out.error = true; return out; }
     if (eq.row === 0) title.gear[eq.char].weapon = id;
     else {
       const armor = title.gear[eq.char].armor;
@@ -567,9 +742,15 @@ function stepSettings(title, pressed) {
   return out;
 }
 
-/** The stat line the equip page previews — base plus slots, like battleat. */
+/**
+ * The stat line the equip page previews — base plus slots, like battleat.
+ * `char` is the TAB index; the stat block comes from the roster so a driver's
+ * own party previews against its own numbers (Noelle's 120/5/13/1, not
+ * Susie's).
+ */
 export function previewStats(title, char) {
-  return statsOf(PARTY[char], title.gear[char]);
+  const tabs = partyTabs(title);
+  return statsOf((tabs[char] ?? tabs[0]).base, title.gear[char]);
 }
 
 /**
@@ -594,9 +775,18 @@ export function stepTitle(title, input, attacks) {
   // The settings pages own the input while open.
   if (title.settings) {
     const r = stepSettings(title, pressed);
+    // THE WHITELIST THAT COST A DEBUG CYCLE THE LAST TIME A NEW INTENT WAS
+    // ADDED. This rebuilds the settings result field by field, so an intent
+    // set correctly inside `stepSettings` is DROPPED here unless it is named
+    // — the row reports `selected`, the driver sees nothing to act on, and
+    // the button looks dead while every test of `stepSettings` itself passes.
+    // `proceed` and `crack` are named for that reason, and
+    // verify-titlemenu asserts them through `stepTitle`, never through
+    // `stepSettings` directly.
     return {
       moved: r.moved, chosen: false, selected: r.selected, error: r.error,
       link: r.link ?? null, share: r.share ?? false,
+      proceed: r.proceed ?? false, crack: r.crack ?? 0,
     };
   }
 
