@@ -63,6 +63,13 @@ import { WEAPONS, ARMOR, canEquip, statsOf } from './equipment.js';
 import { WEAPON_REFUSALS, ARMOR_REFUSALS } from './equip-refusals.js';
 import { DEFAULT_GEAR, PARTY } from './damage.js';
 import { ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE } from './items.js';
+// THE UNUSED ROW'S SHATTER reaches for four leaf helpers and nothing else:
+// `mergeColor` so the ramp's red is an EXPRESSION rather than a typed constant,
+// `lengthdirX/Y` for GameMaker's speed/direction motion, and the WELL512 stream
+// for the two `random()` draws the chapter 4 shatter makes per fragment. Both
+// modules are leaves — no cycle, and nothing here runs on an unarmed build.
+import { mergeColor, lengthdirX, lengthdirY, WHITE, RED } from './gml.js';
+import { gmlCreate, gmlRandom } from './rng.js';
 
 /**
  * THE ITEMS PAGE'S ROSTER — every battle-usable item, plus an EMPTY entry at
@@ -79,6 +86,311 @@ export const SETTINGS_PAGES = [
   { id: 'share', name: 'SHARE SETUP' },
   { id: 'unused', name: 'UNUSED' },
 ];
+
+// ---------------------------------------------------------------------------
+// THE UNUSED ROW'S SECOND LIFE — an OPT-IN state machine, off by default.
+//
+// WHAT THIS IS AND IS NOT. On the vanilla build `title.unused` is null and the
+// row behaves exactly as it always has: dimmed, and confirming it returns
+// `out.error` and nothing else. Everything below only runs for a driver that
+// ARMS it by assigning `title.unused` a state object (see `armUnused`) — and
+// the whole purpose of that gate is that a build which never arms it cannot
+// tell this code exists. verify-titlemenu asserts both halves.
+//
+// WHAT THE ROW BECOMES, once armed: pressing it does not open a page. It goes
+// REDDER — one step per press, `UNUSED_PRESSES` of them, monotonically — and
+// on the last press it SHATTERS WHERE IT SITS. The fragments are born at the
+// row's own spot and hold there for `UNUSED_SHATTER.delay` frames before they
+// move, so for those frames the row still looks whole; then they fly apart
+// under gravity. When the last one is gone the row is TAKEN, the settings
+// screen closes, and `out.proceed` goes out to the driver — the cue to change
+// what the whole program is. One-way: `taken` never goes back to false.
+//
+// PROVENANCE, because part of this is taken and part is ours and the repo's
+// fourth law says which is which must be written down (CLAUDE.md, "nothing
+// invented ships unlabelled"):
+//
+//   TAKEN — THE SHATTER'S SHAPE, from DELTARUNE CHAPTER 4 ITSELF:
+//   `gml_Object_obj_intro_ch4_Step_0.gml:164-196` (the chapter 4+ dump at
+//   ~/knight-research/gml_dump_ch5), the prophecy shattering:
+//
+//       var _shattersprite = spr_intro_prophecy_shatter;
+//       var _fragments = sprite_get_number(_shattersprite);
+//       var _delay = 20;
+//       for (var i = 0; i < _fragments; i++)
+//           with (scr_marker_ext(logo_prophecy.x, logo_prophecy.y,
+//                                _shattersprite, 2, 2, undefined, i,
+//                                undefined, 19800)) {
+//               direction = random(360);
+//               scr_delay_var("gravity", 0.4 + random(0.12), _delay);
+//               scr_delay_var("friction", 0, _delay);
+//               scr_delay_var("speed", 4, _delay);
+//               scr_doom(id, 120);
+//           }
+//
+//   ONE MARKER PER SUB-IMAGE, every one born at the shattered thing's OWN x/y
+//   wearing fragment `i`, each given a random direction immediately but ZERO
+//   speed — so the pieces sit exactly where the intact thing was and the
+//   picture looks unbroken until the three delayed vars land together at frame
+//   20 and it comes apart. That hold is what makes it look smooth, and it is
+//   the reason the shape is copied rather than re-invented. Every number below
+//   (delay 20, speed 4, gravity 0.4 + random(0.12), friction 0, doom 120) is
+//   from those lines, and the two RNG draws per fragment are in the GML's own
+//   order.
+//
+//   TAKEN — THE RED, from EnderCat8's Kaizo Roaring Knight v2.3.3. Its screen
+//   shatter (`scr_screenshatter_create`, appended to
+//   `gml_GlobalScript_scr_lerpvar.gml:28-100` in the kaizo dump) tints its 31
+//   pieces `shatter_blend = [c_white, 16711680]` normally and, on the final
+//   hit (`:57-67`), `[merge_color(c_white, c_red, 0.6), merge_color(c_blue,
+//   c_red, 0.6)]`. `UNUSED_RED` IS that first expression, evaluated here
+//   rather than typed as a constant, and it is BOTH the ramp's target colour
+//   AND the fragments' blend — so the reddening and the shatter agree by
+//   construction instead of by two numbers somebody has to keep in step.
+//   (GameMaker packs colours BGR: `c_blue` is 16711680, RGB (0, 0, 255).)
+//
+//   TAKEN — THE WORD. On a Weird Route file the mod's game-over screen
+//   replaces BOTH of DEVICE_CHOICE's options with the same string,
+//   `gml_Object_DEVICE_FAILURE_Step_0.gml:384-385`:
+//       NAME[0][0] = NAME[1][0] = "PROCEED#(PROCEED)"
+//   and then refuses to let either answer leave (`:430-437`: on the B-Side
+//   `global.choice == 1` routes to `knight_mode_con 53`, not the 55 that
+//   exits). The WORD, its two-line `NAME#(NAME)` shape — `#` is a line break
+//   in `string_hash_to_newline`, which is why it appears twice, once in
+//   brackets under itself — and the fact that taking it does not get you out
+//   of anything are all from there.
+//
+//   OURS: THE PRESS COUNT AND THE REDDENING RAMP, and the idea of putting any
+//   of it on a settings row. Neither the mod nor chapter 4 has a button that
+//   must be pressed twenty times, and neither reddens anything as it is
+//   pressed.
+//
+// The DRIVER owns persistence. This module only counts, and moves fragments.
+// ---------------------------------------------------------------------------
+
+/**
+ * HOW MANY PRESSES. TWENTY — the user's own number ("after about TWENTY
+ * presses"), taken literally rather than rounded to something tidier, and the
+ * ramp is built to make it legible: every press moves the row's colour exactly
+ * 1/20th of the way to `UNUSED_RED`, and the row prints `n / 20` beside itself
+ * from the first press on. Twenty is long enough that nobody arrives on the
+ * Weird Route by mashing Z at a menu, and short enough to finish once a player
+ * has decided the row is doing something — which they can see it is, because
+ * the count and the colour both say so before anything happens.
+ */
+export const UNUSED_PRESSES = 20;
+
+/**
+ * THE CH4 SHATTER'S NUMBERS, all from obj_intro_ch4's Step (see the block
+ * above). `fragments` is `sprite_get_number(spr_intro_prophecy_shatter)`'s
+ * analogue — the driver overrides it with the frame count of whatever sprite
+ * it hands over, and 31 is the default because that is
+ * `spr_roaringknight_finalshatter`'s count, the mod's own shatter sheet.
+ *
+ * `cull` IS OURS AND IS THE ONE DEPARTURE. The ch4 markers are bounded only by
+ * `scr_doom(id, 120)`, which on this screen would leave about a second of
+ * empty menu after the last piece has left it. A fragment that has fallen ONE
+ * FULL SCREEN HEIGHT below where it started is past the bottom edge from any
+ * row on a 480-pixel screen and will never be seen again, so it is dropped
+ * then — the same reflex the mod's own `scr_screenshatter_step` has
+ * (`if (y > (cameray() + 1000)) destroy`), at a distance that suits a fixed
+ * 640x480 view rather than a scrolling room. `doom` is still the hard stop, so
+ * a fragment that somehow never falls still ends, and the whole break is
+ * therefore bounded by 120 frames whatever happens — asserted in
+ * verify-titlemenu, because an animation that can hang the title screen is a
+ * worse bug than one that ends early.
+ */
+export const UNUSED_SHATTER = Object.freeze({
+  fragments: 31,
+  delay: 20,
+  speed: 4,
+  gravity: 0.4,
+  gravitySpread: 0.12,
+  friction: 0,
+  doom: 120,
+  cull: 480,
+});
+
+/**
+ * `merge_color(c_white, c_red, 0.6)` — the mod's final-hit shatter tint, and
+ * the ramp's target. Computed through the repo's own `mergeColor`, never
+ * typed: two typed constants are two things to keep in step, and this way
+ * there is one.
+ *
+ * THE MOD'S SECOND BLEND, `merge_color(c_blue, c_red, 0.6)`, IS NOT HERE. It
+ * is the BACK face of the same pieces — the mod flips them and swaps the blend
+ * by the sign of `image_xscale` — and these fragments never flip, so nothing
+ * on this screen would read it. A constant exported for a caller that does not
+ * exist is this repo's signature defect wearing a `export` keyword; the
+ * expression is written down in the block above instead, where the reader who
+ * needs it will look.
+ */
+export const UNUSED_RED = mergeColor(WHITE, RED, 0.6);
+
+/**
+ * Arm the row. The driver calls this with whatever it has persisted; the saved
+ * shape is deliberately a number and a boolean so a JSON round trip through
+ * localStorage is lossless.
+ *
+ * @param {*} title
+ * @param {{presses?: number, taken?: boolean, sprite?: string,
+ *          fragments?: number, seed?: number}} saved
+ *   `sprite` NAMES THE SHATTER SHEET and is the driver's to supply: `sim/`
+ *   must not know the name of a sprite only one build ships (the isolation
+ *   contract — the vanilla asset pack has no shatter sheet at all). A null
+ *   sprite still counts, still steps and still proceeds; the renderer simply
+ *   has nothing to paint, which is the honest outcome for a missing asset
+ *   rather than a throw at the end of twenty presses.
+ */
+export function armUnused(title, saved = {}) {
+  const taken = !!saved.taken;
+  const presses = Math.max(0, Math.min(UNUSED_PRESSES, saved.presses | 0));
+  title.unused = {
+    // A TAKEN ROUTE IS A FULL BAR. Deriving the count from `taken` rather than
+    // trusting both means a hand-edited storage entry cannot show a row that is
+    // half-red and already taken.
+    presses: taken ? UNUSED_PRESSES : presses,
+    taken,
+    sprite: typeof saved.sprite === 'string' ? saved.sprite : null,
+    fragments: saved.fragments > 0
+      ? Math.min(256, saved.fragments | 0)
+      : UNUSED_SHATTER.fragments,
+    /**
+     * The seed the fragment directions come off. Fixed by default, so the
+     * break is the same break every time and a check can assert its numbers;
+     * a driver may vary it.
+     */
+    seed: saved.seed === undefined ? 0x50524f43 : (saved.seed >>> 0),
+    /** null until the last press; the live fragment field while it runs. */
+    shatter: null,
+  };
+  return title.unused;
+}
+
+/**
+ * THE FRAGMENT FIELD, built at the last press. One entry per sub-image, in
+ * sub-image order, each carrying the fragment index it wears.
+ *
+ * RNG: `random(360)` then `random(0.12)`, per fragment, in that order — the
+ * GML's own two draws and their own sequence, on this module's own WELL512
+ * stream (`gmlCreate`), which is seeded and therefore reproducible. It is a
+ * STEP, not a Draw: CLAUDE.md's 30Hz-vs-monitor-Hz trap is about rolling dice
+ * inside a Draw event, and nothing here does.
+ */
+function createUnusedShatter(u) {
+  const rng = gmlCreate(u.seed >>> 0);
+  const frags = [];
+  for (let i = 0; i < u.fragments; i++) {
+    const direction = gmlRandom(rng, 360);
+    const gravity = UNUSED_SHATTER.gravity + gmlRandom(rng, UNUSED_SHATTER.gravitySpread);
+    // dx/dy are offsets FROM THE SHATTERED THING'S OWN SPOT, in screen pixels
+    // — the renderer adds the row's position, which is the one thing it knows
+    // and this module does not. Zero at birth is the whole trick: every
+    // fragment starts exactly where the intact row was.
+    frags.push({ i, dx: 0, dy: 0, hsp: 0, vsp: 0, direction, gravity, alive: true });
+  }
+  return { t: 0, frags, live: frags.length };
+}
+
+/**
+ * One frame of the fragment field. Returns TRUE on the frame it finishes,
+ * which is the frame the route is taken.
+ *
+ * The motion is GameMaker's built-in: `speed`/`direction` is one vector,
+ * `gravity` adds `lengthdir(gravity, gravity_direction)` to it each step
+ * (`gravity_direction` is 270, straight down, and the ch4 code never touches
+ * it), `friction` 0 takes nothing away, and the position moves by the result.
+ * The three delayed vars all land on frame `delay` together — that is what
+ * `scr_delay_var(..., _delay)` does — so `delay - 1` frames of the animation
+ * are the picture sitting perfectly still.
+ */
+function stepUnusedShatter(title) {
+  const u = title?.unused;
+  const sh = u?.shatter;
+  if (!sh) return false;
+  sh.t += 1;
+  let live = 0;
+  for (const f of sh.frags) {
+    if (!f.alive) continue;
+    if (sh.t === UNUSED_SHATTER.delay) {
+      // `speed = 4` on a direction it has carried since birth.
+      f.hsp = lengthdirX(UNUSED_SHATTER.speed, f.direction);
+      f.vsp = lengthdirY(UNUSED_SHATTER.speed, f.direction);
+    }
+    if (sh.t >= UNUSED_SHATTER.delay) {
+      // GameMaker's order: friction off the speed MAGNITUDE, then the gravity
+      // vector onto the components, then move. `friction` is 0 here — that is
+      // the ch4 call's own third delayed var — so the branch is an identity,
+      // and it is written out rather than assumed because a constant nothing
+      // reads is a constant nobody notices is wrong.
+      if (UNUSED_SHATTER.friction) {
+        const spd = Math.hypot(f.hsp, f.vsp);
+        const k = spd > 0 ? Math.max(0, spd - UNUSED_SHATTER.friction) / spd : 0;
+        f.hsp *= k;
+        f.vsp *= k;
+      }
+      f.vsp += f.gravity; // gravity_direction 270, untouched by the ch4 code
+      f.dx += f.hsp;
+      f.dy += f.vsp;
+    }
+    if (sh.t >= UNUSED_SHATTER.doom || f.dy > UNUSED_SHATTER.cull) f.alive = false;
+    else live += 1;
+  }
+  if (live > 0) return false;
+  // THE POINT OF NO RETURN, and it is here rather than at the press: the mod's
+  // own screen offers PROCEED as the only answer and then does not let you
+  // leave (DEVICE_FAILURE_Step_0:430-437), and this row is the same shape —
+  // once the glass is down there is nothing left to un-press.
+  u.taken = true;
+  u.shatter = null;
+  u.presses = UNUSED_PRESSES;
+  // "…and then you go back to the TITLE SCREEN with everything changed." The
+  // settings screen the row lived on goes with it.
+  title.settings = null;
+  title.dirty = true;
+  return true;
+}
+
+/**
+ * HOW THE ROW SHOULD READ AND BE DRAWN, in one place, so the stepper and the
+ * renderer cannot drift. render/title.js calls exactly this.
+ *
+ * @returns {{name: string, sub: string|null, dim: boolean, heat: number,
+ *            presses: number, total: number, red: number[], sprite: string|null,
+ *            shattering: boolean, taken: boolean}}
+ *   `heat` is 0..1 — how far along the ramp, and the only thing the renderer
+ *   needs in order to mix its own colour toward `red`. It is monotone in the
+ *   press count by construction (it is a division), which is the property the
+ *   user asked for: more presses is always more red, never less.
+ *   `sub` is the parenthesised second line, which only the TAKEN row has.
+ *   `sprite` is the driver's shatter sheet, passed straight through — the
+ *   renderer looks it up, this module never does.
+ */
+export function unusedRowStyle(title) {
+  const u = title?.unused;
+  // NOT ARMED — the reserved, inert row, dimmed because grey is this menu's
+  // convention for "this does nothing", which there it still does not.
+  if (!u) {
+    return {
+      name: 'UNUSED', sub: null, dim: true, heat: 0, presses: 0,
+      total: UNUSED_PRESSES, red: UNUSED_RED, sprite: null,
+      shattering: false, taken: false,
+    };
+  }
+  if (u.taken) {
+    return {
+      name: 'PROCEED', sub: '(PROCEED)', dim: false, heat: 1,
+      presses: UNUSED_PRESSES, total: UNUSED_PRESSES, red: UNUSED_RED,
+      sprite: u.sprite, shattering: false, taken: true,
+    };
+  }
+  return {
+    name: 'UNUSED', sub: null, dim: u.presses === 0,
+    heat: Math.min(1, u.presses / UNUSED_PRESSES),
+    presses: u.presses, total: UNUSED_PRESSES, red: UNUSED_RED,
+    sprite: u.sprite, shattering: !!u.shatter, taken: false,
+  };
+}
 
 /**
  * THE GEAR / ITEMS HUB — its own two-row menu off the title, in the settings
@@ -179,6 +491,32 @@ export function wornBy(kind, id, gear) {
   ));
 }
 
+/**
+ * THE EQUIP PAGE'S ROSTER — one tab per character the page offers, in the
+ * order `title.gear` is indexed.
+ *
+ * WHY THIS IS NOT JUST `PARTY`. The page walked `% 3` and read `PARTY[c]`
+ * everywhere, which hardcodes three characters AND hardcodes which char
+ * flag each tab means: `canEquip(kind, id, slot)` tests
+ * `WEAPONS[id].allowed.includes(slot)` and `allowed` is indexed by the
+ * game's own `char1..4` flags. Those two indexings agree only for the
+ * vanilla trio. A roster of two, or a roster containing anybody who is not
+ * Kris/Susie/Ralsei, needs them separated — hence `char`, the char1..4 flag
+ * index (0 Kris, 1 Susie, 2 Ralsei, 3 Noelle), carried per tab.
+ *
+ * `title.party` null is the vanilla three and the DEFAULT: every existing
+ * caller gets exactly what it had. A driver supplies its own array of
+ * `{ name, char, base, head? }` to change the roster; `base` is the stat
+ * block `statsOf` previews against and `head` names the portrait sprite
+ * (render/title.js falls back to the vanilla heads by `char`).
+ */
+export const DEFAULT_PARTY_TABS = PARTY.map((p, i) => ({ name: p.name, char: i, base: p }));
+
+export function partyTabs(title) {
+  const tabs = title?.party;
+  return Array.isArray(tabs) && tabs.length ? tabs : DEFAULT_PARTY_TABS;
+}
+
 export function createTitle() {
   return {
     /** null while the menu is up; the chosen mode id once it is not. */
@@ -258,6 +596,18 @@ export function createTitle() {
      * not a setup.
      */
     swapZX: false,
+    /**
+     * THE UNUSED ROW'S STATE, or null for "not armed" — which is the default
+     * and is what every vanilla build stays on. See `armUnused` above; a
+     * driver that never calls it gets the reserved, inert row unchanged.
+     */
+    unused: null,
+    /**
+     * THE EQUIP PAGE'S ROSTER, or null for the vanilla three (`partyTabs`).
+     * A plain data field on purpose: a driver with a different party hands
+     * one over without `sim/` learning anything about that driver.
+     */
+    party: null,
     /** Set when gear/volumes change; the driver persists and clears it. */
     dirty: false,
   };
@@ -335,7 +685,49 @@ function stepSettings(title, pressed) {
     if (pressed('cancel')) { title.settings = null; out.moved = true; return out; }
     if (pressed('confirm')) {
       const page = SETTINGS_PAGES[s.cursor].id;
-      if (page === 'unused') { out.error = true; return out; } // reserved, inert
+      // ---- UNUSED: reserved and inert, unless a driver armed it ------------
+      //
+      // NOT ARMED is the whole vanilla behaviour and the whole vanilla line:
+      // one error sound, no page, nothing else returned.
+      //
+      // ARMED, the row REDDENS (see the block above SETTINGS_PAGES for what is
+      // taken and what is this project's). Every press short of the last still
+      // SOUNDS like the refusal it used to be — `out.error` stays true — because
+      // the row is still refusing; what changes is that it is visibly hotter
+      // each time it does. The mod's own menus do exactly this much: the party
+      // picker's `obj_choicer_neo` beeps `snd_error` at a blank entry and
+      // re-offers it (ledger G-9), so a refusal that leaves the cursor where it
+      // is, is the interaction this row copies rather than one invented for it.
+      //
+      // `out.press` carries the new count for a driver that wants to persist it
+      // (it should) or to pitch the sound by it; a page may ignore it and lose
+      // nothing.
+      if (page === 'unused') {
+        const u = title.unused;
+        if (!u) { out.error = true; return out; }        // reserved, inert
+        // ALREADY GOING, OR ALREADY GONE. The shatter swallows input in
+        // stepTitle so this is unreachable while it runs, and once `taken` is
+        // set the row is a label rather than a button — the mod's B-Side game
+        // over is the same shape, both answers PROCEED and neither leaves
+        // (DEVICE_FAILURE_Step_0:384-385, :430-437).
+        if (u.shatter || u.taken) { out.error = true; return out; }
+        u.presses += 1;
+        out.press = u.presses;
+        // The ramp must survive a reload, or the player re-presses it twenty
+        // times every visit and it reads as decoration rather than progress.
+        title.dirty = true;
+        if (u.presses >= UNUSED_PRESSES) {
+          u.presses = UNUSED_PRESSES;
+          // THE LAST PRESS IS THE ONE THE ROW ACCEPTS, so it gets the confirm
+          // sound rather than the refusal — it is the only press that does.
+          u.shatter = createUnusedShatter(u);
+          out.shatter = true;
+          out.selected = true;
+          return out;
+        }
+        out.error = true;
+        return out;
+      }
       // SHARE copies rather than opens. The driver builds the URL and talks to
       // the clipboard — `sim/` has neither, and a headless verifier must be
       // able to run this path without either.
@@ -493,9 +885,17 @@ function stepSettings(title, pressed) {
 
   // ---- equip ----
   const eq = s.equip;
+  // THE ROSTER, not the literal three. `partyTabs` is `PARTY` unless a driver
+  // supplied its own — and `tab.char` is the char1..4 flag index, which is
+  // what `canEquip` and the refusal tables are keyed by. `% tabs.length` makes
+  // the left/right wrap the roster's size instead of a hardcoded 3; a stale
+  // cursor from a longer roster is clamped rather than left dangling.
+  const tabs = partyTabs(title);
+  if (eq.char >= tabs.length) eq.char = 0;
+  const charFlag = tabs[eq.char].char;
   if (eq.stage === 'char') {
-    if (pressed('left')) { eq.char = (eq.char + 2) % 3; out.moved = true; }
-    if (pressed('right')) { eq.char = (eq.char + 1) % 3; out.moved = true; }
+    if (pressed('left')) { eq.char = (eq.char + tabs.length - 1) % tabs.length; out.moved = true; }
+    if (pressed('right')) { eq.char = (eq.char + 1) % tabs.length; out.moved = true; }
     // `root`: the page was opened straight from the title (the GEAR row), so
     // X leaves to the title rather than dropping into a settings hub the
     // player never visited — the same rule the credits page carries.
@@ -549,11 +949,14 @@ function stepSettings(title, pressed) {
     // Speaker keys are the game's: 2 Susie, 3 Ralsei. Kris has no line —
     // scr_weaponinfo defines no wmessage1 because Kris never speaks.
     {
+      // Keyed by the CHAR FLAG (1 Kris, 2 Susie, 3 Ralsei, 4 Noelle), not by
+      // the tab position — a two-person roster puts a different character in
+      // tab 1, and the line has to follow the character.
       const table = kind === 'weapon' ? WEAPON_REFUSALS : ARMOR_REFUSALS;
-      const line = id !== 0 ? table[id]?.[String(eq.char + 1)] : null;
+      const line = id !== 0 ? table[id]?.[String(charFlag + 1)] : null;
       eq.comment = line && line.trim() ? line : null;
     }
-    if (id !== 0 && !canEquip(kind, id, eq.char)) { out.error = true; return out; }
+    if (id !== 0 && !canEquip(kind, id, charFlag)) { out.error = true; return out; }
     if (eq.row === 0) title.gear[eq.char].weapon = id;
     else {
       const armor = title.gear[eq.char].armor;
@@ -567,9 +970,15 @@ function stepSettings(title, pressed) {
   return out;
 }
 
-/** The stat line the equip page previews — base plus slots, like battleat. */
+/**
+ * The stat line the equip page previews — base plus slots, like battleat.
+ * `char` is the TAB index; the stat block comes from the roster so a driver's
+ * own party previews against its own numbers (Noelle's 120/5/13/1, not
+ * Susie's).
+ */
 export function previewStats(title, char) {
-  return statsOf(PARTY[char], title.gear[char]);
+  const tabs = partyTabs(title);
+  return statsOf((tabs[char] ?? tabs[0]).base, title.gear[char]);
 }
 
 /**
@@ -591,12 +1000,54 @@ export function stepTitle(title, input, attacks) {
     return down && !was;
   };
 
+  // ---- THE SHATTER OWNS THE WHOLE SCREEN WHILE IT RUNS ---------------------
+  //
+  // It is not a page and not a menu: for the ~90 frames between the twentieth
+  // press and the last fragment leaving the screen, nothing else on the title
+  // reads input. Every key is still LATCHED (the loop below calls `pressed` on
+  // each one) so a key held down through the animation is not delivered as a
+  // fresh press the frame it ends — the same trap `disableslow` solves in
+  // obj_heart's Create, and the reason web/main.js latches across the title ->
+  // fight transition.
+  //
+  // `proceed` goes out on the ONE frame it finishes, which is the frame
+  // `stepUnusedShatter` closes the settings screen. Before this block existed
+  // there was nowhere for a per-frame animation to live on the title screen at
+  // all, so it is deliberately the first thing in the function.
+  if (title.unused?.shatter) {
+    for (const k of ['up', 'down', 'left', 'right', 'confirm', 'cancel']) pressed(k);
+    const done = stepUnusedShatter(title);
+    // `shatter` STAYS FALSE HERE. It is the cue for the moment the glass is
+    // MADE — one frame, the twentieth press — and the driver plays a sound on
+    // it. Reported again on every frame of the fall it would play that sound
+    // seventy-odd times; the status "is it still going" has no reader, and a
+    // field with no reader is this repo's signature defect. `unusedRowStyle`
+    // carries `shattering` for anyone who wants the status.
+    return {
+      moved: false, chosen: false, selected: false, error: false,
+      link: null, share: false, proceed: done, press: 0, shatter: false,
+    };
+  }
+
   // The settings pages own the input while open.
   if (title.settings) {
     const r = stepSettings(title, pressed);
+    // THE WHITELIST THAT COST A DEBUG CYCLE THE LAST TIME A NEW INTENT WAS
+    // ADDED. This rebuilds the settings result field by field, so an intent
+    // set correctly inside `stepSettings` is DROPPED here unless it is named
+    // — the row reports `selected`, the driver sees nothing to act on, and
+    // the button looks dead while every test of `stepSettings` itself passes.
+    // `press` and `shatter` are named for that reason, and verify-titlemenu
+    // asserts them through `stepTitle`, never through `stepSettings` directly.
+    // (`proceed` is named too, even though the shatter block above is the only
+    // thing that can raise it today: a whitelist that carries a field only
+    // while one particular producer happens to exist is the same trap one
+    // level down.)
     return {
       moved: r.moved, chosen: false, selected: r.selected, error: r.error,
       link: r.link ?? null, share: r.share ?? false,
+      proceed: r.proceed ?? false, press: r.press ?? 0,
+      shatter: r.shatter ?? false,
     };
   }
 
