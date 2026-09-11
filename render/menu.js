@@ -481,7 +481,32 @@ export function drawMenu(ctx, state, sprites) {
     drawItemList(ctx, state, sprites, font, menu.siner);
   } else if (menu.open && menu.submenu === 'target') {
     drawTargetPicker(ctx, state, sprites, font);
-  } else if (menu.open && (menu.submenu === 'enemy' || menu.submenu === 'actpick')) {
+  } else if (
+    menu.open &&
+    (menu.submenu === 'enemy' || menu.submenu === 'actpick' || menu.submenu === 'spellenemy')
+  ) {
+    // `spellenemy` IS THE SAME ROW, and it had no branch at all. The enemy
+    // row's draw block is one test over five bmenunos —
+    //
+    //     if (global.bmenuno == 1 || global.bmenuno == 3 || global.bmenuno == 11
+    //         || global.bmenuno == 12 || global.bmenuno == 13)
+    //         draw_sprite(spr_heart, ...); ...name...; ...HP bar...
+    //     (obj_battlecontroller's Draw_0:673)
+    //
+    // — and 3 is the spelltarget-2 picker a MAGIC confirm opens. The sim grew
+    // that stage (sim/menu.js, "THE SPELL'S ENEMY ROW"); this dispatch did
+    // not, so it fell through to the else and drew the BATTLE MESSAGE over an
+    // empty band. The button row is hidden the moment `menu.submenu` is
+    // truthy, so picking Rude Buster took the grid away and put nothing in
+    // its place: the press looked lost, and the natural response is to press
+    // confirm again. REPORTED FROM PLAY as "Susie has to press Enter an extra
+    // time when selecting Rude Buster" — the press was never dropped, only
+    // the picker it opened was invisible.
+    //
+    // The warning below existed to catch exactly this and could not: nothing
+    // in `render/` is exercised by a suite, so the console line was written
+    // to a browser console nobody was reading. check-spellenemy-row.mjs (the
+    // kaizo lane) now asserts the dispatch from the outside.
     drawEnemyRow(ctx, state, sprites, font);
   } else if (menu.open) {
     // AN UNHANDLED SUBMENU IS A BUG, AND A SILENT ONE. Nothing in `sim/` cares
