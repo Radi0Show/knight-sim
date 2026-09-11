@@ -28,9 +28,10 @@
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
   ITEM_PICKER, GEAR_PAGES, pocketOf, wornBy,
-  armUnused, unusedRowStyle, UNUSED_CRACK_STAGES, partyTabs, previewStats,
+  armUnused, unusedRowStyle, UNUSED_PRESSES, UNUSED_SHATTER, partyTabs, previewStats,
 } from '../sim/modes.js';
 import { canEquip } from '../sim/equipment.js';
+import { mergeColor } from '../sim/gml.js';
 import {
   ITEMS, ITEM_IDS, DEFAULT_BAG, INVENTORY_SIZE, freshInventory,
 } from '../sim/items.js';
@@ -543,82 +544,210 @@ function atUnusedRow() {
   check(!r.selected, 'UNARMED: it does not select');
   check(t.settings.page === null, 'UNARMED: it opens no page');
   check(r.proceed === false, 'UNARMED: no proceed intent, ever');
-  check(r.crack === 0, 'UNARMED: nothing cracks');
+  check(r.press === 0, 'UNARMED: no press is counted');
+  check(r.shatter === false, 'UNARMED: nothing shatters');
   check(t.unused === null, 'UNARMED: pressing it creates no state');
   const style = unusedRowStyle(t);
-  check(style.name === 'UNUSED' && style.dim === true && style.crack === 0,
-    'UNARMED: the row still reads a dim UNUSED');
-  // Ten more presses change nothing. The row is a wall.
-  for (let i = 0; i < 10; i++) tap(t, 'confirm');
+  check(style.name === 'UNUSED' && style.dim === true && style.heat === 0,
+    'UNARMED: the row still reads a dim UNUSED at zero heat');
+  check(style.sprite === null, 'UNARMED: and names no shatter sheet');
+  // THE RAMP'S ZERO IS THE OLD LINE. render/title.js draws the row in
+  // `mergeColor(DIM, style.red, style.heat)`, so heat 0 has to BE the dim grey
+  // the vanilla row has always been — otherwise the unarmed build changed
+  // colour, which is exactly what this section exists to forbid.
+  check(mergeColor([128, 128, 138], style.red, style.heat).join() === '128,128,138',
+    'UNARMED: heat 0 mixes to exactly the old DIM, so the vanilla row is unmoved');
+  // Thirty more presses change nothing. The row is a wall.
+  for (let i = 0; i < 30; i++) tap(t, 'confirm');
   check(unusedRowStyle(t).name === 'UNUSED', 'UNARMED: it never becomes anything');
 }
 
-// ---- ARMED: it cracks, it breaks, and THEN it proceeds -------------------
+// ---- ARMED: it reddens, it shatters, and THEN it proceeds ----------------
+//
+// ONE FRAME AT A TIME. `tap()` is two stepTitle calls (press then release), so
+// it cannot count an animation's frames; `idle()` is the single frame with
+// nothing held, which is what the shatter is stepped by.
+function idle(t) {
+  return stepTitle(t, { ...NONE }, ROSTER);
+}
 {
   const t = atUnusedRow();
-  armUnused(t, {});
-  check(unusedRowStyle(t).crack === 0, 'ARMED: a fresh row is uncracked');
-  const stages = [];
-  for (let i = 0; i < UNUSED_CRACK_STAGES; i++) {
+  armUnused(t, { sprite: 'spr_test_shatter', fragments: 6 });
+  check(unusedRowStyle(t).heat === 0, 'ARMED: a fresh row is cold');
+  check(unusedRowStyle(t).sprite === 'spr_test_shatter',
+    'ARMED: the driver\'s sheet is carried out to the renderer');
+
+  // EVERY PRESS SHORT OF THE LAST refuses, counts, and is hotter than the one
+  // before it. The monotonicity is the user's own requirement ("more and more
+  // red the more you press"), so it is asserted press by press rather than
+  // read off the formula.
+  let lastHeat = -1;
+  for (let i = 1; i < UNUSED_PRESSES; i++) {
     const r = tap(t, 'confirm');
-    stages.push(r.crack);
-    check(r.error === true, `press ${i + 1} still refuses (it is cracking, not opening)`);
-    check(r.proceed === false, `press ${i + 1} does not proceed`);
-    check(t.settings.page === null, `press ${i + 1} opens no page`);
-    check(t.dirty === true, `press ${i + 1} asks the driver to persist`);
+    check(r.press === i, `press ${i} reports its own count`);
+    check(r.error === true, `press ${i} still refuses (it is heating, not opening)`);
+    check(r.selected !== true, `press ${i} is not a selection`);
+    check(r.proceed === false, `press ${i} does not proceed`);
+    check(r.shatter === false, `press ${i} does not break it`);
+    check(t.settings.page === null, `press ${i} opens no page`);
+    check(t.dirty === true, `press ${i} asks the driver to persist`);
     t.dirty = false;
+    const h = unusedRowStyle(t).heat;
+    check(h > lastHeat, `press ${i} is strictly redder than press ${i - 1}`);
+    lastHeat = h;
+    check(t.unused.shatter === null, `press ${i} has not started the break`);
   }
-  check(stages.join() === [1, 2, 3, 4, 5].slice(0, UNUSED_CRACK_STAGES).join(),
-    `every press reported its own stage, got [${stages.join()}]`);
-  // BROKEN. The word changes, the dimming stops, and the mod's bracketed
-  // second line appears.
-  const broke = unusedRowStyle(t);
-  check(broke.broken === true, `${UNUSED_CRACK_STAGES} presses break it`);
-  check(broke.name === 'PROCEED', 'and the broken row reads PROCEED');
-  check(broke.sub === '(PROCEED)', '...with the mod\'s own bracketed echo under it');
-  check(broke.dim === false, '...and it is no longer dimmed');
-  check(broke.taken === false, 'breaking it is not taking it');
+  check(Math.abs(lastHeat - (UNUSED_PRESSES - 1) / UNUSED_PRESSES) < 1e-12,
+    `nineteen presses is 19/20 of the way, got ${lastHeat}`);
+  check(unusedRowStyle(t).name === 'UNUSED',
+    'and it is still UNUSED right up to the last press');
 
-  // THE NEXT PRESS IS THE DOOR, and it comes out through stepTitle's
-  // whitelist — which is the exact place the last new intent was dropped.
-  const r = tap(t, 'confirm');
-  check(r.proceed === true, 'PROCEED reaches the DRIVER through stepTitle');
-  check(r.selected === true, '...as a selection, not an error');
-  check(r.error === false, '...and it does not sound the refusal any more');
-  check(t.unused.taken === true, '...and the state records it was taken');
-  check(t.dirty === true, '...and asks the driver to persist that');
+  // ---- THE TWENTIETH PRESS BREAKS IT ------------------------------------
+  //
+  // Read on the PRESS frame, not through `tap`: tap's release frame is already
+  // the first frame of the animation, and `proceed`/`shatter` on it would be
+  // the shatter block's answer rather than the press's.
+  const r20 = stepTitle(t, { ...NONE, confirm: true }, ROSTER);
+  check(r20.press === UNUSED_PRESSES, 'the twentieth press reports twenty');
+  check(r20.shatter === true, '...and reports that it broke the row');
+  check(r20.selected === true, '...as a SELECTION — the one press the row accepts');
+  check(r20.error !== true, '...not the refusal the other nineteen were');
+  check(r20.proceed === false, 'the break is not the door: the glass falls first');
+  check(t.unused.taken === false, '...and the route is not taken yet');
+  check(unusedRowStyle(t).shattering === true, 'the row now reads as shattering');
 
-  // ONE WAY. Pressing it again cannot un-take it.
-  tap(t, 'confirm');
+  // THE FIELD. One fragment per sub-image, all of them AT THE ROW'S OWN SPOT
+  // (dx = dy = 0) — the chapter 4 shape, and the reason it looks smooth.
+  const sh = t.unused.shatter;
+  check(sh !== null, 'a fragment field exists');
+  check(sh.frags.length === 6, 'one fragment per sub-image of the driver\'s sheet');
+  check(sh.frags.every((f, i) => f.i === i), '...each wearing its own sub-image');
+  check(sh.frags.every((f) => f.dx === 0 && f.dy === 0),
+    '...and every one born exactly where the intact row was');
+  check(sh.frags.every((f) => f.direction >= 0 && f.direction < 360),
+    'every fragment already has a direction — random(360), drawn at birth');
+  check(new Set(sh.frags.map((f) => f.direction)).size === 6,
+    '...and they are six different directions, so the stream really advanced');
+  check(sh.frags.every((f) => f.gravity >= 0.4 && f.gravity < 0.52),
+    'every gravity is 0.4 + random(0.12), the ch4 spread');
+
+  // ---- THE HOLD: nineteen frames of absolutely nothing moving ------------
+  //
+  // This is the whole effect. `scr_delay_var(..., 20)` lands all three vars
+  // together, so the picture sits intact and then comes apart; a fragment that
+  // drifted during the hold would make the break visible before it happens.
+  let held = 0;
+  while (t.unused.shatter && t.unused.shatter.t < UNUSED_SHATTER.delay - 1) {
+    const rr = idle(t);
+    held += 1;
+    check(rr.proceed === false, `hold frame ${t.unused.shatter.t}: not finished`);
+    check(t.unused.shatter.frags.every((g) => g.dx === 0 && g.dy === 0),
+      `hold frame ${t.unused.shatter.t}: every fragment still exactly where it started`);
+  }
+  // THE PRESS FRAME IS PART OF THE HOLD. `stepSettings` builds the field at
+  // `t = 0` and the shatter block only starts stepping it the frame after, so
+  // the picture is intact on the press frame and on `delay - 1` frames after
+  // it — twenty frames of intact row, which is `_delay` exactly.
+  check(held === UNUSED_SHATTER.delay - 1,
+    `the hold ran ${UNUSED_SHATTER.delay} frames of intact row, got ${held + 1}`);
+  // FRAME `delay` IS THE ONE THAT MOVES. Speed 4 lands, gravity lands, and
+  // every fragment leaves the spot on the same frame.
+  idle(t);
+  check(t.unused.shatter.t === UNUSED_SHATTER.delay, 'the field is at frame 20');
+  check(t.unused.shatter.frags.every((g) => g.dx !== 0 || g.dy !== 0),
+    'frame 20: the delayed vars land together and everything moves at once');
+
+  // ---- INPUT IS SWALLOWED WHILE THE GLASS IS FALLING ---------------------
+  const beforeCursor = t.settings.cursor;
+  const beforePresses = t.unused.presses;
+  const rIn = stepTitle(t, { ...NONE, down: true }, ROSTER);
+  check(rIn.moved === false, 'the shatter swallows input — nothing reports a move');
+  check(t.settings.cursor === beforeCursor, '...the settings cursor is untouched');
+  const rZ = stepTitle(t, { ...NONE, confirm: true }, ROSTER);
+  check(rZ.press === 0 && t.unused.presses === beforePresses,
+    '...and confirm cannot count another press onto a row that is already glass');
+
+  // ---- IT ENDS, ONCE, AND THE DOOR IS THE LAST FRAME --------------------
+  let doneAt = -1;
+  for (let f = 0; f < 400 && doneAt < 0; f++) {
+    if (idle(t).proceed) doneAt = f;
+  }
+  check(doneAt >= 0, `the shatter finishes (${doneAt} frames after the move)`);
+  check(t.unused.taken === true, 'and the route is taken on that frame');
+  check(t.unused.shatter === null, '...the field is gone');
+  check(t.settings === null, '...the SETTINGS SCREEN IS CLOSED — back to the title');
+  check(t.dirty === true, '...and the driver is asked to persist it');
+  const after = unusedRowStyle(t);
+  check(after.name === 'PROCEED', 'the row now reads PROCEED');
+  check(after.sub === '(PROCEED)', '...with the mod\'s own bracketed echo under it');
+  check(after.dim === false, '...and it is no longer dimmed');
+  check(after.heat === 1, '...at full heat');
+  check(after.shattering === false, '...and it is not shattering any more');
+
+  // ONE WAY, AND ONE SIGNAL. Proceed fires on exactly one frame.
+  let again = 0;
+  for (let f = 0; f < 30; f++) if (idle(t).proceed) again += 1;
+  check(again === 0, 'proceed fires on exactly ONE frame, never again');
   check(t.unused.taken === true, 'taken never goes back to false');
 }
 
-// ---- THE CRACK SURVIVES A RELOAD ----------------------------------------
+// ---- THE WHOLE BREAK IS BOUNDED, AND IT IS THE CH4 SHAPE ----------------
+//
+// A full-size field (31 sub-images, the mod's own sheet) run to the end. This
+// is the assertion that the animation cannot hang the title screen: every
+// fragment either falls off the bottom or hits the `scr_doom` bound.
 {
-  // Two presses, persisted, re-armed: the row comes back cracked twice, not
-  // fresh. Without this the stages are decoration.
+  const t = atUnusedRow();
+  armUnused(t, { sprite: 'spr_roaringknight_finalshatter' });
+  for (let i = 1; i < UNUSED_PRESSES; i++) tap(t, 'confirm');
+  stepTitle(t, { ...NONE, confirm: true }, ROSTER);
+  check(t.unused.shatter.frags.length === 31,
+    '31 fragments — sprite_get_number(spr_roaringknight_finalshatter)');
+  let frames = 1;
+  while (t.unused.shatter && frames < 500) { idle(t); frames += 1; }
+  check(t.unused.taken === true, `the break ends, after ${frames} frames`);
+  check(frames <= UNUSED_SHATTER.doom,
+    `...within scr_doom's 120 (${frames}), so nothing outlives its bound`);
+  check(frames > UNUSED_SHATTER.delay,
+    '...and after the hold, so the pieces really flew');
+}
+
+// ---- THE RAMP SURVIVES A RELOAD -----------------------------------------
+{
+  // Seven presses, persisted, re-armed: the row comes back seven along, not
+  // fresh. Without this the ramp is decoration and the player does twenty
+  // presses every visit.
   const t = atUnusedRow();
   armUnused(t, {});
-  tap(t, 'confirm');
-  tap(t, 'confirm');
-  const saved = { ...t.unused };
+  for (let i = 0; i < 7; i++) tap(t, 'confirm');
+  const saved = { presses: t.unused.presses, taken: t.unused.taken };
   const t2 = atUnusedRow();
   armUnused(t2, saved);
-  check(unusedRowStyle(t2).crack === 2, 'a reload resumes at the crack it left on');
-  // A taken row comes back broken whatever the saved count says.
+  check(t2.unused.presses === 7, 'a reload resumes at the press it left on');
+  check(unusedRowStyle(t2).heat === 7 / UNUSED_PRESSES, '...at the same heat');
+  // A taken row comes back PROCEED whatever the saved count says.
   const t3 = createTitle();
   armUnused(t3, { taken: true, presses: 0 });
-  check(unusedRowStyle(t3).broken === true && unusedRowStyle(t3).name === 'PROCEED',
+  check(unusedRowStyle(t3).taken === true && unusedRowStyle(t3).name === 'PROCEED',
     'a taken row comes back already PROCEED');
-  // A hostile entry cannot produce a half-broken row.
+  check(t3.unused.presses === UNUSED_PRESSES, '...with a full bar behind it');
+  // A hostile entry cannot produce a row that is half-red and already taken.
   const t4 = createTitle();
-  armUnused(t4, { presses: 9999, broken: false });
-  check(t4.unused.presses === UNUSED_CRACK_STAGES && t4.unused.broken === true,
-    'an out-of-range saved count is clamped, and broken is DERIVED from it');
+  armUnused(t4, { presses: 9999 });
+  check(t4.unused.presses === UNUSED_PRESSES && t4.unused.taken === false,
+    'an out-of-range saved count is clamped, and does not take the route');
   const t5 = createTitle();
-  armUnused(t5, { presses: -5, broken: true });
-  check(t5.unused.presses === 0 && t5.unused.broken === false,
-    '...in both directions: a saved `broken` alone cannot break it');
+  armUnused(t5, { presses: -5 });
+  check(t5.unused.presses === 0, '...in both directions');
+  check(t5.unused.shatter === null, 'and no saved value can arm a live shatter');
+  // A CLAMPED-FULL ROW STILL HAS TO BE PRESSED. This is the one that would
+  // otherwise let a corrupt entry walk straight onto the Weird Route.
+  const t6 = atUnusedRow();
+  armUnused(t6, { presses: UNUSED_PRESSES });
+  check(unusedRowStyle(t6).taken === false, 'a full bar is not a taken route');
+  const rFull = stepTitle(t6, { ...NONE, confirm: true }, ROSTER);
+  check(rFull.shatter === true && rFull.proceed === false,
+    '...it takes one more press to break, and the break still is not the door');
 }
 
 // ---- THE EQUIP PAGE READS A ROSTER, and defaults to the vanilla three ----

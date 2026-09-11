@@ -10,12 +10,13 @@
 // obj_bgfountaintest's `image_blend`, and the highlight yellow is GameMaker's
 // `c_yellow`, which is what DELTARUNE's menus use for the selected row.
 
-import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
+import { drawSpriteExt, rgb, c_white, mergeColor } from './draw/gm.js';
+import { sliceShatter, drawShatterFragment } from './shatter.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { VERSION } from '../web/version.js';
 import {
   MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER, GEAR_PAGES,
-  pocketOf, previewStats, wornBy, partyTabs, unusedRowStyle, UNUSED_CRACK_STAGES,
+  pocketOf, previewStats, wornBy, partyTabs, unusedRowStyle,
 } from '../sim/modes.js';
 import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
 import { difficultyBlurb } from '../sim/scenes/single.js';
@@ -208,149 +209,144 @@ export function drawTitle(ctx, title, sprites, attacks, opts = {}) {
 const SLOT_NAMES = ['WEAPON', 'ARMOR 1', 'ARMOR 2'];
 
 // ---------------------------------------------------------------------------
-// THE UNUSED ROW, CRACKING.
+// THE UNUSED ROW, REDDENING — AND THE SHATTER AT THE END OF IT.
 //
-// TAKEN FROM THE MOD: the word PROCEED, its `NAME#(NAME)` two-line shape (the
-// bracketed echo under itself), the RED, and the fact that the row does not
-// let you back out once it is taken.
-//   * the word and the shape: `gml_Object_DEVICE_FAILURE_Step_0.gml:384-385`,
-//     `NAME[0][0] = NAME[1][0] = "PROCEED#(PROCEED)"` on the B-Side game over
-//     — `#` is a line break in `string_hash_to_newline`.
-//   * the second line is drawn in `fnt_main` at a smaller scale because that
-//     is the face the whole screen it comes from uses: DEVICE_FAILURE's typer
-//     is 667, `scr_textsetup(scr_84_get_font("main"), ...)`, charline 33,
-//     hspace 12, vspace 20 — the same reasoning drawGameOver's header gives.
-//   * the red is `c_red`, GameMaker's (255, 0, 0) — the FIRST entry of the
-//     mod's own seven-colour `rgbafterimages` cycle
-//     (`gml_Object_obj_knight_enemy_Draw_0.gml:58-91`, transcribed in
-//     kaizo/attacks/kaizo-colors.js's RGB_AFTERIMAGE_CYCLE). It is the one red
-//     this mod uses at all: its palette is otherwise blue.
+// WHAT IS TAKEN, AND FROM WHERE. All three citations are re-stated in
+// sim/modes.js above `UNUSED_PRESSES`, which is where the numbers live; this
+// file draws what that one counts.
 //
-// OURS, AND LABELLED AS SUCH: the cracking itself. The mod has no button that
-// breaks. The crack geometry is a FIXED TABLE rather than anything random,
-// for the reason CLAUDE.md's Draw-RNG trap gives — a Draw that rolls dice
-// runs at the monitor's rate, not the sim's, and the fracture would boil.
+//   * THE SHATTER'S SHAPE is DELTARUNE chapter 4's own prophecy break,
+//     `gml_Object_obj_intro_ch4_Step_0.gml:164-196`: one marker per sub-image,
+//     every one born at the shattered thing's x/y, holding still for twenty
+//     frames before the delayed vars land. The hold is why it looks smooth,
+//     and it is the whole reason the effect is copied rather than invented.
+//   * THE RED is `merge_color(c_white, c_red, 0.6)` — EnderCat8's own
+//     final-hit shatter blend, `gml_GlobalScript_scr_lerpvar.gml:57-67`. It
+//     arrives here as `style.red`, off `UNUSED_RED`, so the colour the ramp
+//     climbs toward and the colour the fragments are cut in are ONE
+//     expression rather than two constants that have to be kept in step.
+//   * THE WORD PROCEED and its `NAME#(NAME)` two-line shape are the mod's
+//     B-Side game over, `gml_Object_DEVICE_FAILURE_Step_0.gml:384-385`. The
+//     second line is drawn in `fnt_main` because that is the face the screen
+//     it comes from uses: DEVICE_FAILURE's typer is 667,
+//     `scr_textsetup(scr_84_get_font("main"), c_white, x, y, 33, 0, 2,
+//     snd_nosound, 12, 20, 2)` — the same derivation drawGameOver's header
+//     gives for the screen itself.
 //
-// Each row is one crack: [x0, y0, x1, y1] in row-local pixels, origin at the
-// row's text baseline-left. Stage n draws the first n. The last two reach
-// past the word, which is what makes the break read as the row failing rather
-// than the letters being scratched.
-// IN FRACTIONS OF THE WORD BOX, not in pixels. The row is drawn in
-// `fnt_mainbig` and the two words are different lengths, so a pixel table
-// fitted to "UNUSED" puts its fractures beside "PROCEED" instead of across it
-// — and a pixel table is silently wrong again the day the font changes. Values
-// outside 0..1 are deliberate: the last crack runs clear through and out both
-// sides, which is what makes the final press read as the row failing rather
-// than the letters being scratched.
-const CRACKS = [
-  [0.12, -0.15, 0.26, 0.55],
-  [0.42, 0.90, 0.56, 0.05],
-  [0.04, 0.30, 0.22, 1.10],
-  [0.62, -0.12, 0.88, 0.62],
-  [-0.10, 0.72, 1.10, 0.18],
-];
-// ONE CRACK PER PRESS, and the table has to say so out loud: a stepper that
-// counts to six against five drawn fractures would show the last press doing
-// nothing, which is exactly how a working mechanism reads as broken.
-if (CRACKS.length !== UNUSED_CRACK_STAGES) {
-  throw new Error(`render/title.js: ${CRACKS.length} crack stages drawn, ${UNUSED_CRACK_STAGES} counted`);
+// OURS, AND LABELLED AS SUCH: the reddening ramp and the `n / 20` counter
+// beside it. Neither the mod nor chapter 4 has a button that heats up as it is
+// pressed, and the counter exists for one reason — the user asked that the
+// count and the colour be visible enough that the player understands something
+// is happening before it happens, and a colour ramp alone is not legible at
+// one twentieth per press.
+//
+// NOTHING HERE IS RANDOM. The fragment positions are the sim's
+// (`title.unused.shatter`, stepped once per SIM frame in sim/modes.js), and a
+// Draw that rolled its own dice would run at the monitor's rate rather than
+// the sim's — CLAUDE.md, "A GML Draw runs at 30Hz; a browser renderer does
+// not".
+
+/**
+ * THE CUT PIECES, BUILT ONCE PER BREAK.
+ *
+ * `sliceShatter` composites the whole word once per fragment, so doing it per
+ * frame would be 31 full-box composites at the monitor's rate. The key carries
+ * everything the slices depend on — the sheet, the word, the box, the colour —
+ * so a change in any of them rebuilds and nothing else does.
+ */
+let shatterCache = { key: null, slices: [] };
+
+function unusedShatterSlices(entry, name, font, w, h, red) {
+  const key = `${name}|${w}x${h}|${red.join(',')}|${entry?.frames?.length ?? 0}`;
+  if (shatterCache.key === key) return shatterCache.slices;
+  const slices = sliceShatter(entry, {
+    width: w,
+    height: h,
+    blend: red,
+    // THE PICTURE BEING CUT IS THE ROW ITSELF — which is what makes the first
+    // twenty frames look like nothing has happened yet. The mod cuts a
+    // screenshot off `application_surface` the same way; here the "screenshot"
+    // is one word, painted white into the scratch and multiplied by the red on
+    // the way out (sliceShatter's `blend`).
+    paint: (g) => drawText(g, font, name, 0, 0, { color: rgb(c_white) }),
+  });
+  shatterCache = { key, slices };
+  return slices;
 }
 
 /**
- * The broken row's per-letter displacement — OURS. Stable per index so a
- * letter always lands in the same place; `siner` only breathes it, the way
- * every other cursor on this screen bobs.
+ * THE FRAGMENTS, drawn LAST on the settings page rather than in the row loop.
+ *
+ * They fly across the whole screen, and a row drawn after them would cut
+ * through the glass — which is exactly what happened when this lived inside
+ * the loop: the `Z open   X back` hint at y 448 sat on top of every piece that
+ * reached the bottom of the screen.
  */
-const SHARDS = [
-  [-2, 1], [1, -2], [-1, 2], [2, 1], [-1, -1], [1, 2], [2, -1],
-];
-
-const C_RED = [255, 0, 0];
+function drawUnusedShatter(ctx, font, sprites, style, shatter, x, y) {
+  if (!shatter) return;
+  const entry = style.sprite ? sprites.get(style.sprite) : null;
+  // NO SHEET, NO PICTURE — and that is the honest outcome, not a throw. The
+  // vanilla asset pack has no shatter sheet at all (the row is never armed
+  // there), and a kaizo build whose sprite overlay has not been packed should
+  // lose the animation rather than the twenty presses behind it. The sim keeps
+  // counting either way and the route is still taken.
+  if (!entry) return;
+  const w = textWidth(font, style.name);
+  const h = textHeight(font) || 30;
+  const slices = unusedShatterSlices(entry, style.name, font, w, h, style.red);
+  if (!slices.length) return;
+  for (const f of shatter.frags) {
+    if (!f.alive) continue;
+    drawShatterFragment(ctx, slices[f.i % slices.length], x + f.dx, y + f.dy);
+  }
+}
 
 /**
- * Draw the UNUSED / PROCEED row. Returns nothing; the caller has already
- * placed the heart.
+ * Draw the UNUSED / PROCEED row.
  *
  * `style` is `unusedRowStyle(title)` — the single place that decides what the
  * row says, so this function never re-derives it.
+ *
+ * WHILE THE ROW IS SHATTERING IT DRAWS NOTHING. The fragments ARE the row: they
+ * sit at dx = dy = 0 for the first twenty frames, so a word drawn underneath
+ * them would double it and the break would show a ghost of the intact row
+ * behind the glass.
  */
 function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
-  // NOT ARMED, or not cracked yet: the row exactly as it has always been, one
-  // `drawText` with the same colour rule. This is the branch every vanilla
-  // build takes, forever.
-  if (!style.broken && style.crack === 0) {
-    drawText(ctx, font, style.name, x, y,
-      { color: rgb(on ? HILITE : (style.dim ? DIM : c_white)) });
-    return;
-  }
-
+  if (style.shattering) return;
   const name = style.name;
   const w = textWidth(font, name);
   const h = textHeight(font) || 30;
-  // HOW FAR THROUGH THE BREAK IT IS, 0..1. Everything below scales by it, so
-  // the first press is a hairline and the fifth is a wreck; a step that only
-  // added a line would read as five identical presses.
-  const t = Math.min(style.crack, CRACKS.length) / CRACKS.length;
-  const colour = style.broken ? (on ? HILITE : C_RED) : (on ? HILITE : DIM);
-  // The broken row breathes, the way every cursor on this screen bobs. A
-  // cracked-but-whole one does not — it is a damaged button, not a live one.
-  const breathe = style.broken ? Math.sin(siner / 8) * 0.8 : 0;
 
-  // THE FRACTURES. Each is drawn twice — a BLACK stroke first, then the red
-  // inside it — so it reads as the row splitting open rather than as a pen
-  // mark laid over the letters. Black because the settings overlay is black;
-  // the gap is the screen showing through.
-  const fractures = () => {
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (let i = 0; i < Math.min(style.crack, CRACKS.length); i++) {
-      const [fx0, fy0, fx1, fy1] = CRACKS[i];
-      const x0 = x + fx0 * w;
-      const y0 = y + fy0 * h;
-      const x1 = x + fx1 * w;
-      const y1 = y + fy1 * h;
-      for (const [width, css] of [[4, '#000000'], [2, `rgb(${C_RED[0]},${C_RED[1]},${C_RED[2]})`]]) {
-        ctx.strokeStyle = css;
-        ctx.lineWidth = width;
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  };
-
-  // THE LETTERS, ONE AT A TIME, each carrying its own displacement so the word
-  // comes apart progressively instead of jumping at the last press. `t` is the
-  // scale, so at crack 1 the offsets are a fifth of a pixel and invisible,
-  // which is right: one tap should look like almost nothing happened.
-  const letters = () => {
-    let cx = x;
-    for (let i = 0; i < name.length; i++) {
-      const ch = name[i];
-      const [dx, dy] = SHARDS[i % SHARDS.length];
-      drawText(ctx, font, ch, cx + dx * t + breathe * (i % 2 ? 1 : -1) * 0.4, y + dy * t,
-        { color: rgb(colour) });
-      cx += textWidth(font, ch);
-    }
-  };
-
-  // ORDER IS THE WHOLE READING, and getting it wrong made the finished row
-  // illegible rubble the first time this was looked at on screen.
+  // THE RAMP. `heat` is presses / UNUSED_PRESSES, and the colour walks from
+  // the row's own DIM grey to `style.red` across it. Monotone by construction:
+  // `mergeColor` is a straight lerp and `heat` only ever rises, so "more and
+  // more red the more you press" is a property of the arithmetic rather than a
+  // table somebody has to keep sorted.
   //
-  //   CRACKING: the fractures go ON TOP. They are cutting INTO a word that is
-  //   still whole, and a crack drawn behind the letters is not a crack, it is
-  //   a decoration beside one.
-  //
-  //   BROKEN: the fractures go BEHIND. The word has already come apart — the
-  //   displaced letters say so by themselves — and the player now has to READ
-  //   it, because it is the thing they are about to choose. Black strokes over
-  //   24px glyphs at this size take the word out entirely.
-  if (style.broken) { fractures(); letters(); } else { letters(); fractures(); }
+  // THE HIGHLIGHT STILL WINS while the cursor is on the row — every other row
+  // on this screen turns yellow under the heart and this one must not be the
+  // exception — so the heat shows on the row the player is not pointing at,
+  // and while they are pointing at it, in the counter beside it.
+  const base = style.taken ? style.red : mergeColor(DIM, style.red, style.heat);
+  const colour = on ? HILITE : base;
+  // The TAKEN row breathes, the way every cursor on this screen bobs; a row
+  // still climbing the ramp does not, because it is a button being refused
+  // rather than one that has become something.
+  const breathe = style.taken ? Math.sin(siner / 8) * 0.8 : 0;
+  drawText(ctx, font, name, x + breathe, y, { color: rgb(colour) });
+
+  // THE COUNTER — ours. `n / 20` in the ramp's own colour, right of the word,
+  // from the first press on. Before the first press there is nothing to say
+  // and the row reads exactly as the reserved one it has always been, which is
+  // the whole point of the unarmed build being unchanged.
+  if (!style.taken && style.presses > 0 && small?.ready) {
+    drawText(ctx, small, `${style.presses} / ${style.total}`, x + w + 14, y + 6,
+      { color: rgb(base), xscale: 0.9, yscale: 0.9 });
+  }
 
   // The bracketed echo, the mod's own second line — `PROCEED#(PROCEED)` with
-  // `#` as the newline. Only the broken row has one. Clear of the glyphs and
+  // `#` as the newline. Only the TAKEN row has one. Clear of the glyphs and
   // still inside the row's 40px pitch.
   if (style.sub && small?.ready) {
     drawText(ctx, small, style.sub, x + 6, y + h + 2,
@@ -364,19 +360,26 @@ function drawSettings(ctx, title, sprites, font) {
   const bob = Math.sin(title.siner / 6) * 1.5;
 
   if (s.page === null) {
+    const unusedStyle = unusedRowStyle(title);
+    const unusedRow = SETTINGS_PAGES.findIndex((p) => p.id === 'unused');
     centred(ctx, font, 'SETTINGS', 60, c_white, 1.4);
     for (let i = 0; i < SETTINGS_PAGES.length; i++) {
       const y = 170 + i * 40;
       const on = i === s.cursor;
       const unused = SETTINGS_PAGES[i].id === 'unused';
-      if (on && heart) drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+      // THE HEART LEAVES WITH THE ROW. There is nothing to point at once the
+      // word is glass, and a cursor bobbing beside a hole reads as the menu
+      // still waiting for an answer it can no longer be given.
+      if (on && heart && !unusedStyle.shattering) {
+        drawSpriteExt(ctx, heart, 0, 160 + bob, y + 4, 1, 1, 0, null, 1);
+      }
       if (unused) {
         // ONE CALL SITE, and on an unarmed build it draws the dim UNUSED it
-        // always drew — `unusedRowStyle` returns { dim, crack: 0 } when
-        // `title.unused` is null, and the first branch of drawUnusedRow is
-        // then character-for-character the line this replaced.
+        // always drew — `unusedRowStyle` returns `{ dim: true, heat: 0 }` when
+        // `title.unused` is null, `mergeColor(DIM, red, 0)` IS `DIM`, and the
+        // line is then character-for-character the one this replaced.
         drawUnusedRow(ctx, font, loadFont('../assets/fonts', 'fnt_main'),
-          unusedRowStyle(title), 190, y, on, title.siner);
+          unusedStyle, 190, y, on, title.siner);
       } else {
         drawText(ctx, font, SETTINGS_PAGES[i].name, 190, y,
           { color: rgb(on ? HILITE : c_white) });
@@ -394,6 +397,10 @@ function drawSettings(ctx, title, sprites, font) {
       }
     }
     centred(ctx, font, 'Z  open      X  back', 448, DIM, 0.75);
+    // LAST, OVER EVERYTHING — see drawUnusedShatter's header. Nothing on this
+    // page may be drawn after the glass.
+    drawUnusedShatter(ctx, font, sprites, unusedStyle, title.unused?.shatter,
+      190, 170 + unusedRow * 40);
     return;
   }
 
