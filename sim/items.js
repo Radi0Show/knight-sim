@@ -106,6 +106,62 @@ export const ITEMS = {
 /** Every id the ITEMS page can put in a slot, in the dump's own order. */
 export const ITEM_IDS = Object.keys(ITEMS).map(Number).sort((a, b) => a - b);
 
+/**
+ * ── THE ITEM-TABLE SEAM ───────────────────────────────────────────────────
+ *
+ * `ITEMS` above is DELTARUNE's own `scr_itemuse` / `scr_iteminfo`, at the
+ * chapter-3 values, and it stays that. A MOD that rewrites one of those two
+ * scripts publishes its deltas as `state.kaizo.items` — an id -> record map
+ * of exactly the same shape, consulted here FIRST and falling through to the
+ * literal for every id it does not mention.
+ *
+ * It is the same contract as the roster seam in `sim/damage.js`: ONE optional
+ * state field, published by the scene that fields it, and **nothing in `sim/`
+ * ever writes it**, so with none installed every read below returns the
+ * literal and the vanilla fight is bit-identical.
+ *
+ * WHY A SEAM AND NOT AN EDIT. The alternative was to write the mod's numbers
+ * into `ITEMS`, which would have changed the VANILLA tool's LightCandy and
+ * Favwich — this module is shared. And the alternative to *that* was a kaizo
+ * copy of the whole table, which is how the per-character amounts once landed
+ * in one copy and not the other (see `itemEffect`'s header).
+ *
+ * `itemInfo` is THE reader. Everything in this file that used to write
+ * `ITEMS[id]` goes through it; a consumer outside this file (the menu's rows,
+ * the ITEMS page) that still indexes `ITEMS` directly is reading the vanilla
+ * name for a modded item and should be moved onto this function.
+ */
+export function itemInfo(state, id) {
+  const over = state?.kaizo?.items;
+  if (over && Object.prototype.hasOwnProperty.call(over, id)) return over[id];
+  return ITEMS[id];
+}
+
+/** The whole table in force, vanilla ids merged with the installed overrides. */
+export function itemTable(state) {
+  const over = state?.kaizo?.items;
+  if (!over) return ITEMS;
+  return { ...ITEMS, ...over };
+}
+
+/**
+ * IS THERE A CHARACTER IN THIS SLOT? — `global.char[i] != 0`.
+ *
+ * The game keeps THREE battle slots however many characters are in the party
+ * and leaves the spare EMPTY (`global.char = [1, 4, 0]` for a two-person
+ * roster), so every loop over the party in the dump carries an occupancy test
+ * and `scr_fixparty` guarantees the occupied ones are packed toward slot 0
+ * with no holes. `partySize` is that count — the roster's length when a scene
+ * installs one, three otherwise — so this answers the GML's question exactly
+ * for every party `scr_fixparty` can produce.
+ *
+ * WITH NO ROSTER INSTALLED IT IS TRUE FOR 0, 1 AND 2, which is why none of
+ * the guards below can move the vanilla fight.
+ */
+function slotHasCharacter(state, slot) {
+  return slot >= 0 && slot < partySize(state);
+}
+
 /** What this item heals `target` for — `perChar` is indexed by party slot. */
 export const healAmountFor = (item, target) => (
   item.perChar ? (item.perChar[target] ?? 0) : (item.amount ?? 0)
@@ -164,6 +220,31 @@ export function freshInventory(custom = null) {
  */
 export function applyHeal(state, target, amount, healRibbons = 0) {
   const hp = state.partyHp;
+  // ── AN EMPTY SLOT IS NOT A CHARACTER, AND A HEAL CANNOT REACH ONE ───────
+  //
+  // `scr_heal(arg0, arg1)` opens `hltarget = global.char[arg0]`, and for the
+  // spare slot of a short party that is **0** — so every read and write in
+  // the body is `global.hp[0]` / `global.maxhp[0]`, a cell no HP bar, no
+  // damage path and no death test in this fight ever looks at. Nobody's HP
+  // moves. Modelled as a refusal, which is the same observable outcome and
+  // the one a reader of this file can act on.
+  //
+  // WHAT IS DELIBERATELY NOT REPRODUCED, so a later pass cannot "restore" it:
+  // `global.maxhp[0]` is 0, so the write is clamped straight back to 0 and
+  // scr_heal's `belowzero == 1 && global.hp >= 0` tail is satisfied — the GML
+  // then calls `scr_revive(arg0)` ON THE EMPTY SLOT, standing up a character
+  // who is not in the fight (`charmove`/`charcantarget`/`chardead`), and
+  // `scr_randomtarget` reads `global.charcantarget[i]` with no occupancy test
+  // of its own. That is a real original bug and it is UNREACHABLE in the mod:
+  // every caller guards first — `scr_healall` with `global.char[i] != 0`,
+  // scr_spell's revive-all cases 230/231 with `global.char[__j] > 0`, and the
+  // single-target path through the ally picker, which the game's own list
+  // does not offer an empty slot. Reproducing an unreachable branch would
+  // make the sim LESS faithful, because this engine's picker can reach here.
+  //
+  // WITH NO ROSTER INSTALLED EVERY SLOT IS OCCUPIED, so this line cannot move
+  // the vanilla fight or either A-Side recording.
+  if (!slotHasCharacter(state, target)) return 0;
   // THE CAP IS THE TARGET'S OWN MAX HP. Was `PARTY[target].maxhp` — the
   // slot literal — so a heal on any party that is not Kris/Susie/Ralsei
   // filled the bar past the top of it, or stopped short of it.
@@ -201,6 +282,19 @@ export function applyHeal(state, target, amount, healRibbons = 0) {
  * — items heal their printed amount, ribbons or not.
  */
 export function scrHealitem(state, target, amount) {
+  // ── THE KAIZO SEAM, same shape as `scrDamage`'s in sim/damage.js ────────
+  //
+  // A mod can replace the whole script rather than one line of it: the kaizo
+  // fight's single-target item heal is `scr_healitemspell`, which carries a
+  // `k_freeze` gate that WASTES the action (the item and the TP are already
+  // spent) and a `global.spelldelay` write, neither of which is expressible
+  // as an override of anything below. So this defers WHOLE to the hook, as
+  // the four damage entry points do.
+  //
+  // NO HOOK -> byte-identical to what it was. Nothing in sim/ sets
+  // `state.kaizo`, so the vanilla whole-fight diffs cannot see this line.
+  const kHook = state.kaizo?.hooks?.scrHealitem;
+  if (kHook) return kHook(state, target, amount);
   const did = applyHeal(state, target, amount, 0);
   // `healtext.healamt = arg1` — the REQUESTED amount, not what landed. A
   // Spincake on a full party reads +150 in the game too.
@@ -208,13 +302,43 @@ export function scrHealitem(state, target, amount) {
   return did;
 }
 
-/** `scr_healitem_all(amount)` — EVERY member, the fallen included. */
+/**
+ * `scr_healitem_all(amount)` — EVERY member, the fallen included.
+ *
+ *     function scr_healitem_all(arg0) {
+ *         scr_healall(arg0);
+ *         for (i = 0; i < chartotal; i += 1) { ...one healwriter each... }
+ *     }
+ *
+ * TWO LOOPS WITH TWO DIFFERENT BOUNDS, and both of them exclude the spare:
+ *
+ *   * `scr_healall` walks `i < 3` — all three battle slots — and guards each
+ *     one with **`if (global.char[i] != 0) scr_heal(i, arg0)`**. That guard
+ *     is the whole reason a Spincake on a Kris + Noelle party does not touch
+ *     slot 2; without it the empty slot is healed, crosses zero, and
+ *     `scr_heal`'s tail REVIVES a character who is not in the fight (the
+ *     detail is in applyHeal).
+ *   * the writer loop walks `i < chartotal` — the number of characters — so
+ *     the spare gets no floating green number either.
+ *
+ * Both are transcribed literally, bound and all, rather than collapsed into
+ * one roster-length loop: they are two different questions in the dump and
+ * the second one is the one a HUD change would break first.
+ */
 export function scrHealitemAll(state, amount) {
+  // The kaizo seam — see scrHealitem. The mod's heal-all is
+  // `scr_healallitemspell`, whose freeze skip drops BOTH the HP and the
+  // number for a frozen member while everyone else still heals.
+  const kHook = state.kaizo?.hooks?.scrHealitemAll;
+  if (kHook) return kHook(state, amount);
   let total = 0;
-  for (let i = 0; i < 3; i++) total += applyHeal(state, i, amount, 0);
+  for (let i = 0; i < 3; i++) {
+    if (!slotHasCharacter(state, i)) continue;   // `global.char[i] != 0`
+    total += applyHeal(state, i, amount, 0);
+  }
   // A separate loop, as in the dump: scr_healall runs first, THEN one writer
   // per character. Interleaving is invisible here but is not what it does.
-  for (let i = 0; i < 3; i++) spawnHealWriter(state, i, amount);
+  for (let i = 0; i < partySize(state); i++) spawnHealWriter(state, i, amount);
   return total;
 }
 
@@ -273,7 +397,7 @@ export function reviveAmount(state, target, which) {
 export function takeItem(state, slot, bag = null) {
   const list = bag ?? state.inventory;
   const id = list[slot];
-  if (!ITEMS[id]) return null;
+  if (!itemInfo(state, id)) return null;
   // `scr_itemshift_temp` COMPACTS the list — everything moves down one and
   // slot 12 is zeroed, so there is never a hole.
   list.splice(slot, 1);
@@ -302,8 +426,24 @@ function itemEffect(state, item, target) {
   if (item.kind === 'revive') {
     const which = item.name === 'ReviveMint' ? 'mint' : 'dust';
     if (item.target === 'all') {
+      // THE SECOND GUARD, and it is a different script from scr_healall's.
+      // The battle revive-all is `scr_spell` cases 230 (ReviveDust) and 231
+      // (ReviveBrite), and each walks the slots itself:
+      //
+      //     for (var __j = 0; __j < 3; __j++) {
+      //         if (global.char[__j] > 0) { ...star = __j; scr_healitemspell(...) }
+      //     }
+      //
+      // `global.char[__j] > 0` is the same occupancy test scr_healall makes
+      // with `!= 0`, written the other way round. Without it a ReviveDust on
+      // a Kris + Noelle party stands the empty slot up — measured, and the
+      // worst of the two because a revive is what the player reaches for at
+      // exactly the moment a phantom ally would be least noticeable.
       let did = 0;
-      for (let i = 0; i < 3; i++) did += applyHeal(state, i, reviveAmount(state, i, which));
+      for (let i = 0; i < 3; i++) {
+        if (!slotHasCharacter(state, i)) continue;
+        did += applyHeal(state, i, reviveAmount(state, i, which));
+      }
       return did;
     }
     return applyHeal(state, target, reviveAmount(state, target, which));
@@ -340,7 +480,7 @@ function itemVerb(item, did) {
 
 /** Apply an item's effect by id, with no bag bookkeeping. See takeItem. */
 export function applyItem(state, id, target = 0) {
-  const item = ITEMS[id];
+  const item = itemInfo(state, id);
   if (!item) return null;
   const did = itemEffect(state, item, target);
   if (did <= 0) return null;
@@ -355,7 +495,7 @@ export function useItem(state, slot, target = 0, bag = null) {
   // cancel, at which point the item is gone for good.
   const list = bag ?? state.inventory;
   const id = list[slot];
-  const item = ITEMS[id];
+  const item = itemInfo(state, id);
   if (!item) return null;
 
   const did = itemEffect(state, item, target);
@@ -370,14 +510,18 @@ export function useItem(state, slot, target = 0, bag = null) {
 
 /** Slots that would actually do something right now, for the menu to grey out. */
 export function usableSlots(state, bag = null) {
-  const anyDown = state.partyHp.some((h) => h <= 0);
+  // ROSTER-BOUNDED, for the same reason `anyHurt` below is: `state.partyHp`
+  // is padded back out to three battle slots and the pad sits at 0, so an
+  // unbounded `some(h <= 0)` reads "somebody is down" on every turn of a
+  // two-person party and a ReviveMint never greys out.
+  const anyDown = state.partyHp.slice(0, partySize(state)).some((h) => h <= 0);
   // Roster-bounded and seam-read: `state.partyHp` is roster-length, and
   // "hurt" means below YOUR max, not below slot i's literal.
   const anyHurt = state.partyHp
     .slice(0, partySize(state))
     .some((h, i) => h > 0 && h < partyMaxhp(state, i));
   return (bag ?? state.inventory).map((id) => {
-    const item = ITEMS[id];
+    const item = itemInfo(state, id);
     if (!item) return false;
     if (item.kind === 'revive') return anyDown;
     // A heal is useful on anyone not at full — INCLUDING the fallen, whose
@@ -385,7 +529,7 @@ export function usableSlots(state, bag = null) {
     if (item.kind === 'heal') return anyHurt || anyDown;
     if (item.kind === 'tension') return state.tension < MAX_TENSION;
     // S.POISON always does something; whether you want it to is your problem.
-    if (item.kind === 'hurt') return state.partyHp.some((h) => h > 1);
+    if (item.kind === 'hurt') return state.partyHp.slice(0, partySize(state)).some((h) => h > 1);
     return false;
   });
 }
