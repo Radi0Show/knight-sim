@@ -99,12 +99,21 @@ export const SETTINGS_PAGES = [
 //
 // WHAT THE ROW BECOMES, once armed: pressing it does not open a page. It goes
 // REDDER — one step per press, `UNUSED_PRESSES` of them, monotonically — and
-// on the last press it SHATTERS WHERE IT SITS. The fragments are born at the
+// it KICKS SIDEWAYS on each of those presses, four frames of `obj_shakeobj`.
+// On the last press it SHATTERS WHERE IT SITS. The fragments are born at the
 // row's own spot and hold there for `UNUSED_SHATTER.delay` frames before they
 // move, so for those frames the row still looks whole; then they fly apart
 // under gravity. When the last one is gone the row is TAKEN, the settings
 // screen closes, and `out.proceed` goes out to the driver — the cue to change
 // what the whole program is. One-way: `taken` never goes back to false.
+//
+// THE COLOUR AND THE KICK ARE THE ONLY FEEDBACK, and that is the corrected
+// spec rather than an omission. A `n / 20` counter used to print beside the
+// row; the user asked for it gone — "do not have the (1/20) etc when pressing
+// proceed, just make the color fade, and make the UNUSED shake" — so it is
+// gone from here, from render/title.js, and from the provenance list below,
+// because a note describing something that no longer exists is worse than no
+// note at all.
 //
 // PROVENANCE, because part of this is taken and part is ours and the repo's
 // fourth law says which is which must be written down (CLAUDE.md, "nothing
@@ -160,10 +169,29 @@ export const SETTINGS_PAGES = [
 //   brackets under itself — and the fact that taking it does not get you out
 //   of anything are all from there.
 //
+//   TAKEN — THE KICK, from the mod's own `scr_minishakeobj`
+//   (`gml_GlobalScript_scr_minishakeobj.gml`, whole file, in the kaizo dump at
+//   ~/knight-research/kaizo-mod/gml_kaizo_dump/CodeEntries):
+//
+//       shakeobj = instance_create(x, y, obj_shakeobj);
+//       shakeobj.target = id;  shakeobj.shakeamt = 4;  shakeobj.shakereduct = 1;
+//       with (shakeobj) { event_user(0); }
+//
+//   A PER-OBJECT shake — `obj_shakeobj` walks ONE instance's `x` about the
+//   position it held when the shake started (`gml_Object_obj_shakeobj_Step_0`:
+//   `shakeamt -= shakereduct; on *= -1; target.x = nowx + (shakeamt * on)`,
+//   destroying itself at `shakeamt <= 0`). That is the right mechanism for one
+//   menu row; `obj_shake`, which this repo already carries in sim/shake.js,
+//   moves the whole camera and would shake the entire settings screen. It is
+//   already translated here for k_hpscene's puff — kaizo/party/scenes.js's
+//   `shakeObjTarget` / `scrMinishakeobj` — and `UNUSED_SHAKE` below is that
+//   same translation in the shape a title screen can hold, NOT a second one.
+//
 //   OURS: THE PRESS COUNT AND THE REDDENING RAMP, and the idea of putting any
 //   of it on a settings row. Neither the mod nor chapter 4 has a button that
 //   must be pressed twenty times, and neither reddens anything as it is
-//   pressed.
+//   pressed. The mod shakes a party member who has just been hit; hanging the
+//   same four frames off a refused menu press is ours.
 //
 // The DRIVER owns persistence. This module only counts, and moves fragments.
 // ---------------------------------------------------------------------------
@@ -172,11 +200,16 @@ export const SETTINGS_PAGES = [
  * HOW MANY PRESSES. TWENTY — the user's own number ("after about TWENTY
  * presses"), taken literally rather than rounded to something tidier, and the
  * ramp is built to make it legible: every press moves the row's colour exactly
- * 1/20th of the way to `UNUSED_RED`, and the row prints `n / 20` beside itself
- * from the first press on. Twenty is long enough that nobody arrives on the
- * Weird Route by mashing Z at a menu, and short enough to finish once a player
- * has decided the row is doing something — which they can see it is, because
- * the count and the colour both say so before anything happens.
+ * 1/20th of the way to `UNUSED_RED`. Twenty is long enough that nobody arrives
+ * on the Weird Route by mashing Z at a menu, and short enough to finish once a
+ * player has decided the row is doing something — which they can see it is,
+ * because the row moves under the press and comes back hotter than it was.
+ *
+ * THE COUNT IS NOT PRINTED. It was, as `n / 20` beside the row, and the user
+ * removed it: "do not have the (1/20) etc when pressing proceed, just make the
+ * color fade". The colour and the kick carry the whole signal now, which is
+ * why `unusedRowStyle` no longer publishes `presses` or `total` — a field kept
+ * alive for a reader that has been deleted is this repo's signature defect.
  */
 export const UNUSED_PRESSES = 20;
 
@@ -228,6 +261,88 @@ export const UNUSED_SHATTER = Object.freeze({
 export const UNUSED_RED = mergeColor(WHITE, RED, 0.6);
 
 /**
+ * `scr_minishakeobj`'s TWO NUMBERS, and they are the whole object's behaviour.
+ *
+ * `shakeamt = 4`, `shakereduct = 1`, and obj_shakeobj's Step is
+ *
+ *     shakeamt -= shakereduct;  on *= -1;  target.x = nowx + (shakeamt * on);
+ *     if (shakeamt <= 0) instance_destroy();
+ *
+ * so the offsets are exactly **-3, +2, -1, 0** and then it is gone: four
+ * frames, alternating, decaying, ending where it started. The Create's
+ * `shakeamt = 10 / shakereduct = 2` defaults and its `global.darkzone` light-
+ * world softening never survive scr_minishakeobj, which overwrites both fields
+ * before `event_user(0)` runs — kaizo/party/scenes.js documents the same thing
+ * at the other call site.
+ *
+ * `shakespeed` and `timer` are carried by the GML object and read by NOTHING
+ * in it (obj_shakeobj_ext and obj_shakeobj_susiezilla are the ones with a
+ * timer). They are not carried here: a field with no reader is the defect this
+ * repo keeps finding, and the other translation already records that they do
+ * nothing so nobody has to re-read three files to find out.
+ *
+ * X ONLY. The original writes `target.x` and never `target.y` — `nowy` is
+ * latched by Other_10 and then never used — so the row kicks sideways, which
+ * is also the only axis a 40px menu pitch has room for.
+ */
+export const UNUSED_SHAKE = Object.freeze({ amt: 4, reduct: 1 });
+
+/**
+ * `scr_minishakeobj()` + its `event_user(0)`, for a screen with no entity list.
+ *
+ * There is no `spawn()` on the title — it is a menu, not a room — so the
+ * shakeobj is a RECORD on the row rather than an instance, with the same three
+ * fields the instance carries and the same Step below. kaizo/party/scenes.js's
+ * `scrMinishakeobj` is the instance version and stays the reference; this is
+ * the same four frames in the only shape this screen can hold. Two shapes, one
+ * behaviour — asserted against that translation's own offsets in
+ * verify-titlemenu, so the pair cannot drift.
+ *
+ * `nowx` is not stored: the row's home x is the renderer's (190), and what
+ * this publishes is the OFFSET from it. `target.x = nowx + (shakeamt * on)` is
+ * therefore `home + off`, which is the same arithmetic with the anchor left
+ * where it already lives.
+ *
+ * A SECOND CALL WHILE ONE IS RUNNING re-arms this one. In the original it
+ * spawns a second obj_shakeobj — there is no `instance_number` guard, which is
+ * the thing obj_shake HAS and this object does not — and both write
+ * `target.x` from the same `nowx`, so the newest amplitude is what the frame
+ * ends on. Re-arming the single record IS that outcome, and mashing the row is
+ * exactly the case that reaches it.
+ */
+function minishakeUnused(u) {
+  u.shake = { shakeamt: UNUSED_SHAKE.amt, shakereduct: UNUSED_SHAKE.reduct, on: 1, off: 0 };
+  return u.shake;
+}
+
+/**
+ * One Step of obj_shakeobj, verbatim, returning the offset the row is drawn at.
+ *
+ * THE PRESS FRAME'S OFFSET IS ZERO, and that is the translation being right
+ * rather than a frame lost. `event_user(0)` only latches (`active = 1; nowx =
+ * target.x`); the first `target.x` write is in the shakeobj's own Step, and an
+ * instance created during the step phase does not step until the next frame in
+ * this engine (sim/entity.js freezes the list at the start of each phase —
+ * CLAUDE.md's "a delayed tween lands one frame earlier than it looks" is the
+ * same clock). So a press reads 0, then -3, +2, -1, 0.
+ */
+function stepUnusedShake(title) {
+  const sh = title?.unused?.shake;
+  if (!sh) return 0;
+  sh.shakeamt -= sh.shakereduct;
+  sh.on *= -1;
+  sh.off = sh.shakeamt * sh.on;
+  // `instance_destroy()` AFTER the write, which is the order the GML has: the
+  // last frame is drawn at `nowx + 0`, so the row is put back exactly where it
+  // stood and the kick leaves no residue.
+  if (sh.shakeamt <= 0) {
+    title.unused.shake = null;
+    return 0;
+  }
+  return sh.off;
+}
+
+/**
  * Arm the row. The driver calls this with whatever it has persisted; the saved
  * shape is deliberately a number and a boolean so a JSON round trip through
  * localStorage is lossless.
@@ -263,6 +378,12 @@ export function armUnused(title, saved = {}) {
     seed: saved.seed === undefined ? 0x50524f43 : (saved.seed >>> 0),
     /** null until the last press; the live fragment field while it runs. */
     shatter: null,
+    /**
+     * null between kicks; the live obj_shakeobj record for the four frames
+     * after a refused press. NOT persisted — `armUnused` never reads it back,
+     * because a shake restored from storage would kick a row nobody pressed.
+     */
+    shake: null,
   };
   return title.unused;
 }
@@ -356,15 +477,23 @@ function stepUnusedShatter(title) {
  * renderer cannot drift. render/title.js calls exactly this.
  *
  * @returns {{name: string, sub: string|null, dim: boolean, heat: number,
- *            presses: number, total: number, red: number[], sprite: string|null,
+ *            shake: number, red: number[], sprite: string|null,
  *            shattering: boolean, taken: boolean}}
  *   `heat` is 0..1 — how far along the ramp, and the only thing the renderer
  *   needs in order to mix its own colour toward `red`. It is monotone in the
  *   press count by construction (it is a division), which is the property the
  *   user asked for: more presses is always more red, never less.
+ *   `shake` is obj_shakeobj's `shakeamt * on` — the HORIZONTAL OFFSET in
+ *   pixels the row is drawn at this frame, 0 when nothing is shaking. The
+ *   renderer adds it to the row's x and does no other arithmetic with it.
  *   `sub` is the parenthesised second line, which only the TAKEN row has.
  *   `sprite` is the driver's shatter sheet, passed straight through — the
  *   renderer looks it up, this module never does.
+ *
+ *   THE PRESS COUNT IS NOT HERE ANY MORE. It was published as `presses` /
+ *   `total` for one reader, the `n / 20` the user has since removed, and it
+ *   went out with it. `title.unused.presses` is still the state; `heat` is
+ *   still everything about it the screen needs.
  */
 export function unusedRowStyle(title) {
   const u = title?.unused;
@@ -372,22 +501,21 @@ export function unusedRowStyle(title) {
   // convention for "this does nothing", which there it still does not.
   if (!u) {
     return {
-      name: 'UNUSED', sub: null, dim: true, heat: 0, presses: 0,
-      total: UNUSED_PRESSES, red: UNUSED_RED, sprite: null,
-      shattering: false, taken: false,
+      name: 'UNUSED', sub: null, dim: true, heat: 0, shake: 0,
+      red: UNUSED_RED, sprite: null, shattering: false, taken: false,
     };
   }
   if (u.taken) {
     return {
-      name: 'PROCEED', sub: '(PROCEED)', dim: false, heat: 1,
-      presses: UNUSED_PRESSES, total: UNUSED_PRESSES, red: UNUSED_RED,
-      sprite: u.sprite, shattering: false, taken: true,
+      name: 'PROCEED', sub: '(PROCEED)', dim: false, heat: 1, shake: 0,
+      red: UNUSED_RED, sprite: u.sprite, shattering: false, taken: true,
     };
   }
   return {
     name: 'UNUSED', sub: null, dim: u.presses === 0,
     heat: Math.min(1, u.presses / UNUSED_PRESSES),
-    presses: u.presses, total: UNUSED_PRESSES, red: UNUSED_RED,
+    shake: u.shake ? u.shake.off : 0,
+    red: UNUSED_RED,
     sprite: u.sprite, shattering: !!u.shatter, taken: false,
   };
 }
@@ -721,10 +849,23 @@ function stepSettings(title, pressed) {
           // THE LAST PRESS IS THE ONE THE ROW ACCEPTS, so it gets the confirm
           // sound rather than the refusal — it is the only press that does.
           u.shatter = createUnusedShatter(u);
+          // AND IT DOES NOT KICK. The row is glass from this frame on and
+          // `drawUnusedRow` returns before drawing it, so a live shake would
+          // be an offset nothing reads — the defect this file keeps catching.
+          // A kick still running from the press before is dropped for the same
+          // reason: mashing can land press 20 inside press 19's four frames.
+          u.shake = null;
           out.shatter = true;
           out.selected = true;
           return out;
         }
+        // EVERY REFUSED PRESS KICKS. `scr_minishakeobj` — the same four frames
+        // the mod spends on a party member who has just been hit, which is the
+        // nearest thing it has to "this press did something and you still
+        // cannot have it". The user asked for the row to shake while being
+        // pressed, so the kick is per press rather than a hum that rises with
+        // the heat: a press is the event, and this is what an event looks like.
+        minishakeUnused(u);
         out.error = true;
         return out;
       }
@@ -993,6 +1134,12 @@ export function previewStats(title, char) {
 export function stepTitle(title, input, attacks) {
   const attackCount = Array.isArray(attacks) ? attacks.length : attacks;
   title.siner += 1;
+  // obj_shakeobj's Step, once a frame, BEFORE anything can press the row —
+  // so the kick a press arms is stepped for the first time on the frame after
+  // it, which is the order the original has (see `stepUnusedShake`). It runs
+  // above the shatter's own early return as well: a kick that outlived its row
+  // must still decay to nothing rather than be frozen at -3 forever.
+  stepUnusedShake(title);
   const pressed = (k) => {
     const down = !!input?.[k];
     const was = !!title.held[k];
