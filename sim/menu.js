@@ -338,6 +338,14 @@ export function createMenu() {
     pending: null,
     /** `global.chartarget[charturn]` while the picker is up. */
     targetIndex: 0,
+    /**
+     * THE SLOT WHOSE BAG COMMITS — `global.charturn` as scr_endturn reads it,
+     * which is the last character who actually acted. nextHero writes it,
+     * endTurnItems reads it; see both. It exists because this engine advances
+     * `charturn` to a 3 sentinel where the original leaves it on the acting
+     * character, so the number the original still has has to be kept.
+     */
+    acted: 0,
     /** Last thing an item did, for the HUD to echo. */
     lastItem: null,
     /** Who chose FIGHT this turn — the attack bar reads this. */
@@ -389,19 +397,109 @@ export function bagOf(state) {
 }
 
 /**
- * `scr_nexthero()` — advance, carrying this character's bag and TP forward.
+ * `scr_charcan(slot)` — CAN THIS SLOT TAKE A COMMAND? The whole gate, verbatim
+ * (`gml_GlobalScript_scr_charcan.gml:1-23`):
  *
- *     tempitem[i][charturn] = tempitem[i][prevturn];
+ *     charcan = 1;
+ *     if (global.hp[global.char[arg0]] <= 0) charcan = 0;
+ *     if (global.acting[arg0] == 1)          charcan = 0;
+ *     if (global.char[arg0] == 0)            charcan = 0;   // <- PRESENCE
+ *     if (global.charmove[arg0] == 0)        charcan = 0;
+ *     if (global.charauto[global.char[arg0]] == 1) charcan = 0;
+ *     return charcan;
  *
- * The next character inherits what the previous one left, which is what makes
- * a two-item turn spend two different items rather than the same one twice.
+ * THE TEST THAT WAS MISSING IS THE PRESENCE ONE. The command phase used to be
+ * gated on `isUp` alone, which reads `chardead` — and an EMPTY slot has no
+ * chardead entry to read. `!undefined` is `true`, so the pad the engine keeps
+ * for a short party reported itself STANDING and was handed its own menu
+ * panel: a phantom third party member, on a two-member roster. It is the same
+ * family of fault as the targeting one in sim/damage.js (an absent slot taking
+ * damage rolls), and it has the same cause: a vanilla-shaped consumer reading
+ * a slot array that a short party does not fill.
+ *
+ * The pad is normally marked dead as well, so `isUp` caught it by accident;
+ * the moment anything stands it back up — a ReviveMint aimed at the empty row,
+ * a keep-alive harness, a heal that clears chardead — the accident stops
+ * working and this test is the only thing left. Presence is checked FIRST here
+ * for that reason: it must not depend on the swoon flags being right.
+ *
+ * `acting` and `charauto` are not modelled. `acting[i] == 1` marks a character
+ * mid-ACT PERFORMANCE, which cannot be true during the command phase this runs
+ * in (scr_prevhero's comment says the same, for the same reason); `charauto`
+ * is the auto-battler, which this fight never sets.
+ *
+ * The HP test is `global.hp[global.char[arg0]] <= 0`, i.e. keyed by CHARACTER
+ * through `global.char` — the same slot-to-character bridge `charIdForSlot`
+ * spells out. `state.partyHp` is slot-keyed in this engine (sim/damage.js), so
+ * the slot read here IS that character's HP; the two indexings coincide by
+ * construction rather than by luck.
+ */
+export function scrCharcan(state, slot) {
+  // `global.char[arg0] == 0` — presence, and it is deliberately first.
+  if (!slotOccupied(state, slot)) return false;
+  // `global.hp[global.char[arg0]] <= 0`
+  if ((state.partyHp?.[slot] ?? 0) <= 0) return false;
+  // `global.charmove[arg0] == 0`. `chardead` is set alongside `charmove` by
+  // scr_dead/scr_revive, so `isUp` is the same flag read from the other side;
+  // it is used here because every other site in this file already does.
+  if (!isUp(state, slot)) return false;
+  return true;
+}
+
+/**
+ * `scr_nexthero()` — advance to the next character who can act, carrying this
+ * character's bag and TP forward.
+ *
+ *     if (global.charturn == 0) { if (charmove[1] && scr_charcan(1)) charturn = 1;
+ *                                 else if (charmove[2] && scr_charcan(2)) charturn = 2;
+ *                                 else scr_endturn(); }
+ *     if (global.charturn == 1 && !moveswapped) { if (scr_charcan(2) && acting[1] == 0) charturn = 2;
+ *                                                 else scr_endturn(); }
+ *     ...
+ *     if (global.charturn > 0) { global.temptension[charturn] = global.tension;
+ *                                for (i = 0; i < 12; i++)
+ *                                    tempitem[i][charturn] = tempitem[i][prevturn]; }
+ *         — gml_GlobalScript_scr_nexthero.gml:1-56
+ *
+ * THE SEARCH AND THE CARRY ARE ONE SCRIPT, and splitting them is what lost an
+ * item. This used to be a bare `charturn += 1`, carrying the bag to whatever
+ * slot that landed on, with a separate `skipFallen` walking charturn onward
+ * over the downed slots WITHOUT carrying anything. So Kris using a Spincake
+ * with Susie and Ralsei down carried his spent bag to slot 1, skipFallen moved
+ * on to 2 and then off the end, and `endTurnItems` committed slot 2's snapshot
+ * — untouched since the turn opened. The item came back. Driven with a
+ * Spincake and the id counted across a full turn: Kris-with-an-ally-standing
+ * spends it, Kris-as-the-last-one-standing does not.
+ *
+ * The original cannot have that bug because it never advances past the last
+ * character who can act: on the no-next-hero branch `charturn` stays where it
+ * is, and `scr_endturn` reads `tempitem[i][global.charturn]` — the acting
+ * character's own bag. This engine keeps `charturn == 3` as its "nobody left"
+ * sentinel (skipFallen and every confirm site read it), so the slot the bag
+ * must come from is recorded as `menu.acted` and `endTurnItems` reads THAT.
  */
 function nextHero(menu, state) {
   const prev = menu.charturn;
-  menu.charturn += 1;
-  if (menu.charturn > 2) return;
-  menu.tempitem[menu.charturn] = [...menu.tempitem[prev]];
-  menu.temptension[menu.charturn] = state.tension;
+  // The original's search, unrolled exactly as its three `if`s are written.
+  let to = 3;
+  if (prev === 0) {
+    if (scrCharcan(state, 1)) to = 1;
+    else if (scrCharcan(state, 2)) to = 2;
+  } else if (prev === 1) {
+    if (scrCharcan(state, 2)) to = 2;
+  }
+  menu.charturn = to;
+  // `scr_endturn()` — the bag that commits is the one the LAST character to
+  // act was holding, which on this branch is the character who just acted.
+  if (to > 2) {
+    menu.acted = prev;
+    return;
+  }
+  // `if (global.charturn > 0)` — the carry, and it happens AFTER the search,
+  // to the slot the search chose and never to a slot that was skipped.
+  menu.tempitem[to] = [...menu.tempitem[prev]];
+  menu.temptension[to] = state.tension;
+  menu.acted = to;
 }
 
 /**
@@ -476,10 +574,20 @@ function prevHero(menu, state) {
 /**
  * `scr_endturn()` — commit. The last character's bag becomes the real one and
  * all three snapshots resync to it.
+ *
+ *     for (i = 0; i < 12; i++) global.item[i] = tempitem[i][global.charturn];
+ *
+ * and `global.charturn` there is THE CHARACTER WHO JUST ACTED, because
+ * scr_nexthero calls scr_endturn on the branch where it did not advance.
+ * `menu.acted` is this engine's name for that number — nextHero writes it, and
+ * this line is its reader. `Math.min(charturn, 2)` stood in for it and was
+ * wrong exactly when the acting character was not the last slot: with slots 1
+ * and 2 down it clamped to 2 and committed a snapshot nobody had touched, so
+ * the item the acting character spent came straight back.
  */
 export function endTurnItems(state) {
   const menu = state.menu;
-  const last = Math.min(menu.charturn, 2);
+  const last = menu.acted ?? Math.min(menu.charturn, 2);
   state.inventory = [...(menu.tempitem[last] ?? state.inventory)];
   for (let i = 0; i < 3; i++) menu.tempitem[i] = [...state.inventory];
   for (let i = 0; i < 3; i++) menu.temptension[i] = state.tension;
@@ -690,25 +798,81 @@ export function stepMenu(state, input) {
   // IT MUST OFFER THE FALLEN. A DeluxeDinner on a SWOONed ally is the whole
   // point of carrying single-target heals — `scr_heal` adds to the negative
   // number — and a picker that skipped downed members would make ReviveMint
-  // unusable. Left/right walk all three regardless of state.
+  // unusable. UP/DOWN walk every OCCUPIED row regardless of swoon state; the
+  // occupancy table `ht` below is what "occupied" means, and left/right are
+  // not keys this list reads at all.
   if (menu.submenu === 'target') {
-    // bmenuno 7's real navigation is UP/DOWN over the three rows (issue #2:
-    // the picker is the game's own ally list, not a horizontal toggle).
-    if (pressed('up') || pressed('left')) {
-      menu.targetIndex = (menu.targetIndex + 2) % 3;
-      moveNoise = true;
-    }
-    if (pressed('down') || pressed('right')) {
-      menu.targetIndex = (menu.targetIndex + 1) % 3;
-      moveNoise = true;
-    }
+    // THE ORIGINAL'S TEXT ORDER, and it is cancel → normalise → down → up →
+    // confirm (obj_battlecontroller Step_0:1204, 1219, 1250, 1290, 1341).
+    // Cancel is first and the movement/confirm block sits behind a RE-TEST of
+    // `bmenuno`, so a cancel that lands on the same frame as anything else
+    // wins outright and nothing after it runs — hence the early return.
     if (pressed('cancel')) {
       // Back to the list the choice came from, NOT to the button row — one
       // step per press.
       menu.submenu = menu.pending?.from ?? 'item';
       menu.pending = null;
-      moveNoise = true;
-    } else if (pressed('confirm')) {
+      cue(state, 'snd_menumove');
+      return false;
+    }
+
+    // `ht[]` — THE PRESENCE TABLE, and the picker is built on it rather than
+    // on arithmetic:
+    //
+    //     for (i = 0; i < 3; i++) { ht[i] = 0; if (global.char[i] > 0) ht[i] = 1; }
+    //       — gml_Object_obj_battlecontroller_Step_0.gml, the bmenuno 7/8 block
+    //
+    // This used to be `(targetIndex ± 1) % 3`, a bare modulo over three with
+    // no occupancy test anywhere — not on the walk and not on the confirm. On
+    // a two-member roster the engine keeps three slots and pads the third, so
+    // the cursor walked onto the pad and the confirm ACCEPTED it: driven with
+    // Noelle casting Heal Prayer, the cursor reached index 2, 80 TP was
+    // charged and the turn was spent on nobody.
+    //
+    // Note what ht is NOT: it is PRESENCE, not aliveness. A downed ally is
+    // still `global.char[i] > 0`, so the picker still offers them — which is
+    // what makes ReviveMint and a single-target heal usable at all.
+    const ht = [0, 1, 2].map((i) => (slotOccupied(state, i) ? 1 : 0));
+
+    // The four clamps, in the original's order and with its exact tests. They
+    // run EVERY frame, before the input is read — which is why the original's
+    // confirm needs no occupancy test of its own: the cursor cannot be sitting
+    // on an empty row by the time button1_p is evaluated. The order is not
+    // tidy and is not ours to tidy: 0-then-1-then-0-again is how a party with
+    // only slot 2 occupied still lands on 2.
+    if (menu.targetIndex === 2 && ht[2] === 0) menu.targetIndex = 0;
+    if (menu.targetIndex === 0 && ht[0] === 0) menu.targetIndex = 1;
+    if (menu.targetIndex === 1 && ht[1] === 0) menu.targetIndex = 0;
+    if (menu.targetIndex === 0 && ht[0] === 0) menu.targetIndex = 2;
+
+    // DOWN then UP, each an explicit two-step search over the table — the
+    // original never computes the next row, it asks for the one after and
+    // falls through to the one after that.
+    //
+    // LEFT AND RIGHT DO NOTHING HERE. They used to be aliased onto up/down;
+    // a scan of the whole bmenuno 7/8 block finds no `left_p` or `right_p` at
+    // all, and the enemy row, the button row and the grids are where the
+    // horizontal keys live.
+    if (pressed('down')) {
+      if (menu.targetIndex === 0) {
+        if (ht[1] === 1) { menu.targetIndex = 1; moveNoise = true; } else if (ht[2] === 1) { menu.targetIndex = 2; moveNoise = true; }
+      } else if (menu.targetIndex === 1) {
+        if (ht[2] === 1) { menu.targetIndex = 2; moveNoise = true; } else if (ht[0] === 1) { menu.targetIndex = 0; moveNoise = true; }
+      } else if (menu.targetIndex === 2) {
+        if (ht[0] === 1) { menu.targetIndex = 0; moveNoise = true; } else if (ht[1] === 1) { menu.targetIndex = 1; moveNoise = true; }
+      }
+    }
+    if (pressed('up')) {
+      if (menu.targetIndex === 0) {
+        if (ht[2] === 1) { menu.targetIndex = 2; moveNoise = true; } else if (ht[1] === 1) { menu.targetIndex = 1; moveNoise = true; }
+      } else if (menu.targetIndex === 1) {
+        if (ht[0] === 1) { menu.targetIndex = 0; moveNoise = true; } else if (ht[2] === 1) { menu.targetIndex = 2; moveNoise = true; }
+      } else if (menu.targetIndex === 2) {
+        if (ht[1] === 1) { menu.targetIndex = 1; moveNoise = true; } else if (ht[0] === 1) { menu.targetIndex = 0; moveNoise = true; }
+      }
+    }
+
+    if (pressed('confirm')) {
       const p = menu.pending;
       const t = menu.targetIndex;
       let did = null;
@@ -732,7 +896,18 @@ export function stepMenu(state, input) {
         // half"), so nothing is lost by not entering the state here.
         menu.pending = null;
         menu.submenu = null;
-        state.charaction[c] = 0;
+        // `state.charaction[c] = 0` USED TO SIT HERE, three lines after
+        // recordItem/recordSpell set it to 4/2 — so a TARGETED item or spell
+        // left the slot reading 0 while an untargeted one left 4. The two
+        // scripts this confirm dispatches to set it and nothing unsets it:
+        //
+        //     scr_itemconsumeb:  global.charaction[global.charturn] = 4;
+        //     scr_spellconsumeb: global.charaction[global.charturn] = 2;
+        //
+        // charaction is what the ENEMY phase reads — the defend reduction, the
+        // bar, and obj_attackpress's collection of who does what — so wiping
+        // it here quietly unmade a choice the player had just paid for. Driven
+        // by reading charaction[c] after a confirm on each of the three paths.
         cue(state, 'snd_select');
         nextHero(menu, state);
         if (!skipFallen(state)) {
@@ -1002,9 +1177,26 @@ export function stepMenu(state, input) {
             menu.pending = menu.submenu === 'magic'
               ? { kind: 'spell', id: row.id, from: 'magic' }
               : { kind: 'item', slot: menu.gridIndex, from: 'item' };
-            // Default to the acting character, as the original does — most
-            // heals are self-heals and it saves a press.
-            menu.targetIndex = c;
+            // THE PICKER OPENS ON SLOT 0, NOT ON THE CASTER. This line used
+            // to be `menu.targetIndex = c` under a comment claiming "as the
+            // original does — most heals are self-heals and it saves a press".
+            // The original does not, and the claim was checked against the
+            // dump before this was changed:
+            //
+            //   * the two sites that open the picker are `if (itemtarget == 1)
+            //     global.bmenuno = 7;` and `if (spelltarget == 1)
+            //     global.bmenuno = 8;` (obj_battlecontroller Step_0:1001,
+            //     656/802). Both are a bare assignment — neither touches
+            //     `global.bmenucoord[7/8][global.charturn]`.
+            //   * the cursor is per-character MEMORY, and the only thing that
+            //     clears it is `scr_battlecursor_memory_reset()`, which zeroes
+            //     all of `global.bmenucoord[0..19][0..19]`
+            //     (scr_battlecursor_memory_reset.gml:3-12) from scr_mnendturn
+            //     (:35) — i.e. before every command phase.
+            //
+            // So it opens at 0, the clamps above move it to the first occupied
+            // row, and Kris is where the cursor sits. `openMenu` performs the
+            // reset for the whole cursor family, this one included.
             menu.submenu = 'target';
             selNoise = true;
           } else {
@@ -1209,7 +1401,12 @@ export function stepMenu(state, input) {
  * Returns false if nobody is left to act.
  */
 function skipFallen(state) {
-  while (state.menu.charturn < 3 && !isUp(state, state.menu.charturn)) {
+  // `scr_charcan`, NOT `isUp`. isUp reads `chardead` and nothing else, so an
+  // EMPTY slot — which has no chardead entry — read as standing and was handed
+  // its own menu panel: the phantom third party member on a two-member roster.
+  // scr_charcan's first test is presence, and it is what makes this loop right
+  // for a short party whether or not anything has stood the pad back up.
+  while (state.menu.charturn < 3 && !scrCharcan(state, state.menu.charturn)) {
     state.menu.charturn += 1;
   }
   if (state.menu.charturn < 3) return true;
@@ -1259,6 +1456,15 @@ export function openMenu(state) {
   // reopened wherever last turn's mashing left it — DEFEND for the recorded
   // token — while the recording confirms FIGHT from a clean cursor.
   state.menu.selected = [0, 0, 0];
+  // ALL of bmenucoord means the ALLY PICKER's row too (`bmenucoord[7]` and
+  // `[8]`). Nothing else in this file sets it any more — the picker's clamps
+  // walk a 0 onto the first occupied row — so this reset is the only reason it
+  // opens on Kris rather than wherever the last target choice left it.
+  state.menu.targetIndex = 0;
+  // The bag-commit slot starts the turn on the first character, exactly as
+  // `global.charturn` does; skipFallen below may move charturn past a downed
+  // opener, and the first nextHero of the turn rewrites this from `prev`.
+  state.menu.acted = 0;
   // SEED THE EDGE MAP FROM THE PREVIOUS FRAME. The game's `button1_p()` is a
   // global frame-over-frame edge — it does not care whether a menu was
   // looking. This map used to freeze on close and reopen carrying the LAST

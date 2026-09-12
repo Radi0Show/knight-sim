@@ -135,7 +135,13 @@ const before = st.menu.tempitem[0].length;
 tap(st, 'confirm');
 if (st.menu.submenu !== 'target') failures.push('a single-target item did not open the picker');
 if (st.menu.tempitem[0].length !== before) failures.push('the item was spent before a target was picked');
-if (st.menu.targetIndex !== 0) failures.push('the picker did not default to the acting character');
+// THE PICKER OPENS ON SLOT 0, and not because slot 0 happens to be acting:
+// `scr_battlecursor_memory_reset` zeroes all of `global.bmenucoord` before
+// every command phase (scr_mnendturn:35), and neither site that opens bmenuno
+// 7/8 writes the cursor. This used to read "did not default to the ACTING
+// CHARACTER" and was satisfied by `menu.targetIndex = c` — a line whose own
+// comment claimed the original did it. It does not.
+if (st.menu.targetIndex !== 0) failures.push('the picker did not open on slot 0');
 tap(st, 'confirm');
 // The item leaves the CHARACTER'S SNAPSHOT now; `state.inventory` is untouched
 // until the turn commits, which is what makes cancel able to give it back.
@@ -165,8 +171,18 @@ st.partyHp = [100, -999, 140];
 st.menu.gridIndex = 2;   // a ReviveMint
 tap(st, 'confirm');
 if (st.menu.submenu !== 'target') failures.push('ReviveMint did not open the picker');
-tap(st, 'right');
+// DOWN, not RIGHT. This read `tap(st, 'right')` while the picker aliased
+// left/right onto up/down; a scan of the whole bmenuno 7/8 block finds no
+// `left_p` or `right_p` in it at all, so the horizontal keys are dead here and
+// the vertical ones are the list's own navigation (Step_0:1250-1340).
+tap(st, 'down');
 if (st.menu.targetIndex !== 1) failures.push('the picker skipped the fallen ally');
+// And the horizontal keys really are inert — asserted positively, because the
+// aliasing was invisible for as long as the only test pressed one of them.
+tap(st, 'right');
+if (st.menu.targetIndex !== 1) failures.push('RIGHT moved the ally cursor');
+tap(st, 'left');
+if (st.menu.targetIndex !== 1) failures.push('LEFT moved the ally cursor');
 tap(st, 'confirm');
 
 // ITEMS DO NOT RESOLVE ON SELECTION — they are queued and fire in the resolve
