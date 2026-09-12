@@ -36,6 +36,7 @@
 
 import { drawSpriteExt, mergeColor, rgb, c_white } from './draw/gm.js';
 import { BOLT_SPEED, ROW_PITCH, BAR_X, BAR_Y } from '../sim/fightbar.js';
+import { HPCOLOR, charIdForSlot } from '../sim/menu.js';
 
 // GameMaker colour constants are BGR-packed, so these are the RGB triples they
 // actually name — c_purple is 0x800080 read back-to-front, which happens to be
@@ -50,12 +51,51 @@ const c_aqua = [0, 255, 255];
 const c_fuchsia = [255, 0, 255];
 const c_lime = [0, 255, 0];
 
-/** `charcolor[]` from Create, in the same BGR-decoded form. */
-const CHARCOLOR = [c_aqua, c_fuchsia, c_lime];
-/** `boltcolor[i] = merge_color(charcolor-ish, c_white, 0.5)`. */
+/**
+ * `charcolor[0..2]` from obj_attackpress's Create — and it really is THREE
+ * long and indexed by SLOT, unlike everything else on this screen:
+ *
+ *     charcolor[0] = 16776960;   // 0xFFFF00 BGR = RGB(0,255,255)   c_aqua
+ *     charcolor[1] = 16711935;   // 0xFF00FF BGR = RGB(255,0,255)   c_fuchsia
+ *     charcolor[2] = 65280;      // 0x00FF00 BGR = RGB(0,255,0)     c_lime
+ *       — gml_Object_obj_attackpress_Create_0.gml:66-68
+ *
+ * and `scr_boltcheck(arg0)` reads `charcolor[arg0]` / `boltcolor[arg0]` with
+ * `arg0` the SLOT it was called with (scr_boltcheck.gml:53, and the three
+ * call sites at obj_attackpress_Draw_0.gml:150/154/158). So a burst ring on
+ * slot 1 is fuchsia whoever is standing there — in the real game, for Noelle
+ * too. ORIGINAL BEHAVIOUR: the array is short and slot-keyed while the ROW is
+ * character-keyed, and the two disagree the moment the party is not [1,2,3].
+ * Do not "fix" it into a fourth entry.
+ *
+ * The three values are HPCOLOR's first three, so they are DERIVED from it
+ * rather than typed a second time — sim/menu.js is the one colour table.
+ */
+const CHARCOLOR = HPCOLOR.slice(0, 3);
+/**
+ * `boltcolor[i] = merge_color(<the same three>, c_white, 0.5)` —
+ * gml_Object_obj_attackpress_Create_0.gml:73-75. Slot-keyed like its source.
+ */
 const BOLTCOLOR = CHARCOLOR.map((c) => mergeColor(c, c_white, 0.5));
-/** Row colour by character id: 1 Kris, 2 Susie, 3 Ralsei, 4 Noelle. */
+/**
+ * The ROW's colour, by CHARACTER id — four inline `if (j == n)` branches in
+ * the Draw rather than an array (obj_attackpress_Draw_0.gml:48-78), and a
+ * different palette from `hpcolor` entirely: blue / purple / green / yellow.
+ * Noelle's is `c_yellow`, the same constant her hpcolor row carries.
+ */
 const ROWCOLOR = [c_blue, c_purple, c_green, c_yellow];
+/**
+ * The `pressbuffer` index each row's flash reads, by character id.
+ *
+ * ORIGINAL BUG, preserved: the j == 4 branch merges with `pressbuffer[2]` —
+ * SUSIE's — where the other three read their own
+ * (obj_attackpress_Draw_0.gml:52, 60, 68, **76**). Noelle's row therefore
+ * flashes off Susie's press. It is invisible in the default ONE-BUTTON mode,
+ * where `scr_boltcheck_onebutton` sets `pressbuffer[0..3] = 5` together
+ * (gml_GlobalScript_scr_boltcheck_onebutton.gml:5-8), and only bites in
+ * three-button mode, which `global.flag[13]` leaves off.
+ */
+const PRESSBUFFER_ROW = [1, 2, 3, 2];
 
 /** `draw_rectangle(x1, y1, x2, y2, true)` — a 1px outline, inclusive corners. */
 function outlineRect(ctx, x1, y1, x2, y2, color) {
@@ -95,11 +135,14 @@ export function drawFightBar(ctx, bar, sprites, originX = BAR_X, originY = BAR_Y
 
     if (bar.havechar[i] !== 1) continue;
 
-    // `j = global.char[i]` — the character ID, which for this fight's fixed
-    // party is slot + 1.
-    const j = i + 1;
+    // `j = global.char[i]` — the character ID. It used to be written `i + 1`,
+    // true of this fight's fixed [1, 2, 3] and of nothing else: on the mod's
+    // Kris+Noelle party, slot 1 is character 4, and `i + 1` painted the row
+    // PURPLE and stamped Susie's plate and target line over Noelle. Through
+    // the seam it is 4, so the row is c_yellow and the frames are 3.
+    const j = charIdForSlot(state, i);
     let color = ROWCOLOR[j - 1] ?? c_navy;
-    const pb = bar.pressbuffer[j] ?? 0;
+    const pb = bar.pressbuffer[PRESSBUFFER_ROW[j - 1] ?? j] ?? 0;
     if (pb > 0) color = mergeColor(color, c_white, pb / 5);
 
     outlineRect(ctx, x + 78, ry, x + 80 + 15 * BOLT_SPEED, ry + 36, color);

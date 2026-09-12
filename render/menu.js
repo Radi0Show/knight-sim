@@ -17,7 +17,9 @@
 import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { writerLines } from '../sim/dialogue.js';
 import { PARTY } from '../sim/damage.js';
-import { BUTTONS, CHAR_COLOR, PARTY_SPRITES, listRows } from '../sim/menu.js';
+import {
+  BUTTONS, listRows, charColorFor, partyArtFor, partyNameFor, slotOccupied,
+} from '../sim/menu.js';
 import { SPELLS, spellCost } from '../sim/spells.js';
 import { MAX_TENSION } from '../sim/tension.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
@@ -257,6 +259,13 @@ function drawTargetPicker(ctx, state, sprites, font) {
   const heart = sprites.get('spr_heart');
   const overlay = statusOverlay(state);
   for (let i = 0; i < 3; i++) {
+    // `if (global.char[i] != 0)` — obj_battlecontroller_Draw_0.gml:1364. The
+    // loop really is three long in the original; it is the GUARD, not the
+    // bound, that makes a two-member party draw two rows. Writing it as
+    // `i < partySize` instead would put the second member's row where the
+    // third's is whenever a middle slot is empty, which scr_fixparty makes
+    // impossible today and which the original would still survive.
+    if (!slotOccupied(state, i)) continue;
     const y = 375 + i * 30;
     // `global.maxhp[global.char[i]]`, and the charbox row above already takes
     // this override — the picker was the one place left reading the vanilla
@@ -264,7 +273,10 @@ function drawTargetPicker(ctx, state, sprites, font) {
     // health reads as two different fractions on two surfaces, and the status
     // band below divides by it.
     const maxhp = state.partyMaxhp?.[i] ?? PARTY[i].maxhp;
-    drawText(ctx, font, PARTY[i].name, 80, y, { color: '#ffffff' });
+    // `global.charname[global.char[i]]` — CHARACTER-indexed, same line. This
+    // read the vanilla trio's slot table, so slot 1 announced SUSIE over
+    // Noelle's HP bar.
+    drawText(ctx, font, partyNameFor(state, i), 80, y, { color: '#ffffff' });
     ctx.fillStyle = '#800000'; // c_maroon
     ctx.fillRect(400, y + 5, 101, 16);
     const hp = state.partyHp?.[i] ?? 0;
@@ -422,7 +434,10 @@ export function drawMenu(ctx, state, sprites) {
   for (let c = 0; c < panels; c++) {
     const chunk = chunks[c] ?? CHUNK[c];
     const mmy = menu.mmy[c];
-    const color = CHAR_COLOR[c];
+    // `charcolor = hpcolor[c]` where `c` is the CHARACTER, not the slot
+    // (scr_charbox.gml:18-37). The panel border, the selection matrix and
+    // the button highlight all take it.
+    const color = charColorFor(state, c);
     const active = menu.open && menu.charturn === c;
 
     // The panel. NOTE the border's bottom edge does NOT take mmy while the
@@ -466,7 +481,7 @@ export function drawMenu(ctx, state, sprites) {
     // The player report was exact: "during selecting attacks the icons and
     // menu stuff disappear".
 
-    const stats = state.partySprites?.[c] ?? PARTY_SPRITES[c];
+    const stats = partyArtFor(state, c);
     const head = sprites.get(stats.head);
     const name = sprites.get(stats.name);
     if (head) drawSpriteExt(ctx, head, 0, chunk + 13, B_OFFSET + mmy, 1, 1, 0, null, 1);

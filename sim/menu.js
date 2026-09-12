@@ -110,15 +110,87 @@ function setFace(state, c, face) {
 }
 
 /**
- * `global.hpcolor[]` from obj_battlecontroller's Create. GameMaker packs
- * colours BGR, so c_aqua is RGB(0,255,255) and c_fuchsia RGB(255,0,255) —
- * these are the per-character HP-bar and panel-highlight colours.
+ * `hpcolor[]` from obj_battlecontroller's Create — THE ONE COLOUR TABLE, and
+ * it is CHARACTER-INDEXED, four entries long, read as `hpcolor[charId - 1]`.
+ *
+ *     hpcolor[0] = c_aqua;      // 1 Kris
+ *     hpcolor[1] = c_fuchsia;   // 2 Susie
+ *     hpcolor[2] = c_lime;      // 3 Ralsei
+ *     hpcolor[3] = c_yellow;    // 4 Noelle
+ *       — gml_Object_obj_battlecontroller_Create_0.gml:244-247
+ *
+ * `scr_charbox` is what proves the indexing is by CHARACTER and not by slot:
+ * its loop is `for (c = 0; c < 4; c++) if (havechar[c] == 1)` and it picks
+ * `charcolor = hpcolor[c]`, with the SLOT arriving separately as `charpos[c]`
+ * (scr_charbox.gml:18-37, and `global.hp[c + 1]` two hundred lines later).
+ * So `c` is `charId - 1`, and a party that is not Kris/Susie/Ralsei reads a
+ * different row than its slots would suggest.
+ *
+ * THIS TABLE USED TO BE THREE LONG AND INDEXED BY SLOT. For the vanilla trio
+ * the two indexings coincide, so nothing showed; for a party of Kris and
+ * Noelle — who `scr_fixparty` packs as slots 0 and 1 — slot 1 read Susie's
+ * c_fuchsia, and the report was exactly that: "it looks like she just has
+ * susies". `charColorFor` below is the only correct way to read it.
+ *
+ * GameMaker packs colours BGR: c_yellow is the constant 0x00FFFF, which is
+ * B=0x00 G=0xFF R=0xFF, i.e. RGB(255, 255, 0). Reading it as RGB would give
+ * cyan — a plausible-looking wrong answer, which is why the decode is spelled
+ * out here for every row rather than trusted to the eye.
  */
-export const CHAR_COLOR = [
-  [0, 255, 255], // Kris   — c_aqua
-  [255, 0, 255], // Susie  — c_fuchsia
-  [0, 255, 0], // Ralsei — c_lime
+export const HPCOLOR = [
+  [0, 255, 255], // 1 Kris   — c_aqua     0xFFFF00 BGR
+  [255, 0, 255], // 2 Susie  — c_fuchsia  0xFF00FF BGR (symmetric)
+  [0, 255, 0], //   3 Ralsei — c_lime     0x00FF00 BGR (symmetric)
+  [255, 255, 0], // 4 Noelle — c_yellow   0x00FFFF BGR
 ];
+
+/**
+ * The vanilla trio's rows, still slot-indexed, still exported under the name
+ * every existing caller used — DERIVED from HPCOLOR so the two can never
+ * disagree. With no party override installed, `slot` and `charId - 1` are the
+ * same number and this is what `charColorFor` returns.
+ */
+export const CHAR_COLOR = HPCOLOR.slice(0, 3);
+
+/**
+ * `global.char[slot]` — SLOT to CHARACTER ID, and the whole bridge between the
+ * engine's two indexings.
+ *
+ * THE SEAM, and why it is shaped like this: `state.partyCharIds` is a plain
+ * optional state field of the same family as `partySprites`, `partyChunks`,
+ * `partyMaxhp` and `partyStatusBar` — absent on every vanilla page, so the
+ * fallback `slot + 1` reproduces this fight's fixed [1, 2, 3] exactly and not
+ * one pixel moves. `state.kaizo?.globalChar` is read as a second source
+ * because that is `global.char` itself, already published by the mod layer's
+ * roster install; reading a plain state field is not a dependency on whoever
+ * wrote it (sim/ and render/ still import nothing from kaizo/).
+ *
+ * An empty slot is 0 in `global.char`; a 0 falls back rather than indexing
+ * `HPCOLOR[-1]`, because the drawing loops are guarded on presence elsewhere
+ * and a colour lookup must never be the thing that throws.
+ */
+export function charIdForSlot(state, slot) {
+  const ids = state?.partyCharIds ?? state?.kaizo?.globalChar;
+  const id = ids?.[slot];
+  return id > 0 ? id : slot + 1;
+}
+
+/**
+ * `if (global.char[i] != 0)` — obj_battlecontroller_Draw_0.gml:1364, the guard
+ * the ally picker wraps every row in. A SHORT PARTY DRAWS FEWER ROWS; it does
+ * not draw an empty one. With no override installed there is no `global.char`
+ * to consult and all three slots are occupied, which is this fight's party.
+ */
+export function slotOccupied(state, slot) {
+  const ids = state?.partyCharIds ?? state?.kaizo?.globalChar;
+  if (!Array.isArray(ids)) return slot < 3;
+  return (ids[slot] ?? 0) > 0;
+}
+
+/** `charcolor = hpcolor[charId - 1]` — scr_charbox.gml:18-37. */
+export function charColorFor(state, slot) {
+  return HPCOLOR[charIdForSlot(state, slot) - 1] ?? HPCOLOR[0];
+}
 
 /**
  * The five buttons, in `scr_charbox`'s draw order and at its x offsets.
@@ -144,15 +216,51 @@ export const BUTTONS = [
 ];
 
 /**
- * The portraits and name plates. The STATS live in sim/damage.js, read out of
+ * The portraits and name plates, CHARACTER-INDEXED like the colour table and
+ * for the same reason: `scr_charbox` draws `spr_head<name>` / `spr_bname<name>`
+ * per character, never per slot. The STATS live in sim/damage.js, read out of
  * `scr_gamestart`'s chapter 3 block — the maxhp values that used to sit here
  * (90/130/90) were invented and are in the game nowhere.
+ *
+ * Row 4 is Noelle. `global.charname[4] = "Noelle"`
+ * (gml_GlobalScript_scr_initialize_charnames.gml:8); the plate sprite pair is
+ * the same naming the other three use.
  */
-export const PARTY_SPRITES = [
-  { head: 'spr_headkris', name: 'spr_bnamekris' },
-  { head: 'spr_headsusie', name: 'spr_bnamesusie' },
-  { head: 'spr_headralsei', name: 'spr_bnameralsei' },
+export const CHARBOX_ART = [
+  { head: 'spr_headkris', name: 'spr_bnamekris', label: 'KRIS' },
+  { head: 'spr_headsusie', name: 'spr_bnamesusie', label: 'SUSIE' },
+  { head: 'spr_headralsei', name: 'spr_bnameralsei', label: 'RALSEI' },
+  { head: 'spr_headnoelle', name: 'spr_bnamenoelle', label: 'NOELLE' },
 ];
+
+/** The vanilla trio, slot-indexed, derived — one table, two views. */
+export const PARTY_SPRITES = CHARBOX_ART.slice(0, 3);
+
+/**
+ * The portrait/name-plate pair for a SLOT, through the same `global.char`
+ * bridge the colour takes. `state.partySprites` still wins when it is set —
+ * it is the explicit override a caller with art of its own installs — and the
+ * character table is the answer when only the roster is known.
+ */
+export function partyArtFor(state, slot) {
+  return state?.partySprites?.[slot]
+    ?? CHARBOX_ART[charIdForSlot(state, slot) - 1]
+    ?? CHARBOX_ART[0];
+}
+
+/**
+ * `global.charname[global.char[i]]` — the ally picker's row label
+ * (obj_battlecontroller_Draw_0.gml:1376). `state.partyNames` is the explicit
+ * override; the character table answers from the roster alone; and with
+ * neither installed this is sim/damage.js's PARTY name for the slot, which is
+ * what it has always drawn.
+ */
+export function partyNameFor(state, slot) {
+  return state?.partyNames?.[slot]
+    ?? CHARBOX_ART[charIdForSlot(state, slot) - 1]?.label
+    ?? PARTY[slot]?.name
+    ?? '';
+}
 
 export function createMenu() {
   return {
