@@ -18,9 +18,11 @@ import { drawSpriteExt, rgb, c_white } from './draw/gm.js';
 import { writerLines } from '../sim/dialogue.js';
 import { PARTY } from '../sim/damage.js';
 import {
-  BUTTONS, listRows, charColorFor, partyArtFor, partyNameFor, slotOccupied,
+  BUTTONS, listRows, charColorFor, charIdForSlot, partyArtFor, partyNameFor,
+  slotOccupied,
 } from '../sim/menu.js';
-import { SPELLS, spellCost } from '../sim/spells.js';
+import { spellCost, spellInfo, actsFor } from '../sim/spells.js';
+import { gmlRound } from '../sim/gml.js';
 import { MAX_TENSION } from '../sim/tension.js';
 import { KNIGHT_MAXHP } from '../sim/knight.js';
 import { drawSpriteText, FONTS } from './text.js';
@@ -120,6 +122,82 @@ function selectionMatrix(ctx, x, y, siner, color) {
  * Names are squeezed with `xscale = min(1, 200 / string_width(s))` — the
  * column is 200 wide and a long name is compressed, never clipped.
  */
+/**
+ * `chartime` — the ACT row's PORTRAIT MARKER, `global.actactor[...][i]`
+ * (obj_battlecontroller Draw_0:1145). An act performed by somebody other than
+ * the character whose turn it is draws their head to the LEFT of the row's
+ * name, and `charoffset` pushes the name clear of it.
+ *
+ * 11 IS THE ONE THIS FIGHT USES, and it is not a portrait of the performer —
+ * it is the row explaining its own grey. Draw_0:1173-1192 and :1257-1296:
+ *
+ *     if (chartime == 11) {
+ *         krsblend = 16777215;
+ *         if (global.hp[2] > 0 && scr_havechar(2)) { krsblend = 8421504; cant = 1; }
+ *         ...[3] and [4] likewise...
+ *         charoffset = 30 * (havechar[1] + havechar[2] + havechar[3]);
+ *     }
+ *     ...
+ *     var _sb = 8421504; if (havechar[1] == 0 || global.hp[2] <= 0) _sb = -1;
+ *     ...[_rb], [_nb] likewise...
+ *     if (havechar[1]) { draw_sprite_ext(spr_headsusie, 0, xx + 28 + xoffset + _xoff,
+ *                                        yy + 380 + yoffset, 1, 1, 0, _sb, 1);
+ *                        draw_sprite_ext(spr_tenna_x, 1, xx + 44 + xoffset + _xoff,
+ *                                        yy + 391 + yoffset, 0.7, 0.7, 6, _sb, 1);
+ *                        draw_sprite_ext(spr_tenna_x, 1, ..., 4, _sb, 1);
+ *                        _xoff += 30; }
+ *     ...havechar[2] -> spr_headralsei, havechar[3] -> spr_headnoelle...
+ *
+ * So every PARTNER in the party gets a head with two crossed-out marks over
+ * it, drawn GREY (8421504) while they are still standing and WHITE (-1) once
+ * they are down. The row is selectable only when every one of them reads
+ * white — which is the same condition as its `cant`, so the strip IS the
+ * explanation of the greyed row. Without it the player is shown a grey option
+ * that refuses the confirm and told nothing at all.
+ *
+ * INDEXING, and why this walks slots rather than `havechar[1..3]`: `havechar`
+ * is obj_darkcontroller's CHARACTER table (1 Susie, 2 Ralsei, 3 Noelle —
+ * Kris is never in it) and `global.hp[]` is character-indexed too. The engine
+ * carries the same two facts as `charIdForSlot(state, slot)` + `slotOccupied`
+ * + the slot-indexed `state.partyHp`, and `scr_fixparty` canonicalises the
+ * party into character order, so walking the slots in order visits exactly
+ * the characters the GML's three `if`s do, in the same order.
+ *
+ * VANILLA SETS NO `actor` ON ANY ROW, so this is never called from the main
+ * page and the ACT grid there is untouched.
+ */
+const BLEND_GRAY = [128, 128, 128]; // c_gray, 8421504; -1 (white) is the identity
+const CHARTIME_XSLASH = 11;
+
+function partnerStrip(state) {
+  const heads = [];
+  let xoff = 0;
+  for (let slot = 0; slot < 3; slot++) {
+    // Kris is `global.char` 1 and has no `havechar` entry — his own head is
+    // never in this strip (the GML greys `krsblend`, which is the FIGHT
+    // portrait, not a row of it).
+    if (charIdForSlot(state, slot) === 1) continue;
+    if (!slotOccupied(state, slot)) continue;
+    const alive = (state.partyHp?.[slot] ?? 0) > 0;
+    heads.push({
+      head: partyArtFor(state, slot).head,
+      hx: 28 + xoff,
+      hy: 380,
+      cx: 44 + xoff,
+      cy: 391,
+      // `_sb` and friends: GREY while they are up, -1 once they are down.
+      // -1 is every bit set — white — and a multiply by white is the
+      // identity, which is what `null` means to drawSpriteExt.
+      blend: alive ? BLEND_GRAY : null,
+    });
+    xoff += 30;
+  }
+  // `30 * (havechar[1] + havechar[2] + havechar[3])` — the PARTY count, not
+  // the standing count: the row's name is pushed clear of every head drawn,
+  // and a head is drawn for a fallen partner too.
+  return { heads, charoffset: 30 * heads.length };
+}
+
 function drawItemList(ctx, state, sprites, font, siner) {
   const menu = state.menu;
   // ONE LIST RENDERER FOR ALL THREE. bag, MAGIC and ACT are the same 2x6 grid
@@ -137,13 +215,70 @@ function drawItemList(ctx, state, sprites, font, siner) {
   const heart = sprites.get('spr_heart');
   if (heart) drawSpriteExt(ctx, heart, 0, icx, icy, 1, 1, 0, null, 1);
 
+  // THE ACT GRID'S ROWS CARRY MORE THAN A LABEL. `listRows` flattens all three
+  // lists to the same four fields, which is right for the bag and for MAGIC and
+  // loses the one thing the ACT block's own draw needs: `actactor` (the row's
+  // `chartime`). Read it off the SAME seam `listRows` builds the ACT rows from
+  // — `actsFor(state, slot)`, sim/spells.js's character-table hook — so the two
+  // cannot disagree about which row is which.
+  //
+  // INDEX ALIGNMENT: `listRows`'s actgrid arm maps 1:1 over `actsFor` and then
+  // applies one filter whose predicate ignores its argument (Susie's spent ACT
+  // drops the WHOLE list, never a single row). So either `rows` is empty and
+  // this loop's body never runs, or the two arrays line up index for index.
+  const isAct = menu.submenu === 'actgrid';
+  const actRows = isAct ? (actsFor(state, menu.charturn) ?? []) : null;
+  const cross = isAct ? sprites.get('spr_tenna_x') : null;
+
   for (let i = 0; i < 3; i++) {
     for (let col = 0; col < 2; col++) {
-      const row = rows[page * 6 + i * 2 + col];
+      const idx = page * 6 + i * 2 + col;
+      const row = rows[idx];
       if (!row) continue;
+      // `xoffset` / `yoffset` — Draw_0:1152-1165, the same 2x6 geometry the
+      // labels below have always used, named so the portrait strip can share
+      // them.
+      const xoffset = col === 0 ? 0 : 230;
+      const yoffset = i * 30;
+
+      // THE PORTRAIT STRIP — see partnerStrip. `charoffset` is 0 for every row
+      // that has no marker, which is every row on the main page.
+      let charoffset = 0;
+      if (actRows?.[idx]?.actor === CHARTIME_XSLASH) {
+        const strip = partnerStrip(state);
+        charoffset = strip.charoffset;
+        for (const h of strip.heads) {
+          const head = sprites.get(h.head);
+          if (head) {
+            drawSpriteExt(ctx, head, 0, h.hx + xoffset, h.hy + yoffset, 1, 1, 0, h.blend, 1);
+          }
+          // TWO CROSSES, FRAME 1, AT 6 AND 4 DEGREES — the same sprite drawn
+          // twice at almost the same angle, which is what makes the X read as
+          // scratched on rather than stamped. `spr_tenna_x` is a vanilla
+          // sprite (32x32, 2 frames, byte-identical in both data files) and is
+          // NOT in any pack this renderer can reach yet, so it is asked for
+          // and skipped when absent — exactly like every other sprite read in
+          // this file. The heads still grey, which is the load-bearing half.
+          if (cross) {
+            drawSpriteExt(ctx, cross, 1, h.cx + xoffset, h.cy + yoffset, 0.7, 0.7, 6, h.blend, 1);
+            drawSpriteExt(ctx, cross, 1, h.cx + xoffset, h.cy + yoffset, 0.7, 0.7, 4, h.blend, 1);
+          }
+        }
+      }
+
       const w = textWidth(font, row.label);
-      // `min(1, 200 / width)` — only ever squeezes, never stretches.
-      const xscale = w > 0 ? Math.min(1, 200 / w) : 1;
+      // THE ACT BLOCK SQUEEZES ON ITS OWN TERMS (Draw_0:1314-1325):
+      //
+      //     s1_xscale = (206 - charoffset) / max(1, string_width(s1));
+      //     if (s1_xscale > 1)   s1_xscale = 1;
+      //     if (s1_xscale < 0.5) s1_xscale = 0.5;
+      //
+      // — a 206px column that NARROWS by every portrait drawn beside it, and a
+      // floor at half width where the bag's squeeze has none. The bag's own
+      // `min(1, 200 / width)` stays for the other two lists.
+      const xscale = isAct
+        ? Math.min(1, Math.max(0.5, (206 - charoffset) / Math.max(1, w)))
+        : (w > 0 ? Math.min(1, 200 / w) : 1);
       // A SPELL YOU CANNOT AFFORD IS SHOWN AND GREYED, not hidden. The grey is
       // `draw_set_color(c_gray)` — the TEXT COLOUR, not an alpha:
       //
@@ -152,7 +287,11 @@ function drawItemList(ctx, state, sprites, font, siner) {
       //
       // which reads as "disabled" rather than "fading out", and keeps the
       // glyph edges crisp against the black band.
-      drawText(ctx, font, row.label, col === 0 ? 30 : 260, 375 + i * 30,
+      //
+      // The ACT block's `cant` is the same idea over more gates — the
+      // `canpress` partner test AND `global.tension < acttpcost[i]`
+      // (Draw_0:1220-1223) — and `row.usable` is where the seam folds both.
+      drawText(ctx, font, row.label, 30 + charoffset + xoffset, 375 + yoffset,
         { xscale, color: row.usable ? '#ffffff' : 'rgb(128,128,128)' });
     }
   }
@@ -193,12 +332,64 @@ function drawItemList(ctx, state, sprites, font, siner) {
   // it — at 200px columns the cost and a long name collide, and the original
   // avoids that by only ever showing the SELECTED spell's cost. It is also a
   // percentage, so Rude Buster reads "50% TP" rather than its raw 125.
-  if (menu.submenu === 'magic' && sel && SPELLS[sel.id]) {
+  // `SPELLS[sel.id]` WAS THE WRONG TABLE TO ASK. The draw at Draw_0:911-914
+  // is unconditional — every row of the MAGIC grid prints its cost, `0% TP`
+  // included — and the lookup here exists only so an id with no row cannot
+  // print `NaN% TP`. Reading the hardcoded table instead of `spellInfo`, the
+  // seam this file already takes `spellCost` through, made it a filter on
+  // WHICH SPELLS EXIST IN VANILLA: a character-keyed list that adds ids (the
+  // Weird Route's SleepMist 8 and IceShock 9) had two of its four rows drawn
+  // with no price at all, while the two vanilla ids beside them printed
+  // theirs. One table for the name and another for the cost is how that
+  // happens; there is one seam now.
+  if (menu.submenu === 'magic' && sel && spellInfo(state, sel.id)) {
     // The DISPLAYED cost has to be the one that will actually be charged —
     // Devilsknife turns Rude Buster's 50% into 40%, and a menu that still
     // says 50% is lying about the only stat that item exists for.
-    const pct = Math.floor((spellCost(state, menu.charturn, sel.id) / MAX_TENSION) * 100);
+    //
+    // ...EXCEPT WHEN `spellCost` IS NOT A PRICE AT ALL. A partner's list can
+    // hold `global.battlespell` rows (N-Action and its kin), and the spell
+    // path answers those with a NON-FINITE cost — a REFUSAL, so a row that
+    // reaches `scr_spellconsumeb` is rejected rather than queued as a spell
+    // that does not exist. What such a row COSTS is its own
+    // `battlespellcost`, `spellInfo`'s `cost`, which is where the grey
+    // (`canAfford`) reads it from too and which is 0 for every one of them.
+    // Dividing the refusal by maxtension put a literal "Infinity% TP" under
+    // the description the moment this readout stopped being gated on the
+    // vanilla table. A price that is not a finite number is not a price.
+    const charged = spellCost(state, menu.charturn, sel.id);
+    const price = Number.isFinite(charged) ? charged : (spellInfo(state, sel.id)?.cost ?? 0);
+    const pct = Math.floor((price / MAX_TENSION) * 100);
     drawText(ctx, font, `${pct}% TP`, 496, 440, { color: 'rgb(255,160,64)' });
+  }
+
+  // ...AND THE ACT GRID HAS A PRICE TAG OF ITS OWN. It was gated out of this
+  // renderer entirely — the readout above tests `submenu === 'magic'` — so a
+  // costed ACT drew a grey row with no number beside it and the player had no
+  // way to learn what it wanted. THE GAME'S OWN CONDITION, verbatim:
+  //
+  //     // obj_battlecontroller Draw_0:1329-1334, the bmenuno-9 block
+  //     if (global.tensionselect > 0) {
+  //         thiscost = round((acttpcost[actcoord] / global.maxtension) * 100);
+  //         draw_set_color(c_orange);
+  //         draw_text(xx + 500, yy + 440, string(thiscost) + "% TP");
+  //     }
+  //
+  // and `global.tensionselect = acttpcost[global.bmenucoord[9][global.charturn]]`
+  // (Step_0:1097), re-read on every step of this stage. So the test is on the
+  // SELECTED row's cost, which is `sel.cost` — not on the grid holding any
+  // costed row at all. Vanilla's acts are free, so nothing appears for them,
+  // and widening the condition by eye would have printed "0% TP" under every
+  // vanilla ACT description.
+  //
+  // THREE THINGS DIFFER FROM THE SPELL READOUT ABOVE, all from the dump:
+  // `round` and not `floor` (:1331 against :912 — half-to-even, hence
+  // gmlRound); the literal x 500 and not `spell_offset`, which is the one
+  // place in this band the Japanese 496 does not apply; and the `> 0` test,
+  // which the spell list does not make.
+  if (isAct && (sel?.cost ?? 0) > 0) {
+    const pct = gmlRound(((sel.cost ?? 0) / MAX_TENSION) * 100);
+    drawText(ctx, font, `${pct}% TP`, 500, 440, { color: 'rgb(255,160,64)' });
   }
 }
 
@@ -564,8 +755,28 @@ export function drawMenu(ctx, state, sprites) {
     drawTargetPicker(ctx, state, sprites, font);
   } else if (
     menu.open &&
-    (menu.submenu === 'enemy' || menu.submenu === 'actpick' || menu.submenu === 'spellenemy')
+    (menu.submenu === 'enemy' || menu.submenu === 'actpick'
+      || menu.submenu === 'spellenemy' || menu.submenu === 'spare')
   ) {
+    // ...AND SO IS `spare`. **12 IS SPARE'S TARGET STAGE**, the fourth of the
+    // five bmenunos in that same test, and the fifth branch this arm now
+    // carries. Its confirm is
+    //
+    //     if (global.bmenuno == 12) {
+    //         global.faceaction[global.charturn] = 10;
+    //         global.chartarget[global.charturn] = global.bmenucoord[12][global.charturn];
+    //         global.charaction[global.charturn] = 2;
+    //         global.charspecial[global.charturn] = 100;
+    //         scr_nexthero();
+    //     }
+    //     (gml_Object_obj_battlecontroller_Step_0.gml:1421-1428)
+    //
+    // so SPARE is a two-press command like FIGHT: the button opens this row,
+    // and the row's confirm is what commits the mercy attempt. THE DRAW HALF
+    // IS HERE; the stage itself is sim/menu.js's, which today treats SPARE as
+    // a bare `charaction = 0` pass — see check-spare-row.mjs, which asserts
+    // this arm from the outside and reports the missing stage.
+    //
     // `spellenemy` IS THE SAME ROW, and it had no branch at all. The enemy
     // row's draw block is one test over five bmenunos —
     //
