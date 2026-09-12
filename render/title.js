@@ -869,13 +869,13 @@ const KNIGHT_PAUSES = [
 ];
 
 /**
- * How many characters of message `n` are showing after `t` frames, and whether
- * it has finished. Walks the string a character at a time so a pause costs
- * real frames exactly where the `^` is.
+ * How many characters of message `n` of `script` are showing after `t` frames,
+ * and whether it has finished. Walks the string a character at a time so a
+ * pause costs real frames exactly where the `^` is.
  */
-function typedCount(n, t) {
-  const chars = KNIGHT_LINES[n].join('').length;
-  const pauses = KNIGHT_PAUSES[n] ?? {};
+function typedCount(script, n, t) {
+  const chars = script.lines[n].join('').length;
+  const pauses = script.pauses[n] ?? {};
   let frames = 0;
   for (let i = 0; i < chars; i++) {
     frames += GAMEOVER_RATE;
@@ -888,10 +888,10 @@ function typedCount(n, t) {
 /** `scr_delay_var("knight_mode_con", next, 30)` — the beat between messages. */
 const LINE_GAP = 30;
 
-/** Total frames message `n` takes to type, for the X skip. */
-function typedFrames(n) {
-  const chars = KNIGHT_LINES[n].join('').length;
-  const pauses = KNIGHT_PAUSES[n] ?? {};
+/** Total frames message `n` of `script` takes to type, for the X skip. */
+function typedFrames(script, n) {
+  const chars = script.lines[n].join('').length;
+  const pauses = script.pauses[n] ?? {};
   let frames = 0;
   for (let i = 0; i < chars; i++) {
     frames += GAMEOVER_RATE;
@@ -926,11 +926,72 @@ function revealRows(rows, shown) {
  * These map onto what this tool needs without renaming anything: GO BACK
  * fights the Knight again, and GO FORWARD leaves — which here means the mode
  * menu rather than the rest of the chapter.
+ *
+ * ── `con` IS THE OUTCOME, AND IT IS THE GAME'S OWN NUMBER ─────────────────
+ *
+ * DEVICE_FAILURE's Step does not branch on WHICH option was highlighted; it
+ * branches on `global.choice` and lands on a `knight_mode_con`:
+ *
+ *     if (global.choice == 0) knight_mode_con = 53;   // retry
+ *     if (global.choice == 1) knight_mode_con = 55;   // move on
+ *
+ * and the two blocks that follow are what actually differ — 53 heals the
+ * party and puts you back in the room, 55 sets `tempflag[90] = 1`,
+ * `scr_flag_set(1047, 2)` and leaves the fight behind. Carrying `con` on the
+ * option rather than inferring the outcome from the INDEX is what lets a
+ * driver answer "does this answer leave?" without knowing how many options
+ * there are or what they are called — which is the whole reason `stepGameOver`
+ * hands `con` back alongside `chosen`.
  */
 const CHOICES = [
-  { name: ['GO BACK', '(FIGHT AGAIN)'], x: 70, y: 180 },
-  { name: ['GO FORWARD', '(MOVE ON)'], x: 190, y: 180 },
+  { name: ['GO BACK', '(FIGHT AGAIN)'], x: 70, y: 180, con: 53 },
+  { name: ['GO FORWARD', '(MOVE ON)'], x: 190, y: 180, con: 55 },
 ];
+
+/**
+ * THE SCREEN'S SCRIPT, as one value.
+ *
+ * Everything above — the five messages, where their pauses fall, and the two
+ * options with their outcomes — is DEVICE_FAILURE's knight branch as this
+ * repo's target build writes it. It is bundled here because `makeGameOver`
+ * now takes a script rather than reading the module constants directly, and a
+ * caller that wants a DIFFERENT script (a mod recreation with its own lines,
+ * say) needs somewhere to point at for "the same shape as this one".
+ *
+ * THIS IS THE DEFAULT AND IT DOES NOT MOVE. Omit `script` and the screen is
+ * byte-for-byte the one it has always been; nothing in this repo passes one.
+ */
+export const KNIGHT_GAMEOVER_SCRIPT = {
+  lines: KNIGHT_LINES,
+  pauses: KNIGHT_PAUSES,
+  choices: CHOICES,
+};
+
+/**
+ * WHO GETS THIS SCREEN AT ALL — `entry`.
+ *
+ * DEVICE_FAILURE's Create wraps the whole knight-mode setup in a guard:
+ *
+ *     var previous_times_attempted = scr_get_knight_total_attempts();
+ *     if (previous_times_attempted > 0) { EVENT = -1; knight_mode = true; ... }
+ *
+ * so in the shipping game your FIRST loss to the Knight does not get the
+ * drone, the typewriter or the choice — it gets the ordinary game over, and
+ * only a second attempt earns his attention.
+ *
+ * This tool has never modelled that, and for a good reason: a practice tool is
+ * entered at the fight, so there is no "first attempt" to count. The screen
+ * therefore plays every time, which is `'always'`.
+ *
+ * The knob exists so that the OTHER answer is a thing the code can hold rather
+ * than a paragraph. `'after-first-attempt'` is the guard, honestly applied:
+ * with `attempts === 0` `makeGameOver` returns **null**, which is the driver's
+ * cue that this death does not get the Knight's screen. Nothing in this repo
+ * passes it; it is here so a caller that DOES count attempts can say which
+ * rule it is under, and so "we show it every time" is a recorded decision
+ * instead of an omission.
+ */
+export const GAMEOVER_ENTRY = { ALWAYS: 'always', GUARDED: 'after-first-attempt' };
 
 /**
  * **PLACE_FAILURE IS A 320x240 ROOM.** Every coordinate quoted above is in
@@ -1007,7 +1068,12 @@ function drawFailure(ctx, over, font, heart) {
 
   // The marker, fading over 15 frames once the choice is up. Room scale 2 and
   // image_xscale 0.5 cancel to 1 — the soul is the same size it was mid-glide.
-  if (heart) {
+  //
+  // `over.marker` is the object's own `heart_marker.visible`. The Create makes
+  // the marker unconditionally and only ever hides it again, so `true` is the
+  // whole of this repo's behaviour and the field exists for a caller that has
+  // a reason to take the soul off the screen.
+  if (heart && over.marker !== false) {
     const a = over.choiceT >= 0 ? Math.max(0, 1 - over.choiceT / 15) : 1;
     if (a > 0) drawSpriteExt(ctx, heart, 0, rx(156), rx(40), 1, 1, 0, null, a);
   }
@@ -1017,9 +1083,10 @@ function drawFailure(ctx, over, font, heart) {
   // obj_writer is created at (70, 80), one instance per line, and TYPES it —
   // `over.lineT` is that writer's clock, reset by stepGameOver on every new
   // message.
-  const which = Math.min(over.line, KNIGHT_LINES.length - 1);
+  const script = over.script ?? KNIGHT_GAMEOVER_SCRIPT;
+  const which = Math.min(over.line, script.lines.length - 1);
   const line = revealRows(
-    KNIGHT_LINES[which], typedCount(which, over.lineT ?? 0).shown,
+    script.lines[which], typedCount(script, which, over.lineT ?? 0).shown,
   );
   if (over.choiceT < 0 && t > 2) {
     line.forEach((s, i) => {
@@ -1096,7 +1163,7 @@ function drawFailure(ctx, over, font, heart) {
   // `#` is the line break, and one draw_text call renders both lines, so the
   // second sits a FONT line-height below — not the writer's vspace.
   const lineH = textHeight(font) * ROOM_SCALE;
-  CHOICES.forEach((c, i) => {
+  script.choices.forEach((c, i) => {
     const color = rgb(over.cur === i ? C_YELLOW : c_white);
     c.name.forEach((s, k) => {
       drawText(ctx, font, s, rx(c.x), rx(c.y) + yoff + k * lineH,
@@ -1160,13 +1227,15 @@ export function stepGameOver(over, keys = {}) {
   const skipEdge = skipHeld && !over.heldSkip;
   over.heldSkip = skipHeld;
 
+  const script = over.script ?? KNIGHT_GAMEOVER_SCRIPT;
+
   if (over.choiceT < 0) {
     if (t <= 2) return {};
     over.lineT = (over.lineT ?? 0) + 1;
     if (skipHeld) {
-      over.lineT = Math.max(over.lineT, typedFrames(over.line));
+      over.lineT = Math.max(over.lineT, typedFrames(script, over.line));
     }
-    const { done } = typedCount(over.line, over.lineT);
+    const { done } = typedCount(script, over.line, over.lineT);
     if (!done) return {};
     over.gap = (over.gap ?? 0) + 1;
     // A FRESH press also eats the thirty-frame hold between lines. Held is not
@@ -1175,7 +1244,7 @@ export function stepGameOver(over, keys = {}) {
     if (over.gap < LINE_GAP && !skipEdge) return {};
     over.gap = 0;
     over.lineT = 0;
-    if (over.line < KNIGHT_LINES.length - 1) {
+    if (over.line < script.lines.length - 1) {
       over.line += 1;
       return { advanced: true };
     }
@@ -1188,6 +1257,14 @@ export function stepGameOver(over, keys = {}) {
 
   // DEVICE_CHOICE's Step: left/right walk 0..XMAX. CURX starts at -1, so the
   // first press selects rather than moves.
+  //
+  // XMAX IS `choices.length - 1`, NOT THE LITERAL 1. DEVICE_FAILURE sets
+  // `XMAX = 1` because it creates two options; a script with a different
+  // number of them would otherwise let the cursor walk off the end (or refuse
+  // to reach the last one), which is a bug you only see with a script this
+  // repo does not ship. Two options give `xmax === 1` and the arithmetic below
+  // is unchanged.
+  const xmax = script.choices.length - 1;
   const left = !!keys.left && !over.heldLeft;
   const right = !!keys.right && !over.heldRight;
   over.heldLeft = !!keys.left;
@@ -1195,14 +1272,19 @@ export function stepGameOver(over, keys = {}) {
 
   let moved = false;
   if (left && over.cur !== 0) { over.cur = Math.max(0, over.cur - 1); moved = true; }
-  if (right && over.cur !== 1) { over.cur = over.cur < 0 ? 0 : 1; moved = true; }
+  if (right && over.cur !== xmax) { over.cur = over.cur < 0 ? 0 : over.cur + 1; moved = true; }
 
   const pressed = !!keys.confirm && !over.heldConfirm;
   over.heldConfirm = !!keys.confirm;
   // `fadebuffer = 20` is also the input buffer: nothing is choosable until the
   // options have finished fading in.
   if (pressed && over.cur >= 0 && over.choiceT > 20) {
-    return { chosen: over.cur };
+    // `con` ALONGSIDE `chosen`, never instead of it. The index is what the
+    // screen highlighted; `con` is what the game does about it
+    // (`knight_mode_con` 53 retry / 55 move on — see CHOICES). A driver that
+    // only ever ships the two vanilla options can keep reading `chosen` and
+    // see no change at all.
+    return { chosen: over.cur, con: script.choices[over.cur]?.con };
   }
   return { moved };
 }
@@ -1210,15 +1292,43 @@ export function stepGameOver(over, keys = {}) {
 /**
  * The state the driver holds. `x0`/`y0` are kept because the glide lerps from
  * where the soul died every frame rather than stepping from where it is.
+ *
+ * `opts` is DEVICE_FAILURE's Create, as parameters:
+ *
+ *   script   which messages and which options — `KNIGHT_GAMEOVER_SCRIPT` by
+ *            default, and that default is this repo's only script.
+ *   marker   `heart_marker.visible`. Default true; the Create never hides it.
+ *   glide    the SOUL's 150 frames before PLACE_FAILURE opens — the frozen
+ *            screenshot, then obj_gameover_init easing the soul from where it
+ *            died up to (312, 80). Default true. `false` starts at
+ *            PLACE_FAILURE, for a caller that reached this screen by a
+ *            `room_goto` rather than through `scr_gameover` — the soul never
+ *            glided because obj_gameover_init never ran.
+ *   entry    `GAMEOVER_ENTRY.ALWAYS` (default) or `.GUARDED`, the shipping
+ *            game's `if (previous_times_attempted > 0)`.
+ *   attempts what that guard tests. Only read under `.GUARDED`.
+ *
+ * **RETURNS null** when the guard is on and this is the first attempt: there
+ * is no knight game over to hold, and a driver that asked for the guard has
+ * to have somewhere else to send that death. Under the default `.ALWAYS` this
+ * can never happen, so every existing caller keeps getting an object.
  */
-export function makeGameOver(shot, x, y) {
+export function makeGameOver(shot, x, y, opts = {}) {
+  const entry = opts.entry ?? GAMEOVER_ENTRY.ALWAYS;
+  if (entry === GAMEOVER_ENTRY.GUARDED && !((opts.attempts ?? 0) > 0)) return null;
   return {
-    t: 0,
+    t: opts.glide === false ? FAILURE_AT : 0,
     shot,
     x,
     y,
     x0: x,
     y0: y,
+    script: opts.script ?? KNIGHT_GAMEOVER_SCRIPT,
+    marker: opts.marker !== false,
+    // `entry` is NOT carried on the object. It is consumed above — it decides
+    // whether there is an object at all — and a copy on the state would be a
+    // value nothing reads, which is the one defect this repo keeps shipping.
+    // `glide` is the same: it is the starting `t` and nothing else.
     line: 0,
     lineT: 0,
     gap: 0,
