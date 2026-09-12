@@ -18,7 +18,7 @@
 // kaizo recreation now lives in its own repo with its own worker (prefix
 // kaizoknight-); this one deletes ONLY its own prefix, and so does that one.
 const PREFIX = 'blackknife-';
-const CACHE = PREFIX + '1.0.42';
+const CACHE = PREFIX + '1.0.43';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

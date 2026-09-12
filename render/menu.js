@@ -213,6 +213,32 @@ function drawItemList(ctx, state, sprites, font, siner) {
  * negative number. A picker that skipped downed members would make ReviveMint
  * unusable.
  */
+/**
+ * THE STATUS BAND — `state.partyStatusBar`, and it is INERT when nothing sets
+ * it.
+ *
+ * A second coloured rectangle laid over the party HP fill, from
+ * `hp - amount` to `hp`, plus a recolour of the CURRENT HP number. Two
+ * surfaces carry it — the charbox row's 75px bar and the ally target
+ * picker's 100px one — and they are the two places `drawMenu` paints a party
+ * member's health, so it is one seam rather than two.
+ *
+ * `{ color: '<css>', values: [n, ...] }`, values SLOT-indexed like
+ * `state.partyHp`. A missing or zero entry draws nothing, which is the whole
+ * of the "inert" contract: the main page sets no such field, so every pixel
+ * it draws is byte-identical to what it drew before this seam existed.
+ *
+ * WHAT THIS FILE DELIBERATELY DOES NOT KNOW: what the amount MEANS, or where
+ * the colour came from. A plain data field is not a dependency — render/ may
+ * not import from any scene layer — and the same shape serves any
+ * "this much of your HP is already spoken for" meter.
+ */
+function statusOverlay(state) {
+  const o = state.partyStatusBar;
+  if (!o || !Array.isArray(o.values) || typeof o.color !== 'string') return null;
+  return o;
+}
+
 function drawTargetPicker(ctx, state, sprites, font) {
   // bmenuno 7's REAL layout (obj_battlecontroller Draw — issue #2): three
   // rows in the band, one per party member, the heart on the chosen row:
@@ -229,16 +255,38 @@ function drawTargetPicker(ctx, state, sprites, font) {
   // one; scr_heal adds to the negative number).
   const menu = state.menu;
   const heart = sprites.get('spr_heart');
+  const overlay = statusOverlay(state);
   for (let i = 0; i < 3; i++) {
     const y = 375 + i * 30;
+    // `global.maxhp[global.char[i]]`, and the charbox row above already takes
+    // this override — the picker was the one place left reading the vanilla
+    // trio's table. It has to agree with the charbox or the SAME member's
+    // health reads as two different fractions on two surfaces, and the status
+    // band below divides by it.
+    const maxhp = state.partyMaxhp?.[i] ?? PARTY[i].maxhp;
     drawText(ctx, font, PARTY[i].name, 80, y, { color: '#ffffff' });
     ctx.fillStyle = '#800000'; // c_maroon
     ctx.fillRect(400, y + 5, 101, 16);
-    let hpPct = ((state.partyHp?.[i] ?? 0) / PARTY[i].maxhp) * 100;
+    const hp = state.partyHp?.[i] ?? 0;
+    let hpPct = (hp / maxhp) * 100;
     if (hpPct <= -100) hpPct = -100;
     ctx.fillStyle = '#00ff00'; // c_lime
     if (hpPct >= 0) ctx.fillRect(400, y + 5, hpPct + 1, 16);
     else ctx.fillRect(400 + hpPct, y + 5, -hpPct + 1, 16);
+
+    // THE STATUS BAND — see `statusOverlay`. A second rectangle over the same
+    // 100px trough, from `(hp - amount) / maxhp` to `hp / maxhp`, and
+    // UNCLAMPED: where the charbox band ceils into a 75px fill, this one is a
+    // raw fraction of 100 and an `amount` larger than `hp` puts its left edge
+    // OUTSIDE the trough. That is the shape the publisher asked for; a
+    // renderer that clamped it would be correcting the caller.
+    const amount = overlay?.values?.[i] ?? 0;
+    if (overlay && amount > 0) {
+      const lx = 400 + ((hp - amount) / maxhp) * 100;
+      const rx = 400 + (hp / maxhp) * 100;
+      ctx.fillStyle = overlay.color;
+      ctx.fillRect(lx, y + 5, rx - lx, 16);
+    }
   }
   if (heart) {
     drawSpriteExt(ctx, heart, 0, 55, 385 + menu.targetIndex * 30, 1, 1, 0, null, 1);
@@ -443,8 +491,16 @@ export function drawMenu(ctx, state, sprites) {
     let hpColor = '#ffffff';
     if (hp / maxhp <= 0.25) hpColor = '#ffff00'; // c_yellow
     if (hp <= 0) hpColor = '#ff0000'; // c_red
+    // THE STATUS COLOUR REPLACES THE THRESHOLD ON THE CURRENT NUMBER ONLY.
+    // The threshold colour `_tc` is re-set between the two draw_texts, so the
+    // max never takes it — a member deep in the red still reads `12 / 120`
+    // with the left half recoloured and the right half yellow. One `if`, and
+    // it has to be exactly this narrow.
+    const status = statusOverlay(state);
+    const amount = status?.values?.[c] ?? 0;
+    const currentColor = status && amount > 0 ? status.color : hpColor;
     drawSpriteText(ctx, sprites, FONTS.hp, shown, chunk + 160, B_OFFSET - 2 + mmy,
-      { halign: 'right', color: hpColor });
+      { halign: 'right', color: currentColor });
     drawSpriteText(ctx, sprites, FONTS.hp, maxhp, chunk + 205, B_OFFSET - 2 + mmy,
       { halign: 'right', color: hpColor });
 
@@ -459,6 +515,16 @@ export function drawMenu(ctx, state, sprites) {
     if (hp > 0) {
       ctx.fillStyle = rgb(color);
       ctx.fillRect(chunk + 128, B_OFFSET + 11 + mmy, Math.ceil((hp / maxhp) * 75), 8);
+      // THE STATUS BAND, inside the same `hp > 0` guard the fill is in and
+      // over the top of it: `ceil` on BOTH ends, so it is the tail of the
+      // fill, not a bar of its own. `amount >= hp` pins the left edge at or
+      // left of the trough's start and the whole fill reads as spoken for.
+      if (status && amount > 0) {
+        const lx = Math.ceil(((hp - amount) / maxhp) * 75);
+        const rx = Math.ceil((hp / maxhp) * 75);
+        ctx.fillStyle = status.color;
+        ctx.fillRect(chunk + 128 + lx, B_OFFSET + 11 + mmy, rx - lx, 8);
+      }
     }
   }
 
