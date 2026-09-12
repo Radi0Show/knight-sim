@@ -27,7 +27,7 @@ import { spellDamage, damageKnight } from './knight.js';
 import { castRudeBuster } from './rudebuster.js';
 import { applyHeal } from './items.js';
 import { spawnSelfHealNumber } from './dmgnumbers.js';
-import { PARTY as PARTY_STATS } from './damage.js';
+import { PARTY as PARTY_STATS, partyMaxhp } from './damage.js';
 
 /**
  * `scr_heal_amount_modify_by_equipment` — BlueRibbon's Heal+, and the SPELL
@@ -47,7 +47,7 @@ const healAmountModifyByEquipment = (amount, ribbons) =>
  * is the only way "+0" never appears on screen.
  */
 function healNumber(state, target, amount) {
-  const maxed = state.partyHp[target] >= PARTY_STATS[target].maxhp;
+  const maxed = state.partyHp[target] >= partyMaxhp(state, target);
   spawnSelfHealNumber(state, target, amount, maxed);
 }
 import { cue } from './audio.js';

@@ -58,6 +58,90 @@ export const PARTY = [
 ];
 
 /**
+ * ── THE ROSTER SEAM ───────────────────────────────────────────────────────
+ *
+ * `PARTY` above is a THREE-ENTRY, SLOT-INDEXED literal, and every consumer
+ * in this file indexed straight into it. That is correct for the fight this
+ * engine was written for and wrong for any party that is not Kris/Susie/
+ * Ralsei standing in that order: with a two-member party the slot-1 record
+ * still answers SUSIE, maxhp 190, at 18 — so the name plate, the max-HP the
+ * defence walk scales against, the fell-HP hole and the re-target average
+ * all belong to somebody who is not in the fight.
+ *
+ * THE SEAM IS `state.kaizo.roster`: an OPTIONAL array of the same shape
+ * (`{ name, maxhp, at, magic, df }`, plus an optional `gear`), ONE ENTRY PER
+ * OCCUPIED SLOT in slot order. A scene that fields a different party installs
+ * it; NOTHING in sim/ ever writes it, so with none installed every accessor
+ * below returns the literal above and the vanilla three-character fight is
+ * bit-identical. That is not a hope — it is what the byte gate checks.
+ *
+ * IT IS DELIBERATELY *ONE* FIELD AND NOT TWO. The obvious shape here was a
+ * neutral `state.partyStats` with `state.kaizo.roster` behind it, and it was
+ * written that way first and thrown away: nothing anywhere writes
+ * `partyStats`, and a read facing no writer is this repo's signature defect
+ * wearing the other hat. The roster is the one thing a scene actually
+ * publishes, so the roster is what these accessors read. `state.kaizo` is
+ * already the field this file consults for its hooks; a plain state field is
+ * not a dependency, and sim/ still imports nothing from kaizo/.
+ *
+ * WHY AN ACCESSOR AND NOT A SECOND TABLE. `state.partyMaxhp` already
+ * existed as a max-HP override and was READ IN SOME PLACES AND NOT OTHERS
+ * (honoured by the re-target average, ignored by scr_damage_calculation, by
+ * Kris's doomtype-4 mercy and by scr_damage_maxhp). A half-read seam is
+ * worse than no seam: the answer depends on which code path asked. Every
+ * max-HP read in this file now goes through `partyMaxhp()`, and the old
+ * override keeps its precedence so the consumers that already wrote it
+ * (render/menu.js, the kaizo HP-cut scene) are unaffected.
+ */
+
+/** The slot-indexed stat table in force. The vanilla three when none is installed. */
+export function partyTable(state) {
+  const r = state?.kaizo?.roster;
+  if (Array.isArray(r) && r.length) return r;
+  return PARTY;
+}
+
+/** How many battle slots are occupied. NEVER assume 3. */
+export function partySize(state) {
+  return partyTable(state).length;
+}
+
+/**
+ * NOBODY. What a slot past the end of an installed roster answers with.
+ *
+ * NOT `PARTY[slot]`, and that distinction has already cost this project a
+ * debugging pass: `buildKaizoScene` pads a two-member party back out to
+ * three slots (dead, untargetable) because that is what `global.char =
+ * [1, 4, 0]` looks like to every vanilla-shaped consumer, and any read that
+ * falls through to the literal there writes RALSEI'S 140 into a slot the
+ * Weird Route's party does not have. A zero record makes the emptiness
+ * visible instead of plausible.
+ */
+const EMPTY_SLOT = Object.freeze({ name: '', maxhp: 0, at: 0, magic: 0, df: 0 });
+
+/**
+ * SLOT -> stat record. Out of range answers NOBODY rather than throwing,
+ * because callers do reach the padded slot (the target==3 sweep) and a
+ * TypeError there is not the behaviour the game has.
+ */
+export function partyMemberAt(state, slot) {
+  return partyTable(state)[slot] ?? EMPTY_SLOT;
+}
+
+/**
+ * `global.maxhp[global.char[slot]]` — THE ONE MAX-HP READ.
+ *
+ * Precedence, and it is deliberate: the explicit `state.partyMaxhp` override
+ * first (it is the live, mutable mirror — the kaizo HP-cut scene moves it
+ * mid-fight), then the roster record, then the literal.
+ */
+export function partyMaxhp(state, slot) {
+  const m = state?.partyMaxhp;
+  if (Array.isArray(m) && m[slot] !== undefined && m[slot] !== null) return m[slot];
+  return partyMemberAt(state, slot).maxhp;
+}
+
+/**
  * THE DEFAULT LOADOUT — the spec's §5.1 "Taunt Kris" build, which is also the
  * one the wiki's own analysis lands on.
  *
@@ -105,6 +189,24 @@ export const DEFAULT_GEAR = [
  */
 export function gearOf(state) {
   if (state.loadout?.gear) return state.loadout.gear;
+  // EQUIPMENT IS DELIBERATELY *NOT* TAKEN FROM THE ROSTER HERE, and this is a
+  // known, measured split rather than an oversight.
+  //
+  // The roster does carry gear — Noelle's ThornRing build is not in
+  // DEFAULT_GEAR and never could be, since DEFAULT_GEAR is indexed by SLOT and
+  // she does not stand in Ralsei's — and kaizo/party/roster.js's own
+  // `gearOfSlot` / `statFor` answer from it. Wiring it in HERE as well was
+  // written, measured and backed out: DEFAULT_GEAR puts the ShadowMantle on
+  // Kris and the roster's measured loadout (scr_gamestart's chapter-3 block,
+  // MechaSaber + AmberCard + GlowWrist) does not, so switching this path to
+  // the roster removes the x0.33 brunt from the one member who can only DOWN
+  // and the Weird Route party falls before the fourth attack of the chain
+  // (check-weirdroute's 27-row walk, 4 rows reached instead of 27).
+  //
+  // WHICH LOADOUT THE WEIRD ROUTE SHOULD ACTUALLY FIGHT IN IS A SEPARATE,
+  // SOURCED QUESTION -- roster.js's GAMESTART_CH3_GEAR note has the whole
+  // argument -- and it is not this seam's to settle. The stat BASE is; the
+  // gear is not.
   if (state.loadout?.shadowMantle === false) {
     return DEFAULT_GEAR.map((g) => ({
       ...g,
@@ -122,7 +224,7 @@ export function gearOf(state) {
  * know whether a number came from the character or their gear.
  */
 export function statFor(state, slot) {
-  return statsOf(PARTY[slot], gearOf(state)[slot] ?? { weapon: 0, armor: [] });
+  return statsOf(partyMemberAt(state, slot), gearOf(state)[slot] ?? { weapon: 0, armor: [] });
 }
 
 /** ShadowMantle replaces the second armour slot: df 2 -> 3, plus the x0.33. */
@@ -158,7 +260,9 @@ export function scrDamageCalculation(damage, target, shadowMantle, state = null)
   // state to read it from, and the legacy two-armour approximation when a
   // suite calls this directly.
   const def = state ? statFor(state, target).df : battleDf(target, shadowMantle);
-  const maxhp = PARTY[target].maxhp;
+  // WAS `PARTY[target].maxhp` — the literal, so the defence walk sized its
+  // -3/-2/-1 steps against Susie's 190 for whoever stood in slot 1.
+  const maxhp = partyMaxhp(state, target);
   const a = maxhp / 5;
   const b = maxhp / 8;
   for (let i = 0; i < def; i++) {
@@ -343,12 +447,20 @@ export function knightTarget(state, target, opts = {}) {
     while (!cantarget(m) && guard++ < 64) m = opts.choose ? opts.choose(0, 1, 2) : 0;
     return m;
   };
-  const maxhpOf = (slot) => (state.partyMaxhp ? state.partyMaxhp[slot] : PARTY[slot].maxhp);
-  const ratio = (slot) => (slot >= 0 && slot < 3 ? state.partyHp[slot] / maxhpOf(slot) : 1);
+  // One accessor, shared with every other max-HP read in this file.
+  const maxhpOf = (slot) => partyMaxhp(state, slot);
+  // ROSTER-BOUNDED. `scr_party_hpaverage` is a RE-TARGETING GATE (the two
+  // `ratio < hpaverage / 2` re-rolls below), so averaging over three slots
+  // with a two-member party folds in slot 2's stale HP and its 140 max, and
+  // every re-target decision on that route is taken against a member who is
+  // not in the fight. It also draws RNG: a wrong answer here is a wrong
+  // number of `choose` calls, not merely a wrong target.
+  const n = partySize(state);
+  const ratio = (slot) => (slot >= 0 && slot < n ? state.partyHp[slot] / maxhpOf(slot) : 1);
   const hpaverage = () => {
     let hp = 0;
     let mx = 0;
-    for (let i = 0; i < 3; i++) { hp += state.partyHp[i]; mx += maxhpOf(i); }
+    for (let i = 0; i < n; i++) { hp += state.partyHp[i]; mx += maxhpOf(i); }
     return hp > 0 ? Math.floor(hp / mx) : 0;
   };
   // scr_randomtarget_old answers 3 when NOBODY can be targeted -- a wiped
@@ -424,7 +536,7 @@ export function knightTarget(state, target, opts = {}) {
       // to Kris where the game sends it to Susie, and with Kris down left it
       // on the incoming target where the game still takes Susie. Measured in
       // repro-C5 against this walk.
-      for (let i = 0; i < 3; i++) if (state.partyHp[i] > 0 && wears(i)) t = i;
+      for (let i = 0; i < n; i++) if (state.partyHp[i] > 0 && wears(i)) t = i;
     } else {
       let pick = opts.choose ? opts.choose(0, 1, 2) : 0;
       // `repeat (2)` walking past the fallen, wrapping at 2 -> 0. Not a
@@ -569,7 +681,9 @@ export function scrDamage(state, damage, target, opts = {}) {
     // -999 cannot be (scr_heal only revives if the result reaches >= 0), so
     // a downed ally stays down for the rest of the fight. That asymmetry is
     // the fight's real difficulty curve, and clamping either to 0 erases it.
-    hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+    // `round(-global.maxhp[global.char[0]] / 2)` — the LIVE max HP, not the
+    // literal. -80 for Kris at 160, and it tracks him if his max HP moves.
+    hp[target] = target === 0 ? Math.round(-partyMaxhp(state, 0) / 2) : -999;
     scrDead(state, target);
   }
   // THE FLINCH. `obj_heroparent`'s Step gates every other state behind
@@ -659,7 +773,11 @@ export function scrDamageAll(state, damage, opts = {}) {
   // and is only ever read by the phase-4 ending line ("Kris coughed...").
   if (state.knight) state.knight.progamer = false;
   let total = 0;
-  for (let ti = 0; ti < 3; ti++) {
+  // ROSTER-BOUNDED: a party-wide hit hits the party, and slot 2 on a
+  // two-member roster is nobody. `state.partyHp[2]` is undefined there, so
+  // the old loop was saved only by `undefined > 0` being false — a silent
+  // guard, not a decision.
+  for (let ti = 0; ti < partySize(state); ti++) {
     if (state.partyHp[ti] > 0) total += scrDamage(state, damage, ti, opts);
   }
   state.invTimer = state.invc * 30;
@@ -675,9 +793,14 @@ export function scrDamageAll(state, damage, opts = {}) {
   return total;
 }
 
-/** Full party, used at the top of a run and by the scene's reset. */
-export function freshParty() {
-  return PARTY.map((p) => p.maxhp);
+/**
+ * Full party, used at the top of a run and by the scene's reset.
+ *
+ * `state` is OPTIONAL and no caller in sim/ passes one, so this stays the
+ * three-element vanilla literal unless a roster is handed in.
+ */
+export function freshParty(state) {
+  return partyTable(state).map((p) => p.maxhp);
 }
 
 /** Every party member down — the fight is lost. */
@@ -729,7 +852,10 @@ export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell
     if ((gearOf(state)[target]?.armor ?? []).includes(23)) fraction /= 2;
   }
 
-  const maxhp = PARTY[target].maxhp;
+  // WAS `PARTY[target].maxhp` — see partyMaxhp(). This one is the whole
+  // damage number, not a scaling factor: a fraction of the WRONG max HP is a
+  // wrong hit, every time.
+  const maxhp = partyMaxhp(state, target);
   let t = Math.ceil(maxhp * fraction);
   if (state.charaction?.[target] === ACTION_DEFEND && !ignoreDefend) {
     t = Math.ceil(t / 1.5);
@@ -785,7 +911,9 @@ export function scrDamageMaxhp(state, fraction, ignoreDefend = false, cannotFell
     // scr_damage_maxhp is Flurry's slash, which passes cannotFell and clamps
     // to hp - 1 -- so this only runs for a caller that does NOT, which is
     // exactly why it went unnoticed.
-    hp[target] = target === 0 ? Math.round(-PARTY[0].maxhp / 2) : -999;
+    // `round(-global.maxhp[global.char[0]] / 2)` — the LIVE max HP, not the
+    // literal. -80 for Kris at 160, and it tracks him if his max HP moves.
+    hp[target] = target === 0 ? Math.round(-partyMaxhp(state, 0) / 2) : -999;
     scrDead(state, target);
   }
   heroHurt(state, target);

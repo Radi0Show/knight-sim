@@ -21,7 +21,7 @@
 // the remaining slots DeluxeDinners — which can be bought without limit, so
 // they are what fills whatever is left of the twelve.
 
-import { PARTY, scrRevive } from './damage.js';
+import { PARTY, partyMaxhp, partySize, scrRevive } from './damage.js';
 import { MAX_TENSION } from './tension.js';
 import { cue, cueStop } from './audio.js';
 import { spawnHealWriter } from './dmgnumbers.js';
@@ -164,7 +164,10 @@ export function freshInventory(custom = null) {
  */
 export function applyHeal(state, target, amount, healRibbons = 0) {
   const hp = state.partyHp;
-  const maxhp = PARTY[target].maxhp;
+  // THE CAP IS THE TARGET'S OWN MAX HP. Was `PARTY[target].maxhp` — the
+  // slot literal — so a heal on any party that is not Kris/Susie/Ralsei
+  // filled the bar past the top of it, or stopped short of it.
+  const maxhp = partyMaxhp(state, target);
   const amt = amount + Math.ceil(amount / 8) * healRibbons;
   const before = hp[target];
   const belowZero = hp[target] <= 0;
@@ -239,7 +242,8 @@ export function scrHealitemAll(state, amount) {
  */
 export function reviveAmount(state, target, which) {
   const hp = state.partyHp[target];
-  const maxhp = PARTY[target].maxhp;
+  // Same seam: every revive amount here is a FRACTION of max HP.
+  const maxhp = partyMaxhp(state, target);
   if (which === 'mint') return hp <= 0 ? maxhp - hp : Math.floor(maxhp * 0.5);
   return hp <= 0 ? Math.floor(maxhp * 0.25) - hp : 10;
 }
@@ -367,7 +371,11 @@ export function useItem(state, slot, target = 0, bag = null) {
 /** Slots that would actually do something right now, for the menu to grey out. */
 export function usableSlots(state, bag = null) {
   const anyDown = state.partyHp.some((h) => h <= 0);
-  const anyHurt = state.partyHp.some((h, i) => h > 0 && h < PARTY[i].maxhp);
+  // Roster-bounded and seam-read: `state.partyHp` is roster-length, and
+  // "hurt" means below YOUR max, not below slot i's literal.
+  const anyHurt = state.partyHp
+    .slice(0, partySize(state))
+    .some((h, i) => h > 0 && h < partyMaxhp(state, i));
   return (bag ?? state.inventory).map((id) => {
     const item = ITEMS[id];
     if (!item) return false;
