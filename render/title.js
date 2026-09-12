@@ -372,13 +372,13 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
   // every frame of the vanilla build.
   drawText(ctx, font, name, x + breathe + style.shake, y, { color: rgb(colour) });
 
-  // The bracketed echo, the mod's own second line — `PROCEED#(PROCEED)` with
-  // `#` as the newline. Only the TAKEN row has one. Clear of the glyphs and
-  // still inside the row's 40px pitch.
-  if (style.sub && small?.ready) {
-    drawText(ctx, small, style.sub, x + 6, y + h + 2,
-      { color: rgb(colour), xscale: 0.85, yscale: 0.85 });
-  }
+  // NO SECOND LINE. The mod's own string is `PROCEED#(PROCEED)` — `#` is the
+  // newline — and the bracketed echo under the word was drawn here to match
+  // it. The user asked for it gone, and they are right about this screen: in
+  // the mod that string is a CHOICE BOX on the game-over screen, where every
+  // option has a bracketed second line and the echo is what tells you the two
+  // choices are the same. This is a settings row in a list of settings rows,
+  // and none of the others has one. The word alone carries it.
 }
 
 function drawSettings(ctx, title, sprites, font) {
