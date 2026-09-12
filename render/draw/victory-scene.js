@@ -197,7 +197,11 @@ export function drawVictoryScene(ctx, sc, sprites) {
   // rather than the c_talk chain, wrap at 26 columns fits the faced width,
   // and the mouth-flap animation is not staged.
   if (sc.dialogue) {
-    const line = VICTORY_LINES[sc.dialogue.line];
+    // `sc.lines` is the scene's OWN table (sim/victory-scene.js's variant
+    // seam); it defaults to VICTORY_LINES, and a variant swaps the texts in
+    // place — same indices, so FACE_FRAME below still lines up. The fallback
+    // keeps an older scene object (or a test's stub) drawable.
+    const line = (sc.lines ?? VICTORY_LINES)[sc.dialogue.line];
     const bx0 = 24;
     const by0 = 312;
     const bx2 = 616;

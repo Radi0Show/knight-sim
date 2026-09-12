@@ -70,6 +70,82 @@ import { textSoundChar } from './dialogue.js';
 
 const CAM_X = 2230;
 
+/**
+ * THE CLASH BLOCK'S MEASURED NUMBERS, named so a second translation of the
+ * same GML can be compared against them instead of drifting from them.
+ *
+ * `susie_knight_slash` (obj_ch3_PTB02 Step:1222-1406) is translated TWICE in
+ * this ecosystem: here, for the A-Side ending, and in the kaizo recreation's
+ * B-Side epilogue, which truncates the same handler at its own `sb_timer 124`.
+ * Two copies of one block with no comparison between them is how a number
+ * comes to be right in one file and wrong in the other, so the copies are
+ * exported from both sides and a check asserts they agree.
+ *
+ * Values are unchanged from the literals they replace; this is a naming pass,
+ * not a behaviour change.
+ */
+export const VICTORY_CLASH = Object.freeze({
+  camX: CAM_X,             // c_pan back to 2230 after the clash
+  clashCamX: 2400,         // the pan out to the charge
+  shakeTime: 80,           // the grinding-hit interval, shrinking
+  shakeStep: 10,           // ...by 10 each hit
+  shakeFloor: 30,          // ...until it would drop to 30, when it stops
+  finishTime: 300,         // the PARRY — knight hspeed 8, friction 2
+  jumpBackTime: 320,       // she leaps back; the shard tumbles off the blade
+  warpSettle: 95,          // roaring_knight_warp -> state 3
+});
+
+/**
+ * `c_snd_play_x(snd, VOLUME, pitch)` — arg1 is the gain handed to
+ * `snd_volume` -> `audio_sound_gain` (gml_GlobalScript_snd_play_x.gml:3-4).
+ * The ending's slash cuts are played at **8**, far above unity: an
+ * intentionally blown-out, saturating sound.
+ *
+ * render/audio.js's `levelFor` is `Math.min(1, entry.base) * ...`, so this
+ * engine saturates at 1 exactly as the mixer does at these levels — the value
+ * is carried verbatim so it can be MEASURED, not so it can be louder.
+ */
+export const CUT_VOLUME = 8;
+
+/**
+ * THE VARIANT SEAM (installed, not imported).
+ *
+ * `sim/` may not import from `kaizo/` — the isolation contract's one-way rule
+ * — and the page's only call is `createVictoryScene()` with no arguments, so
+ * a variant cannot be passed in at the call site either. A kaizo build
+ * therefore INSTALLS its replacement before the fight starts
+ * (`buildKaizoScene` -> `setVictoryVariant`) and the factory reads it here.
+ *
+ * A variant is `{ name, lines, script, ops, cutVolume }`:
+ *   `lines`   replaces VICTORY_LINES wholesale (same indices, so the
+ *             renderer's per-line face-frame table still lines up)
+ *   `script`  replaces buildScript()'s op list
+ *   `ops`     extra op handlers, `(sc, a, b, cues, api) => void`, reached
+ *             through the switch's default arm — so mod-specific beats live
+ *             in kaizo/ and this file stays vanilla.
+ *   `cutVolume` the gain the five-cut slash stack is played at (default 8).
+ *
+ * `buildVictoryScript()` is exported alongside, so a variant DERIVES its
+ * script from the vanilla one instead of restating it.
+ *
+ * `null` is vanilla, and passing `null` RESTORES vanilla: the setter is total,
+ * so a page that builds V-C and then V-A does not keep the mod's ending.
+ */
+let VICTORY_VARIANT = null;
+
+/** Install (or, with `null`, remove) the victory-scene variant. Returns the
+ *  previous one, so a check can restore what it found. */
+export function setVictoryVariant(variant) {
+  const prev = VICTORY_VARIANT;
+  VICTORY_VARIANT = variant ?? null;
+  return prev;
+}
+
+/** The installed variant, or `null` for vanilla. */
+export function getVictoryVariant() {
+  return VICTORY_VARIANT;
+}
+
 export const VICTORY_LINES = [
   { speaker: 'susie', text: '* We.. we actually beat it?' },
   { speaker: 'susie', text: "* What, don't tell me you've had ENOUGH already?" },
@@ -89,9 +165,23 @@ function actor(x, y, sprite) {
 }
 
 export function createVictoryScene() {
+  const variant = VICTORY_VARIANT;
   return {
     t: 0,
     done: false,
+    // Which script this scene is playing. `null` is the vanilla knighting;
+    // a kaizo build reads its own name back here, which is what makes the
+    // installed-variant seam observable rather than merely believed.
+    variant: variant?.name ?? null,
+    // `c_snd_play_x(snd_knight_cut2, VOL, pitch)` — the ending plays its
+    // slash cuts at 8; the kaizo mod plays all ten at 12. One field so the
+    // shared `slashCut` beat does not have to be copied to change a number.
+    cutVolume: variant?.cutVolume ?? CUT_VOLUME,
+    // The dialogue table AND the op table travel with the scene, so nothing
+    // downstream has to know a variant exists — the renderer reads
+    // `sc.lines`, the step loop reads `sc.ops`.
+    lines: variant?.lines ?? VICTORY_LINES,
+    ops: variant?.ops ?? null,
     toMenu: false, // the driver reads this: main menu, not a card
     camX: CAM_X,
     camLerp: null,
@@ -122,7 +212,7 @@ export function createVictoryScene() {
     bigShake: 0, // frames left of the impact shake
     dialogue: null, // { line, timer }
     lastConfirm: true, // edge detector (starts held: the ending's last press)
-    script: buildScript(),
+    script: variant?.script ?? buildScript(),
     scriptIndex: 0,
     wait: 0,
     deferred: [],
@@ -143,8 +233,21 @@ const ease = {
   inout: (t) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t)),
 };
 
-// The con-50 script as [op, ...] steps. `w` waits; `say` gates on a fresh
-// confirm; everything else is instantaneous state.
+/**
+ * The con-50 script as [op, ...] steps. `w` waits; `say` gates on a fresh
+ * confirm; everything else is instantaneous state.
+ *
+ * EXPORTED so a variant can DERIVE from it rather than restate it. The kaizo
+ * mod's ending is this script with named beats deleted and its tail replaced;
+ * a variant that retyped the shared prefix would be a second copy of it, and
+ * the two would drift the first time a vanilla fix landed in one of them.
+ * Returns a fresh array every call — the ops are plain literals, so the
+ * caller may splice it freely.
+ */
+export function buildVictoryScript() {
+  return buildScript();
+}
+
 function buildScript() {
   return [
     ['w', 60],
@@ -156,7 +259,7 @@ function buildScript() {
     ['w', 125], // c_wait(30) + the warp settles at its own 95
     ['w', 90],
     ['say', 0],
-    ['pan', 2400, 30],
+    ['pan', VICTORY_CLASH.clashCamX, 30],
     ['susieWalk', 2510, 30],
     ['say', 1], ['say', 2],
     ['w', 30],
@@ -209,9 +312,11 @@ function pushHitFx(sc, kx, ky, life, alpha) {
   sc.hitFx.push({ x: kx - 90, y: ky - 90, born: sc.t, life, alpha });
 }
 
-function fiveCuts(cues) {
+/** `c_snd_play_x(snd_knight_cut2, vol, pitch)` x5 — the slash. The volume is
+ *  a parameter because the kaizo mod raises it (see CUT_VOLUME). */
+function fiveCuts(cues, vol = CUT_VOLUME) {
   for (const p of [0.06, 0.1, 0.12, 0.18, 0.24]) {
-    cues.push({ name: 'snd_knight_cut2', pitch: p, gain: 1 });
+    cues.push({ name: 'snd_knight_cut2', pitch: p, gain: vol });
   }
 }
 
@@ -250,6 +355,18 @@ function bigShake(sc, cues) {
 function setTimeoutStep(sc, frames, fn) {
   sc.deferred.push({ at: sc.t + frames, fn });
 }
+
+/**
+ * What a variant op is handed. These helpers are module-private — `bigShake`
+ * IS `obj_shake` with its decay chain, `fiveCuts` is the five-cut stack — and
+ * a variant that re-implemented either would be a second copy of a measured
+ * mechanism, which is the fault this seam exists to avoid.
+ */
+const OP_API = Object.freeze({
+  fiveCuts, bigShake, pushHitFx, setTimeoutStep, ease,
+  CLASH: VICTORY_CLASH,
+  CUT_VOLUME,
+});
 
 /** One 30Hz tick. Cues use the sim's {name, pitch, gain} shape; the music
  * ops emit {music: 'wind' | 'stop'} for the driver. */
@@ -383,7 +500,7 @@ export function stepVictoryScene(sc, input, cues) {
         }
       }
     }
-    if (w.timer === 95) {
+    if (w.timer === VICTORY_CLASH.warpSettle) {
       k.x = w.cache[0];
       k.y = w.cache[1];
       k.sprite = 'spr_roaring_knight_overworld_warp';
@@ -437,8 +554,8 @@ export function stepVictoryScene(sc, input, cues) {
     if (c.shakeSeq) {
       c.shakeTimer += 1;
       if (c.shakeTimer % c.shakeTime === 1) {
-        c.shakeTime -= 10;
-        if (c.shakeTime <= 30) c.shakeSeq = false;
+        c.shakeTime -= VICTORY_CLASH.shakeStep;
+        if (c.shakeTime <= VICTORY_CLASH.shakeFloor) c.shakeSeq = false;
         sc.bigShake = Math.max(sc.bigShake, 10);
         pushHitFx(sc, k.x, k.y, 16, 1);
         pushHitFx(sc, k.x, k.y, 24, 0.5);
@@ -449,7 +566,7 @@ export function stepVictoryScene(sc, input, cues) {
         sc.flash = { t: 0, peak: 0.5 };
       }
     } else {
-      if (c.timer === 300) {
+      if (c.timer === VICTORY_CLASH.finishTime) {
         pushHitFx(sc, k.x, k.y, 12, 1);
         cues.push({ name: 'snd_damage', pitch: 1, gain: 1 });
         sc.flash = { t: 0, peak: 0.5 };
@@ -459,7 +576,7 @@ export function stepVictoryScene(sc, input, cues) {
         k.index = 2;
         k.speed = 0;
       }
-      if (c.timer === 320) {
+      if (c.timer === VICTORY_CLASH.jumpBackTime) {
         cues.push({ name: 'snd_laz_c', pitch: 0.9, gain: 1 });
         cues.push({ name: 'snd_glassbreak', pitch: 1, gain: 1 });
         cues.push({ name: 'snd_sparkle_glock', pitch: 1, gain: 1 });
@@ -479,7 +596,7 @@ export function stepVictoryScene(sc, input, cues) {
           angle: 0, born: sc.t, shine: false,
         };
       }
-      if (c.timer === 330) {
+      if (c.timer === VICTORY_CLASH.jumpBackTime + 10) {
         su.sprite = 'spr_susieb_idle_serious';
         su.index = 0;
         su.speed = 0;
@@ -489,7 +606,7 @@ export function stepVictoryScene(sc, input, cues) {
         su.friction = 2;
         su.landing = true;
       }
-      if (c.timer === 340) {
+      if (c.timer === VICTORY_CLASH.jumpBackTime + 20) {
         sc.clash = null;
         if (sc.shard) sc.shard.shine = true;
       }
@@ -509,7 +626,8 @@ export function stepVictoryScene(sc, input, cues) {
   if (sc.dialogue) {
     const d = sc.dialogue;
     d.timer += 1;
-    const line = VICTORY_LINES[d.line];
+    // `sc.lines`, not the module export — a variant swaps the table.
+    const line = sc.lines[d.line];
     // THE VOICE. Every ending line is `c_speaker("susie") / ("ralsei")` +
     // msgsetloc (obj_ch3_PTB02 Step:846-), and scr_speaker in a dark zone
     // (scr_speaker.gml:92-116, global.darkzone = 1 from PTB02's Create)
@@ -534,7 +652,13 @@ export function stepVictoryScene(sc, input, cues) {
       else cues.push({ name: 'snd_txtral', pitch: 1, gain: 1 });
     }
     const typed = d.timer >= line.text.length; // rate 1
-    if (typed && confirmPressed) sc.dialogue = null;
+    // `/%` WAITS FOR A PRESS; a bare `%` DOES NOT. Vanilla's lines all end
+    // `/%` — close on input, then end — so every one of them gates here. A
+    // line flagged `noWait` ends on `%` alone (the writer self-destructs the
+    // frame it reaches it) and the script runs straight on. The kaizo mod's
+    // truncated taunts are exactly that, and it is what makes its slash land
+    // mid-word instead of after a beat.
+    if (typed && (line.noWait || confirmPressed)) sc.dialogue = null;
     else return; // the script clock pauses on the gate
   }
 
@@ -575,7 +699,10 @@ export function stepVictoryScene(sc, input, cues) {
         break;
       }
       case 'clashStart':
-        sc.clash = { timer: 0, shakeSeq: false, shakeTimer: 0, shakeTime: 80 };
+        sc.clash = {
+          timer: 0, shakeSeq: false, shakeTimer: 0,
+          shakeTime: VICTORY_CLASH.shakeTime,
+        };
         break;
       case 'knightRecover':
         sc.knightStatic = false;
@@ -621,7 +748,7 @@ export function stepVictoryScene(sc, input, cues) {
         break;
       }
       case 'slashCut': {
-        fiveCuts(cues);
+        fiveCuts(cues, sc.cutVolume);
         sc.white.black = true;
         sc.white.alpha = 1;
         sc.white.visible = true;
@@ -666,7 +793,9 @@ export function stepVictoryScene(sc, input, cues) {
         bigShake(sc, cues);
         sc.white.visible = false;
         sc.slash.visible = false;
-        const target = a === 'susie' ? A.susie : A.ralsei;
+        // Keyed by actor NAME so a variant can reveal a third one; vanilla
+        // only ever passes 'susie' and 'ralsei'.
+        const target = A[a];
         sc.swoons.push({ x: target.x + 20, y: target.y + 30, born: sc.t });
         if (a === 'ralsei') {
           target.lerp = { field: 'x', from: target.x, to: 2280, t: 0, dur: 30, curve: 'out' };
@@ -755,6 +884,14 @@ export function stepVictoryScene(sc, input, cues) {
         sc.done = true;
         sc.toMenu = true;
         break;
+      default: {
+        // THE VARIANT'S OWN OPS. An unknown op was already a silent no-op
+        // here (there was no default arm), so vanilla behaviour is unchanged
+        // when `sc.ops` is null — which it is for every non-kaizo build.
+        const fn = sc.ops?.[op];
+        if (fn) fn(sc, a, b, cues, OP_API);
+        break;
+      }
     }
   }
 }
