@@ -19,7 +19,7 @@
 
 import { createState } from '../sim/index.js';
 import { stepMenu, openMenu, createMenu, listRows, BUTTONS } from '../sim/menu.js';
-import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford } from '../sim/spells.js';
+import { SPELLS, SPELL_LIST, ACTS, castSpell, holdBreath, soulSpeed, canAfford, spellInfo } from '../sim/spells.js';
 import { ACT_PAGES } from '../sim/dialogue.js';
 import { freshInventory } from '../sim/items.js';
 import { KNIGHT_MAXHP, stepKnightAnim } from '../sim/knight.js';
@@ -103,8 +103,19 @@ st = fresh(1);
 st.menu.selected[1] = 1;
 tap(st, 'confirm');
 if (st.menu.submenu !== 'magic') failures.push(`Susie's button 1 opened ${st.menu.submenu}, expected magic`);
-if (listRows(st).map((r) => r.label).join() !== 'Rude Buster,UltraHeal') {
+// S-ACTION IS THE FIRST ROW OF HER MAGIC LIST, not a grid of its own.
+// scr_spellmenu_setup fills `global.battlespell[slot][]` with the character's
+// ACT rows (marker -1) and only then appends `global.spell[global.char[slot]]`
+// — so a partner's ACT is reached through MAGIC, and bmenuno 9 is Kris's
+// alone. The list used to start at Rude Buster and S-Action was unreachable
+// from anywhere in the menu.
+if (listRows(st).map((r) => r.label).join() !== 'S-Action,Rude Buster,UltraHeal') {
   failures.push(`Susie's list is ${listRows(st).map((r) => r.label).join()}`);
+}
+// The act row is `battlespelltarget = 2` — an ENEMY picker (bmenuno 13), not
+// a straight resolve. Its confirm is where scr_actselect runs.
+if (spellInfo(st, listRows(st)[0].id)?.target !== 2) {
+  failures.push("S-Action's row is not spelltarget 2 — it must open the enemy picker");
 }
 
 // ── Affordability: SHOWN AND GREYED, not hidden ──────────────────────────
@@ -112,8 +123,11 @@ st = fresh(1);
 st.tension = 0;
 st.menu.submenu = 'magic';
 const broke = listRows(st);
-if (broke.length !== 2) failures.push('an unaffordable spell was hidden — it should be greyed');
-if (broke.some((r) => r.usable)) failures.push('a spell was usable at 0 TP');
+if (broke.length !== 3) failures.push('an unaffordable spell was hidden — it should be greyed');
+// Row 0 is S-Action, and `actcostsus[0][0]` is 0 — a free row stays usable at
+// 0 TP, which is the whole reason the ACT is worth a turn. Only the two SPELL
+// rows are the affordability test.
+if (broke.slice(1).some((r) => r.usable)) failures.push('a spell was usable at 0 TP');
 st.tension = 125;
 if (!canAfford(st, 4)) failures.push('Rude Buster unaffordable at exactly its cost');
 if (canAfford(st, 11)) failures.push('UltraHeal affordable at 125 TP');
@@ -341,7 +355,10 @@ console.log(`Rude Buster: bolt lands frame ${landOn} · no press ${noPress.dealt
   // confirm, not by the one that picked the spell off the grid. This test
   // paid on the second press because sim/menu.js had no such row; it now
   // does, so the second press only opens it.
-  s7.menu.selected[1] = 1; t7('confirm'); t7('confirm'); t7('confirm'); // Susie: Rude Buster
+  // AND ONE 'right' BEFORE THEM: S-Action is row 0 of her MAGIC list now
+  // (scr_spellmenu_setup puts the act rows first), so Rude Buster sits in the
+  // second column of the same row.
+  s7.menu.selected[1] = 1; t7('confirm'); t7('right'); t7('confirm'); t7('confirm'); // Susie: Rude Buster
   const paid = s7.tension;
   if (paid !== 125) failures.push(`the enemy row's confirm did not charge the 125 (TP ${paid})`);
   t7('cancel');

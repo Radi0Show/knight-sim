@@ -186,8 +186,10 @@ const dirOf = (s) => s.entities.find((x) => x.alive && x.spellphase !== undefine
 {
   const s = atMenu();
   s.menu.selected[0] = 4; tap(s, 'confirm');                       // Kris DEFEND
-  // THREE presses: MAGIC, the spell, then its own enemy row (bmenuno 3).
-  s.menu.selected[1] = 1; tap(s, 'confirm'); tap(s, 'confirm'); tap(s, 'confirm');
+  // THREE presses: MAGIC, the spell, then its own enemy row (bmenuno 3) —
+  // with a 'right' between the first two, because scr_spellmenu_setup puts
+  // Susie's S-Action row FIRST in her MAGIC list and Rude Buster next to it.
+  s.menu.selected[1] = 1; tap(s, 'confirm'); tap(s, 'right'); tap(s, 'confirm'); tap(s, 'confirm');
   eq(s.tension, 125, 'the enemy row is what charges the 125');
   s.menu.selected[2] = 4; tap(s, 'confirm');                       // Ralsei DEFEND
   // WATCH ONLY THIS TURN. The mash keeps pressing, so left to run it drives
@@ -230,7 +232,8 @@ const dirOf = (s) => s.entities.find((x) => x.alive && x.spellphase !== undefine
 {
   const s = atMenu();
   s.menu.selected[0] = 0; tap(s, 'confirm'); tap(s, 'confirm');     // Kris FIGHT
-  s.menu.selected[1] = 1; tap(s, 'confirm'); tap(s, 'confirm'); tap(s, 'confirm');
+  // 'right' past the S-Action row — see the same walk in section 5.
+  s.menu.selected[1] = 1; tap(s, 'confirm'); tap(s, 'right'); tap(s, 'confirm'); tap(s, 'confirm');
   s.menu.selected[2] = 4; tap(s, 'confirm');
   let barAt = -1;
   let phaseEnded = -1;

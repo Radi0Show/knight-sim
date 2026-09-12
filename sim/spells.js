@@ -86,12 +86,68 @@ export const SPELL_LIST = [[7], [4, 11], [3, 2]];
  */
 export const ACTS = [
   [
-    { name: 'Check', descb: 'Useless#analysis' },
-    { name: 'HoldBreath', descb: '' },
+    { name: 'Check', descb: 'Useless#analysis', spelltarget: 0 },
+    { name: 'HoldBreath', descb: '', spelltarget: 0 },
   ],
-  [{ name: 'S-Action', descb: '' }],
-  [{ name: 'R-Action', descb: '' }],
+  [{ name: 'S-Action', descb: '', spelltarget: 2 }],
+  [{ name: 'R-Action', descb: '', spelltarget: 2 }],
 ];
+
+// ── THE PARTNER ACT ROW IS A MAGIC-LIST ROW ─────────────────────────────────
+//
+// `scr_spellmenu_setup` (gml_GlobalScript_scr_spellmenu_setup.gml) builds
+// `global.battlespell[slot][]` — the list bmenuno 2 draws — as the character's
+// ACT rows FOLLOWED BY `global.spell[global.char[slot]]`:
+//
+//     for (__fj = 0; __fj < 6; __fj++) {
+//         global.battlespell[__i][__fj] = 0;
+//         if (global.char[__i] == 2 && global.canactsus[0][__fj] == 1) {
+//             global.battlespell[__i][__fj]      = -1;          // <- the marker
+//             if (global.battleactcount[__i] < (__fj + 1))
+//                 global.battleactcount[__i] = __fj + 1;
+//             global.battlespellcost[__i][__fj]  = global.actcostsus[0][__fj];
+//             global.battlespellname[__i][__fj]  = global.actnamesus[0][__fj];
+//             global.battlespelldesc[__i][__fj]  = global.actdescsus[0][__fj];
+//             global.battlespelltarget[__i][__fj] = 2;
+//         }
+//         ...the same block for char 1 (target 0), 3 and 4...
+//     }
+//     for (__fj = 0; __fj < 12; __fj++) {
+//         __ib = global.battleactcount[__i] + __fj;
+//         global.battlespell[__i][__ib] = global.spell[global.char[__i]][__fj];
+//         ...cost/name/desc/target likewise...
+//     }
+//
+// So S-Action, R-Action and N-Action are NOT a second grid — they are the
+// FIRST rows of the partner's MAGIC list, and the ACT grid (bmenuno 9) is
+// Kris's alone. The button row agrees: `bmenucoord[0] == 1 && global.char[
+// charturn] != 1` opens bmenuno 2, and only Kris's arm opens bmenuno 11
+// (obj_battlecontroller Step_0:482-491). The confirm on a `battlespell == -1`
+// row opens bmenuno 13 — an ENEMY picker, which is what `battlespelltarget
+// = 2` means — and THAT confirm runs `scr_actselect(enemy, bmenucoord[2])`
+// (Step_0:786-816 and :1429-1437), landing on `charaction[charturn] = 9`:
+// the same act path Kris's grid reaches, entered through the spell list.
+//
+// THE MOD REBUILDS THE LIST MID-FIGHT — `scr_spellmenu_setup()` at
+// obj_knight_enemy Step_0:1188, right after it rewrites Susie's act row to
+// HoldBreath — so the list is a LIVE derivation, not a snapshot taken at
+// battle start. `spellListFor` below derives it on every read for that reason.
+//
+// THE MARKER IS ONE VALUE FOR EVERY ACT ROW (-1) because GML carries the row
+// INDEX separately, in `global.bmenucoord[2][charturn]`. This engine hands
+// the confirm only the row's `id`, so the index rides in the id: act row `i`
+// is `actRowId(i)` = `-1 - i`, and `actRowIndex` reads it back. -1 is still
+// -1 for the single-act partners this fight fields.
+export const actRowId = (i) => -1 - i;
+
+/** The act index behind an id from `spellListFor`, or null for a real spell. */
+export function actRowIndex(id) {
+  return (typeof id === 'number' && id <= -1) ? -1 - id : null;
+}
+
+export function isActRowId(id) {
+  return actRowIndex(id) !== null;
+}
 
 // ── THE CHARACTER-TABLE SEAM ────────────────────────────────────────────────
 //
@@ -115,7 +171,13 @@ export const ACTS = [
 //   spellInfo(state, id)        scr_spellinfo's row for one id; a hook may
 //                               ADD ids this table lacks (8, 9, 10) and never
 //                               needs to restate the ones it has
-//   spellListFor(state, slot)   `global.spell[global.char[slot]]`
+//   spellListFor(state, slot)   `global.battlespell[slot]` — the MAGIC list
+//                               bmenuno 2 draws: the slot's ACT rows (ids
+//                               from `actRowId`) then `global.spell[
+//                               global.char[slot]]`. A `spellList` HOOK still
+//                               answers the narrow `global.spell` half only;
+//                               the act half always comes from `actsFor`, so
+//                               a scene gets the concatenation for free.
 //   actsFor(state, slot)        the canact/actname/actdesc fill for that
 //                               slot's character. A hook's row may carry
 //                               `usable` (the mod's `canpress`/`cant` gates,
@@ -127,11 +189,57 @@ export const ACTS = [
 //   answers, or returns undefined (pages: a falsy value) to hand the id
 //   back to the vanilla body below.
 export function spellInfo(state, id) {
+  // AN ACT ROW ANSWERS FIRST, and it answers out of `actsFor` rather than out
+  // of any spell table: `global.battlespellname/desc/cost/target[thischar][j]`
+  // were copied from `actname*/actdesc*/actcost*[0][j]` by scr_spellmenu_setup.
+  // `thischar` is `global.charturn` — the row can only belong to the character
+  // whose menu is open — which is why the slot is read off the menu here
+  // instead of being passed: every caller of this accessor already means the
+  // current character.
+  const row = actRowFor(state, id);
+  if (row) {
+    return {
+      name: row.name,
+      descb: row.descb ?? '',
+      cost: row.cost ?? 0,
+      // `global.battlespelltarget` is 0 for Kris's rows and 2 for every
+      // partner's — bmenuno 13, the enemy picker, is what a partner ACT opens.
+      target: row.spelltarget ?? 2,
+    };
+  }
   return state?.kaizo?.hooks?.spellInfo?.[id] ?? SPELLS[id];
 }
 
+/**
+ * The act rows of one slot's MAGIC list — `canact*[0][0..5]` as
+ * scr_spellmenu_setup copies them, with the SAME one-use gate the ACT grid
+ * applies (sim/menu.js's listRows drops Susie's row once `canactsus[0]` has
+ * been cleared). The two views of one table must not disagree about whether
+ * a row exists: a magic list that still offered S-Action after the grid had
+ * dropped it would let it be used twice.
+ */
+export function actRowsFor(state, c) {
+  if (c === 1 && state?.actCounts?.susieUsed) return [];
+  return actsFor(state, c) ?? [];
+}
+
+function actRowFor(state, id) {
+  const i = actRowIndex(id);
+  if (i === null) return null;
+  return actRowsFor(state, state?.menu?.charturn ?? 0)[i] ?? null;
+}
+
+/**
+ * `global.battlespell[slot]` — the ACT rows first, then the character's
+ * spells, exactly as scr_spellmenu_setup lays them out. See the block above
+ * ACTS for the GML. `battleactcount` is the join index, which here is just
+ * the length of the act half.
+ */
 export function spellListFor(state, c) {
-  return state?.kaizo?.hooks?.spellList?.(state, c) ?? SPELL_LIST[c];
+  const spells = state?.kaizo?.hooks?.spellList?.(state, c) ?? SPELL_LIST[c] ?? [];
+  const acts = actRowsFor(state, c);
+  if (acts.length === 0) return spells;
+  return [...acts.map((_, i) => actRowId(i)), ...spells];
 }
 
 export function actsFor(state, c) {
@@ -144,6 +252,20 @@ export function actsFor(state, c) {
  * knows, not from what they can afford this second.
  */
 export function spellCost(state, slot, spellId) {
+  // AN ACT ROW IS NOT A SPELL, AND scr_spellconsumeb NEVER SEES ONE. The
+  // battlespell -1 rows are charged by bmenuno 13's confirm out of
+  // `global.battlespellcost[thischar][bmenucoord[2]]` (obj_battlecontroller
+  // Step_0:1433) — the ACT's own `actcost*`, not the spell path's deduction.
+  //
+  // Infinity here is therefore a REFUSAL, not a price: sim/menu.js's
+  // recordSpell tests `state.tension < cost` and returns null, so an act row
+  // that reaches the SPELL path is rejected with snd_error instead of being
+  // queued into obj_spellphase as a spell that does not exist. `canAfford`
+  // below answers the display question from the row's real cost, which is
+  // what greys it — two different GML quantities that happen to coincide for
+  // every real spell. Once the bmenuno-13 confirm routes to scr_actselect,
+  // nothing reaches this line at all; it stays as the backstop.
+  if (isActRowId(spellId)) return Infinity;
   // The seam (see spellInfo): a character-keyed cost, or undefined to fall
   // through to the table.
   const hook = state?.kaizo?.hooks?.spellCost;
@@ -158,7 +280,17 @@ export function spellCost(state, slot, spellId) {
   return s.cost;
 }
 
+/**
+ * `global.tension >= global.battlespellcost[thischar][j]` — the test the grid
+ * DRAWS with (obj_battlecontroller Draw_0's `cant` / the row's grey) and the
+ * one Step_0:787 gates the confirm on. For a spell that is `spellCost`; for
+ * an ACT ROW it is the row's own `actcost*`, which is 0 for S-, R- and
+ * N-Action, so a partner's ACT is never greyed for want of TP.
+ */
 export function canAfford(state, spellId, slot = 1) {
+  if (isActRowId(spellId)) {
+    return state.tension >= (spellInfo(state, spellId)?.cost ?? 0);
+  }
   return state.tension >= spellCost(state, slot, spellId);
 }
 
