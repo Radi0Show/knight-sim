@@ -332,10 +332,23 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
   // more red the more you press" is a property of the arithmetic rather than a
   // table somebody has to keep sorted.
   //
-  // THE HIGHLIGHT STILL WINS while the cursor is on the row — every other row
-  // on this screen turns yellow under the heart and this one must not be the
-  // exception — so the heat shows on the row the player is not pointing at,
-  // and while they are pointing at it, in the counter beside it.
+  // THE HIGHLIGHT WINS AT REST AND LOSES TO THE HEAT AS IT CLIMBS.
+  //
+  // The first version of this let the highlight win outright whenever the
+  // cursor was on the row, on the reasoning that every other row on this
+  // screen turns yellow under the heart and this one should not be the
+  // exception. That was wrong for one reason nobody noticed until it was
+  // watched: THE ROW MUST BE UNDER THE CURSOR TO PRESS IT. So the whole time
+  // the player is doing the thing the colour exists to answer, the colour was
+  // the one thing they could not see, and the only feedback was a counter the
+  // user has since asked to remove.
+  //
+  // So the lit row walks from HILITE to the same red across the same heat. At
+  // heat 0 it is exactly HILITE, character for character, which is what keeps
+  // an untouched row and an unarmed build identical to what they always were;
+  // by the last press it is the red the glass breaks in. The unlit row keeps
+  // its own DIM-to-red walk, so the two paths agree at both ends and differ
+  // only in where they start.
   const base = style.taken ? style.red
     // `dim` IS THE UNTOUCHED ROW, and it is read rather than inferred: on an
     // unarmed build, and before the first press, this is character for
@@ -345,7 +358,9 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
     // from an arithmetic coincidence that a later edit could move.)
     : style.dim ? DIM
       : mergeColor(DIM, style.red, style.heat);
-  const colour = on ? HILITE : base;
+  const colour = on
+    ? (style.taken ? style.red : mergeColor(HILITE, style.red, style.heat))
+    : base;
   // The TAKEN row breathes, the way every cursor on this screen bobs; a row
   // still climbing the ramp does not, because it is a button being refused
   // rather than one that has become something.

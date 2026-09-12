@@ -326,20 +326,22 @@ function minishakeUnused(u) {
  * CLAUDE.md's "a delayed tween lands one frame earlier than it looks" is the
  * same clock). So a press reads 0, then -3, +2, -1, 0.
  */
+// RETURNS NOTHING, DELIBERATELY. The offset is published on the record as
+// `sh.off` and read from there by unusedRowStyle, exactly as obj_shakeobj
+// writes `off` on itself and the target's Draw reads it. An earlier version
+// also returned the value and no caller ever used it — a second copy of the
+// same number with nothing keeping the two honest, which is this repo's most
+// common defect and not worth reintroducing for symmetry.
 function stepUnusedShake(title) {
   const sh = title?.unused?.shake;
-  if (!sh) return 0;
+  if (!sh) return;
   sh.shakeamt -= sh.shakereduct;
   sh.on *= -1;
   sh.off = sh.shakeamt * sh.on;
   // `instance_destroy()` AFTER the write, which is the order the GML has: the
   // last frame is drawn at `nowx + 0`, so the row is put back exactly where it
   // stood and the kick leaves no residue.
-  if (sh.shakeamt <= 0) {
-    title.unused.shake = null;
-    return 0;
-  }
-  return sh.off;
+  if (sh.shakeamt <= 0) title.unused.shake = null;
 }
 
 /**
