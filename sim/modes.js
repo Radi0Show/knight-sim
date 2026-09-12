@@ -573,6 +573,25 @@ export const CREDITS = [
 export const creditLink = (row) => (row.link ? `https://${row.link}` : null);
 
 /**
+ * The rows to show. `CREDITS` unless a build has installed its own.
+ *
+ * A BUILD THAT IS SOMEONE ELSE'S WORK HAS SOMEONE ELSE TO CREDIT, and the
+ * vanilla list is the wrong place to say so: the kaizo build recreates
+ * EnderCat8's mod and owes them a line, while this page does not and must not
+ * claim to. So the list is a field on the title — the same shape `armUnused`
+ * uses — rather than a second constant that could drift, and the default is
+ * the constant above, unchanged and untouched.
+ *
+ * EVERY read of the list goes through here, including the cursor arithmetic.
+ * A longer list with a wrap computed off `CREDITS.length` would leave the
+ * bottom row unreachable, which is the kind of defect that looks like nothing
+ * and is only ever found by someone pressing down twice.
+ */
+export function titleCredits(title) {
+  return title?.credits ?? CREDITS;
+}
+
+/**
  * The pick list for a slot: id 0 (the empty slot), then every piece in the
  * chapter's table with BlackShard (weapon 26, the Knight's own drop) left out.
  *
@@ -970,12 +989,13 @@ function stepSettings(title, pressed) {
   // just nothing there.
   if (s.page === 'credits') {
     if (pressed('confirm')) {
-      const href = creditLink(CREDITS[s.cursor]);
+      const href = creditLink(titleCredits(title)[s.cursor] ?? {});
       if (href) { out.link = href; out.selected = true; }
       return out;
     }
-    if (pressed('up')) { s.cursor = (s.cursor + CREDITS.length - 1) % CREDITS.length; out.moved = true; }
-    if (pressed('down')) { s.cursor = (s.cursor + 1) % CREDITS.length; out.moved = true; }
+    const rows = titleCredits(title).length;
+    if (pressed('up')) { s.cursor = (s.cursor + rows - 1) % rows; out.moved = true; }
+    if (pressed('down')) { s.cursor = (s.cursor + 1) % rows; out.moved = true; }
     // X goes back to wherever the page was opened FROM — the title now, not
     // the hub, which no longer lists it.
     if (pressed('cancel')) {

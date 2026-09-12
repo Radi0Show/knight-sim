@@ -10,4 +10,4 @@
 // cannot import modules, so the two are linked by convention: the cache name
 // is what makes an installed PWA fetch the new build instead of serving the
 // old one forever.
-export const VERSION = '1.0.49';
+export const VERSION = '1.0.50';

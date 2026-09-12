@@ -15,7 +15,7 @@ import { sliceShatter, drawShatterFragment } from './shatter.js';
 import { loadFont, drawText, textWidth, textHeight } from './font.js';
 import { VERSION } from '../web/version.js';
 import {
-  MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, ITEM_PICKER, GEAR_PAGES,
+  MODES, SETTINGS_PAGES, TITLE_EXTRAS, titleCredits, ITEM_PICKER, GEAR_PAGES,
   pocketOf, previewStats, wornBy, partyTabs, unusedRowStyle,
 } from '../sim/modes.js';
 import { ITEMS, INVENTORY_SIZE } from '../sim/items.js';
@@ -543,10 +543,11 @@ function drawSettings(ctx, title, sprites, font) {
     // clear all three or the link runs into the next role, which is what a
     // 56px pitch did as soon as one row had a link.
     const PITCH = 78;
-    for (let i = 0; i < CREDITS.length; i++) {
+    const credits = titleCredits(title);
+    for (let i = 0; i < credits.length; i++) {
       const y = 150 + i * PITCH;
       const on = i === s.cursor;
-      const row = CREDITS[i];
+      const row = credits[i];
       // The NAME is the line the heart points at — it is the biggest thing in
       // the row and the thing the row is about.
       const nameY = row.who ? y + 22 : y + 11;
