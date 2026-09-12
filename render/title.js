@@ -233,12 +233,21 @@ const SLOT_NAMES = ['WEAPON', 'ARMOR 1', 'ARMOR 2'];
 //     snd_nosound, 12, 20, 2)` — the same derivation drawGameOver's header
 //     gives for the screen itself.
 //
-// OURS, AND LABELLED AS SUCH: the reddening ramp and the `n / 20` counter
-// beside it. Neither the mod nor chapter 4 has a button that heats up as it is
-// pressed, and the counter exists for one reason — the user asked that the
-// count and the colour be visible enough that the player understands something
-// is happening before it happens, and a colour ramp alone is not legible at
-// one twentieth per press.
+//   * THE KICK is `scr_minishakeobj` — obj_shakeobj walking ONE instance's x
+//     by -3, +2, -1, 0 and destroying itself, the mod's own per-object shake
+//     rather than obj_shake's whole-camera one. It arrives here as
+//     `style.shake`, already stepped by sim/modes.js, and this file adds it to
+//     the row's x and does nothing else with it.
+//
+// OURS, AND LABELLED AS SUCH: the reddening ramp, and hanging the mod's shake
+// off a refused menu press. Neither the mod nor chapter 4 has a button that
+// heats up as it is pressed.
+//
+// THERE IS NO COUNTER. A `${style.presses} / ${style.total}` used to print
+// beside the row in the ramp's own colour; the user removed it — "do not have
+// the (1/20) etc when pressing proceed, just make the color fade, and make the
+// UNUSED shake" — so the ramp and the kick are the whole of the feedback, and
+// `unusedRowStyle` no longer publishes the two fields that fed it.
 //
 // NOTHING HERE IS RANDOM. The fragment positions are the sim's
 // (`title.unused.shatter`, stepped once per SIM frame in sim/modes.js), and a
@@ -315,7 +324,6 @@ function drawUnusedShatter(ctx, font, sprites, style, shatter, x, y) {
 function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
   if (style.shattering) return;
   const name = style.name;
-  const w = textWidth(font, name);
   const h = textHeight(font) || 30;
 
   // THE RAMP. `heat` is presses / UNUSED_PRESSES, and the colour walks from
@@ -324,10 +332,23 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
   // more red the more you press" is a property of the arithmetic rather than a
   // table somebody has to keep sorted.
   //
-  // THE HIGHLIGHT STILL WINS while the cursor is on the row — every other row
-  // on this screen turns yellow under the heart and this one must not be the
-  // exception — so the heat shows on the row the player is not pointing at,
-  // and while they are pointing at it, in the counter beside it.
+  // THE HIGHLIGHT WINS AT REST AND LOSES TO THE HEAT AS IT CLIMBS.
+  //
+  // The first version of this let the highlight win outright whenever the
+  // cursor was on the row, on the reasoning that every other row on this
+  // screen turns yellow under the heart and this one should not be the
+  // exception. That was wrong for one reason nobody noticed until it was
+  // watched: THE ROW MUST BE UNDER THE CURSOR TO PRESS IT. So the whole time
+  // the player is doing the thing the colour exists to answer, the colour was
+  // the one thing they could not see, and the only feedback was a counter the
+  // user has since asked to remove.
+  //
+  // So the lit row walks from HILITE to the same red across the same heat. At
+  // heat 0 it is exactly HILITE, character for character, which is what keeps
+  // an untouched row and an unarmed build identical to what they always were;
+  // by the last press it is the red the glass breaks in. The unlit row keeps
+  // its own DIM-to-red walk, so the two paths agree at both ends and differ
+  // only in where they start.
   const base = style.taken ? style.red
     // `dim` IS THE UNTOUCHED ROW, and it is read rather than inferred: on an
     // unarmed build, and before the first press, this is character for
@@ -337,21 +358,19 @@ function drawUnusedRow(ctx, font, small, style, x, y, on, siner) {
     // from an arithmetic coincidence that a later edit could move.)
     : style.dim ? DIM
       : mergeColor(DIM, style.red, style.heat);
-  const colour = on ? HILITE : base;
+  const colour = on
+    ? (style.taken ? style.red : mergeColor(HILITE, style.red, style.heat))
+    : base;
   // The TAKEN row breathes, the way every cursor on this screen bobs; a row
   // still climbing the ramp does not, because it is a button being refused
   // rather than one that has become something.
   const breathe = style.taken ? Math.sin(siner / 8) * 0.8 : 0;
-  drawText(ctx, font, name, x + breathe, y, { color: rgb(colour) });
-
-  // THE COUNTER — ours. `n / 20` in the ramp's own colour, right of the word,
-  // from the first press on. Before the first press there is nothing to say
-  // and the row reads exactly as the reserved one it has always been, which is
-  // the whole point of the unarmed build being unchanged.
-  if (!style.taken && style.presses > 0 && small?.ready) {
-    drawText(ctx, small, `${style.presses} / ${style.total}`, x + w + 14, y + 6,
-      { color: rgb(base), xscale: 0.9, yscale: 0.9 });
-  }
+  // THE KICK. `target.x = nowx + (shakeamt * on)`, with `nowx` being this row's
+  // own home x — so the whole of obj_shakeobj's contribution is this one
+  // addition, and the four frames it lasts are the sim's to count, not this
+  // file's. `style.shake` is 0 on every frame nothing is shaking, which is
+  // every frame of the vanilla build.
+  drawText(ctx, font, name, x + breathe + style.shake, y, { color: rgb(colour) });
 
   // The bracketed echo, the mod's own second line — `PROCEED#(PROCEED)` with
   // `#` as the newline. Only the TAKEN row has one. Clear of the glyphs and

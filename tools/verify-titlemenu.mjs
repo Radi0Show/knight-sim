@@ -28,7 +28,8 @@
 import {
   createTitle, stepTitle, MODES, SETTINGS_PAGES, TITLE_EXTRAS, CREDITS, creditLink,
   ITEM_PICKER, GEAR_PAGES, pocketOf, wornBy,
-  armUnused, unusedRowStyle, UNUSED_PRESSES, UNUSED_SHATTER, partyTabs, previewStats,
+  armUnused, unusedRowStyle, UNUSED_PRESSES, UNUSED_SHATTER, UNUSED_SHAKE,
+  partyTabs, previewStats,
 } from '../sim/modes.js';
 import { canEquip } from '../sim/equipment.js';
 import { mergeColor } from '../sim/gml.js';
@@ -816,6 +817,226 @@ function idle(t) {
     'and refuses her Susie\'s Brave Ax, leaving what she had on');
   const r23 = put(0, 23);
   check(r23.error !== true && wr.gear[0].weapon === 23, 'Kris still takes Saber10');
+}
+
+// ---- THE RAMP AND THE KICK ARE ON SCREEN, ASSERTED AS PIXELS ------------
+//
+// WHY THIS SECTION EXISTS. Every assertion above this one is about STATE, and
+// state is not what the player was promised. Delete `drawUnusedRow`'s ramp and
+// put the flat white line back, or drop `style.shake` from the row's x, and
+// all of it stays green — the same hole CLAUDE.md names twice ("a green suite
+// does not mean a change took effect", and the renderer that threw on its
+// first frame while 58 suites passed). The user's correction was entirely
+// about what the row LOOKS LIKE, so what the row looks like is what is checked
+// here: the colour actually painted into the glyph page, and the x the glyph
+// actually lands on.
+//
+// HOW, with no browser. `drawText` blits a TINTED COPY of the font page —
+// `tintedPage()` mints a canvas, fills it with the colour and hands it to
+// `ctx.drawImage` — so a canvas stub that remembers its last `fillStyle` and a
+// main context that records `(image, dx, dy)` recover both facts exactly. The
+// font is made ready by stubbing `fetch` and `Image`, which is the only reason
+// check-proceed-route could not do this over in the kaizo tree and said so.
+//
+// SABOTAGE-TESTED: reverting `mergeColor(DIM, style.red, style.heat)` to a
+// flat `DIM`, and dropping `+ style.shake`, each turn this section red.
+{
+  const META = {
+    name: 'fnt_mainbig',
+    // Every printable ASCII glyph, all the same size — the metrics are not
+    // under test, the colour and the position are.
+    glyphs: Array.from({ length: 95 }, (_, i) => ({
+      c: 32 + i, x: i * 16, y: 0, w: 12, h: 24, shift: 14, offset: 0,
+    })),
+  };
+  const prevFetch = globalThis.fetch;
+  const prevImage = globalThis.Image;
+  const prevDoc = globalThis.document;
+  globalThis.fetch = async () => ({ json: async () => META });
+  globalThis.Image = class {
+    constructor() { this.width = 1520; this.height = 24; }
+    set src(v) { this._src = v; queueMicrotask(() => this.onload && this.onload()); }
+    get src() { return this._src; }
+  };
+
+  const blits = [];
+  let recording = false;
+  const mkCtx = (owner) => new Proxy({}, {
+    get(t, p) {
+      if (p === 'canvas') return owner;
+      if (p === 'measureText') return () => ({ width: 10 });
+      if (p === 'createLinearGradient' || p === 'createRadialGradient') {
+        return () => ({ addColorStop: () => {} });
+      }
+      // `tintedPage`: `g.fillStyle = color; g.fillRect(...)`. THIS is the pixel.
+      if (p === 'fillRect') return () => { owner.fill = t.fillStyle; };
+      if (p === 'drawImage') {
+        return (img, ...a) => {
+          // The 9-argument form drawText uses: dx/dy are arguments 5 and 6.
+          if (owner.main && recording) blits.push({ fill: img?.fill ?? null, dx: a[4], dy: a[5] });
+        };
+      }
+      if (typeof p === 'string') return t[p] !== undefined ? t[p] : () => undefined;
+      return () => undefined;
+    },
+    set(t, p, v) { t[p] = v; return true; },
+  });
+  globalThis.document = {
+    createElement: (tag) => {
+      if (tag !== 'canvas') return {};
+      const c = { width: 0, height: 0, style: {}, fill: null };
+      c.getContext = () => mkCtx(c);
+      return c;
+    },
+  };
+
+  const { drawTitle } = await import('../render/title.js');
+  // BOTH FACES, WARMED EXPLICITLY. drawSettings asks for `fnt_main` (the row's
+  // second line, and the face the deleted counter was drawn in) with the same
+  // two arguments; loading it here rather than waiting for the first draw to
+  // ask means the counter assertion below is not vacuous — a check that can
+  // only pass because the font never arrived proves nothing about the pixels.
+  const { loadFont } = await import('../render/font.js');
+  loadFont();
+  loadFont('../assets/fonts', 'fnt_main');
+  const main = { width: 640, height: 480, style: {}, main: true };
+  const ctx = mkCtx(main);
+  const sprites = { get: () => null };
+  const ROW = SETTINGS_PAGES.findIndex((p) => p.id === 'unused');
+  const ROW_Y = 170 + ROW * 40;                // drawSettings' own row pitch
+  const DIM = [128, 128, 138];
+
+  /** One frame's worth of the UNUSED row's glyphs, in pen order. */
+  const rowGlyphs = () => {
+    recording = true;
+    blits.length = 0;
+    drawTitle(ctx, t, sprites, ROSTER);
+    recording = false;
+    return blits.filter((b) => b.dy === ROW_Y);
+  };
+
+  const t = createTitle();
+  for (let i = 0; i < extraAt('settings'); i++) tap(t, 'down');
+  tap(t, 'confirm');
+  for (let i = 0; i < ROW; i++) tap(t, 'down');
+  armUnused(t, { sprite: 'spr_test_shatter' });
+
+  // The font loads asynchronously; the first draw only starts it.
+  drawTitle(ctx, t, sprites, ROSTER);
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+
+  // THE CURSOR MUST BE OFF THE ROW to read the ramp at all — the highlight
+  // wins while the heart is beside it, and that is deliberate (every other row
+  // turns yellow under the cursor and this one must not be the exception).
+  const onRow = rowGlyphs();
+  check(onRow.length === 6 && onRow[0].fill === 'rgb(255,255,0)',
+    'the row really reaches the canvas — six glyphs, and the cursor still wins');
+  tap(t, 'up');
+
+  const cold = rowGlyphs();
+  check(cold.length === 6, 'UNUSED is six glyphs wide off the cursor too');
+  check(cold[0].fill === `rgb(${DIM.join(',')})`,
+    'HEAT 0 IS PAINTED THE OLD DIM GREY — the unarmed row, to the pixel');
+
+  // HEAT 1 without taking the route: a full bar that has not been pressed the
+  // twentieth time (the section above pins that this is not `taken`).
+  const hot = createTitle();
+  for (let i = 0; i < extraAt('settings'); i++) tap(hot, 'down');
+  tap(hot, 'confirm');
+  armUnused(hot, { presses: UNUSED_PRESSES, sprite: 'spr_test_shatter' });
+  const hotGlyphs = (() => {
+    recording = true; blits.length = 0;
+    drawTitle(ctx, hot, sprites, ROSTER);
+    recording = false;
+    return blits.filter((b) => b.dy === ROW_Y);
+  })();
+  const wantHot = `rgb(${mergeColor(DIM, unusedRowStyle(hot).red, 1).join(',')})`;
+  check(hotGlyphs.length === 6 && hotGlyphs[0].fill === wantHot,
+    `HEAT 1 IS PAINTED ${wantHot} — the mod's own final-hit red`);
+  check(hotGlyphs[0].fill !== cold[0].fill,
+    'AND THE TWO DIFFER — a flat row that ignored heat would fail here');
+
+  // THE MIDDLE OF THE RAMP IS ON THE RAMP, so "it reddens" is the arithmetic
+  // and not two endpoints that happen to be right.
+  const mid = createTitle();
+  for (let i = 0; i < extraAt('settings'); i++) tap(mid, 'down');
+  tap(mid, 'confirm');
+  armUnused(mid, { presses: 10, sprite: 'spr_test_shatter' });
+  recording = true; blits.length = 0;
+  drawTitle(ctx, mid, sprites, ROSTER);
+  recording = false;
+  const midGlyphs = blits.filter((b) => b.dy === ROW_Y);
+  check(midGlyphs[0]?.fill === `rgb(${mergeColor(DIM, unusedRowStyle(mid).red, 0.5).join(',')})`,
+    'half the presses paints half the way to the red');
+
+  // ---- AND NO COUNTER IS DRAWN ANYWHERE ---------------------------------
+  //
+  // The `n / 20` the user removed was drawn in the SMALL font at `y + 6`, so
+  // its absence is checkable as pixels too: nothing may land on the row's
+  // counter line, at any heat.
+  const counterLine = blits.filter((b) => b.dy === ROW_Y + 6);
+  check(counterLine.length === 0,
+    'NOTHING is drawn on the counter line — the `n / 20` is gone from the screen');
+
+  // ---- THE KICK MOVES THE ROW ------------------------------------------
+  //
+  // `scr_minishakeobj` -> obj_shakeobj: -3, +2, -1, 0, then the object is
+  // gone. The press frame itself reads 0, because event_user(0) only latches
+  // and the first write is the shakeobj's own Step (sim/modes.js says why).
+  // Asserted as the x the first glyph LANDS ON, against the same row drawn
+  // with nothing shaking.
+  const kick = createTitle();
+  for (let i = 0; i < extraAt('settings'); i++) tap(kick, 'down');
+  tap(kick, 'confirm');
+  for (let i = 0; i < ROW; i++) tap(kick, 'down');
+  armUnused(kick, { sprite: 'spr_test_shatter' });
+  const penX = () => {
+    recording = true; blits.length = 0;
+    drawTitle(ctx, kick, sprites, ROSTER);
+    recording = false;
+    return blits.filter((b) => b.dy === ROW_Y)[0]?.dx;
+  };
+  const home = penX();
+  check(home === 190, `the row's home x is 190, got ${home}`);
+  // ONE press, then one frame at a time — `tap` is two frames and would eat
+  // the first two offsets.
+  stepTitle(kick, { ...NONE, confirm: true }, ROSTER);
+  const seen = [penX() - home];
+  for (let i = 0; i < 5; i++) {
+    stepTitle(kick, { ...NONE }, ROSTER);
+    seen.push(penX() - home);
+  }
+  check(seen.join() === '0,-3,2,-1,0,0',
+    `the kick draws the row at ${UNUSED_SHAKE.amt}/${UNUSED_SHAKE.reduct}'s own`
+    + ` offsets 0,-3,2,-1,0,0 — got ${seen.join()}`);
+  check(seen.some((o) => o !== 0),
+    'AND THE ROW ACTUALLY MOVED — a renderer that dropped style.shake fails here');
+  check(kick.unused.shake === null, 'the shakeobj destroys itself at shakeamt <= 0');
+  check(seen[seen.length - 1] === 0,
+    'and leaves the row exactly where it stood — no residue');
+
+  // ONE KICK PER PRESS. A second press re-arms it, which is what a second
+  // scr_minishakeobj call comes to in the original (no instance_number guard,
+  // both writes off the same nowx).
+  stepTitle(kick, { ...NONE, confirm: true }, ROSTER);
+  check(kick.unused.shake?.shakeamt === UNUSED_SHAKE.amt,
+    'a second press arms a second kick at full amplitude');
+  stepTitle(kick, { ...NONE }, ROSTER);
+  stepTitle(kick, { ...NONE, confirm: true }, ROSTER);
+  check(kick.unused.shake.shakeamt === UNUSED_SHAKE.amt,
+    '...and a press DURING a kick re-arms it rather than stacking a second');
+
+  // THE TRANSLATIONS MUST NOT DRIFT. kaizo/party/scenes.js carries the
+  // instance version of this object for k_hpscene's puff; this is the same
+  // four frames in a menu's shape, so the numbers are asserted against the
+  // GML's own rather than against each other's copy.
+  check(UNUSED_SHAKE.amt === 4 && UNUSED_SHAKE.reduct === 1,
+    'scr_minishakeobj\'s own shakeamt 4 / shakereduct 1');
+
+  globalThis.fetch = prevFetch;
+  globalThis.Image = prevImage;
+  globalThis.document = prevDoc;
 }
 
 console.log('title navigation — modes, roster, difficulties, settings\n');
