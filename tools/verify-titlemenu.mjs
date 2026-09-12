@@ -680,7 +680,7 @@ function idle(t) {
   check(t.dirty === true, '...and the driver is asked to persist it');
   const after = unusedRowStyle(t);
   check(after.name === 'PROCEED', 'the row now reads PROCEED');
-  check(after.sub === '(PROCEED)', '...with the mod\'s own bracketed echo under it');
+  check(after.sub === null, '...and NO second line - the word alone; the user asked for the echo gone');
   check(after.dim === false, '...and it is no longer dimmed');
   check(after.heat === 1, '...at full heat');
   check(after.shattering === false, '...and it is not shattering any more');

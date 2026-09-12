@@ -509,7 +509,7 @@ export function unusedRowStyle(title) {
   }
   if (u.taken) {
     return {
-      name: 'PROCEED', sub: '(PROCEED)', dim: false, heat: 1, shake: 0,
+      name: 'PROCEED', sub: null, dim: false, heat: 1, shake: 0,
       red: UNUSED_RED, sprite: u.sprite, shattering: false, taken: true,
     };
   }
