@@ -41,7 +41,7 @@
 // And the fade reuses `kill` in BOTH the alpha and the Y SCALE: `stretch +
 // kill` means the number stretches vertically as it disappears.
 
-import { PARTY_POS, PARTY } from './damage.js';
+import { PARTY_POS, PARTY, partyMaxhp } from './damage.js';
 import { gmlRandom } from './rng.js';
 
 // `type` is the writer's colour selector, and IT MEANS DIFFERENT THINGS in the
@@ -290,7 +290,8 @@ export function spawnHealWriter(state, target, amount) {
   // The MAX read below is the same deviation: obj_healwriter has no message
   // sprite at all, so in the game a Spincake on a full bar reads +150.
   const hp = state.partyHp?.[target] ?? 0;
-  const max = PARTY[target]?.maxhp ?? 0;
+  // Seam-read, so the MAX graphic belongs to whoever is actually in the slot.
+  const max = partyMaxhp(state, target) ?? 0;
   const pos = HEAL_ANCHOR[target] ?? PARTY_POS[target];
   d.heals.push({
     // Just clear of the head, then it rises.
